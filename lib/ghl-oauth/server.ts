@@ -87,10 +87,19 @@ export async function startGhlConnection(workspaceSlug: string, input: Record<st
     const config = ghlOAuthConfig()
     if (typeof input.relationshipId !== "string" || !uuid.test(input.relationshipId) || (input.expectedRevision !== null && (typeof input.expectedRevision !== "string" || !uuid.test(input.expectedRevision)))) throw unavailable()
     const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "client-connections")
+    // Reopening a dialog must not discard a usable, browser-bound grant.
+    // The ordinary read RPC still fences expiry, access and connection revision.
+    try {
+        const existing = await rpc("read", await binding(config)) as unknown as Attempt
+        if (existing.workspace_id === workspace.id && existing.user_id === user.id && existing.relationship_id === input.relationshipId && ["ready", "selected"].includes(existing.phase)) return { resume: true as const }
+    } catch (error) {
+        // A transient database failure must not destroy a usable grant.
+        if (!(error instanceof GhlConnectionError) || error.message !== safeMessages.expired) throw error
+    }
     const state = randomBytes(32).toString("base64url"), browser = randomBytes(32).toString("base64url")
     await rpc("prepare", { stateHash: hash(state), browserHash: hash(browser), configHash: configHash(config), workspaceId: workspace.id, workspaceSlug: workspace.slug, userId: user.id, relationshipId: input.relationshipId, expectedRevision: input.expectedRevision })
     ;(await cookies()).set(COOKIE, `${state}.${browser}`, { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: 20 * 60 })
-    return { authorizationUrl: ghlAuthorizationUrl(config, state) }
+    return { authorizationUrl: ghlAuthorizationUrl(config, state), channel: hash(state) }
 }
 
 export async function completeGhlAuthorization(state: string, code: string | null, denied: boolean) {

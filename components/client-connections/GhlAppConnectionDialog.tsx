@@ -27,6 +27,9 @@ export function GhlAppConnectionDialog({ workspaceSlug, accounts, initialAccount
     const [authorizationUrl, setAuthorizationUrl] = useState<string | null>(null)
     const [recoveryNeeded, setRecoveryNeeded] = useState(resume)
     const currentRequest = useRef<AbortController | null>(null), mounted = useRef(true)
+    const recoveryRequest = useRef<Promise<void> | null>(null)
+    const returnChannel = useRef<BroadcastChannel | null>(null)
+    const authorizationWindow = useRef<Window | null>(null)
     const account = accounts.find(item => item.relationshipId === relationshipId)
     const endpoint = `/api/workspaces/${encodeURIComponent(workspaceSlug)}/client-connections/oauth`
 
@@ -59,25 +62,35 @@ export function GhlAppConnectionDialog({ workspaceSlug, accounts, initialAccount
         const query = new URLSearchParams({ action: "notification_status", relationshipId: id, expectedRevision })
         setNotifications(await request<Notifications>(undefined, `?${query}`))
     }
-    async function recover() {
-        try {
-            const session = await request<Session>()
-            const selected = accounts.find(item => item.relationshipId === session.relationshipId)
-            if (!selected) throw new Error("This client is no longer available. Close this window and reload Client Connections.")
-            setRelationshipId(session.relationshipId); setRevision(selected.revision ?? null)
-            setRecoveryNeeded(false)
-            if (session.phase === "ready") {
-                setLocations(session.locations); setLocationId(session.locations.length === 1 ? session.locations[0].id : ""); setLimited(session.limited); setPhase("location")
-            } else if (session.phase === "selected") {
-                setLocationId(session.locationId ?? ""); setCalendars(session.calendars); setCalendarId(session.calendars.length === 1 ? session.calendars[0].id : ""); setPhase("calendar")
-            } else if (session.phase === "done") {
-                const result = await request<Connected>({ action: "connect" })
-                setRevision(result.revision); setNotifications(result.notifications); setPhase("connected"); onSaved()
-            } else {
-                setPhase("start")
-                throw new Error("HighLevel authorisation was not completed. Start a new connection attempt.")
-            }
-        } catch (error) { report(error) }
+    function recover() {
+        if (recoveryRequest.current) return recoveryRequest.current
+        const pending = (async () => {
+            try {
+                const session = await request<Session>()
+                const selected = accounts.find(item => item.relationshipId === session.relationshipId)
+                if (!selected) throw new Error("This client is no longer available. Close this window and reload Client Connections.")
+                setRelationshipId(session.relationshipId); setRevision(selected.revision ?? null)
+                if (["authorizing", "exchanging"].includes(session.phase)) {
+                    setRecoveryNeeded(true)
+                    throw new Error("Complete authorisation in HighLevel, then resume this connection.")
+                }
+                setRecoveryNeeded(false); setAuthorizationUrl(null)
+                if (session.phase === "ready") {
+                    setLocations(session.locations); setLocationId(session.locations.length === 1 ? session.locations[0].id : ""); setLimited(session.limited); setPhase("location")
+                } else if (session.phase === "selected") {
+                    setLocationId(session.locationId ?? ""); setCalendars(session.calendars); setCalendarId(session.calendars.length === 1 ? session.calendars[0].id : ""); setPhase("calendar")
+                } else if (session.phase === "done") {
+                    const result = await request<Connected>({ action: "connect" })
+                    setRevision(result.revision); setNotifications(result.notifications); setPhase("connected"); onSaved()
+                } else {
+                    setPhase("start")
+                    throw new Error("HighLevel authorisation was not completed. Start a new connection attempt.")
+                }
+            } catch (error) { report(error) }
+        })()
+        recoveryRequest.current = pending
+        void pending.finally(() => { if (recoveryRequest.current === pending) recoveryRequest.current = null })
+        return pending
     }
     useEffect(() => {
         mounted.current = true
@@ -89,7 +102,7 @@ export function GhlAppConnectionDialog({ workspaceSlug, accounts, initialAccount
             if (resume) void recover()
             else if (initialAccount?.connected && initialAccount.revision) void status(initialAccount.relationshipId, initialAccount.revision).catch(report)
         })
-        return () => { current = false; mounted.current = false; currentRequest.current?.abort(); currentRequest.current = null }
+        return () => { current = false; mounted.current = false; currentRequest.current?.abort(); currentRequest.current = null; returnChannel.current?.close(); returnChannel.current = null }
         // The dialog has one opening identity. Later account refreshes must not
         // restart an accepted OAuth step or overwrite the user's calendar choice.
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -101,11 +114,32 @@ export function GhlAppConnectionDialog({ workspaceSlug, accounts, initialAccount
         // tabs/drafts. If popups are blocked, show an ordinary link instead.
         const popup = window.open("about:blank", "_blank")
         if (popup) popup.opener = null
+        authorizationWindow.current = popup
         try {
-            const result = await request<{ authorizationUrl: string }>({ action: "start", relationshipId, expectedRevision: account.revision ?? null })
+            const result = await request<{ authorizationUrl?: string; channel?: string; resume?: boolean }>({ action: "start", relationshipId, expectedRevision: account.revision ?? null })
+            if (result.resume) { popup?.close(); await recover(); return }
+            if (!result.authorizationUrl || !result.channel || !/^[a-f0-9]{64}$/.test(result.channel)) throw new Error("The HighLevel authorisation link is unavailable.")
             const url = new URL(result.authorizationUrl)
             if (url.origin !== "https://marketplace.gohighlevel.com" || !["/oauth/chooselocation", "/v2/oauth/chooselocation"].includes(url.pathname)) throw new Error("The HighLevel authorisation link is unavailable.")
             setAuthorizationUrl(url.toString())
+            setRecoveryNeeded(true)
+            returnChannel.current?.close()
+            if (typeof BroadcastChannel !== "undefined") {
+                const channel = new BroadcastChannel(`be-ghl:${result.channel}`)
+                returnChannel.current = channel
+                let received = false
+                channel.onmessage = event => {
+                    if (event.data?.type !== "complete" || received || !mounted.current) return
+                    received = true
+                    void recover().finally(() => {
+                        try { channel.postMessage({ type: "received" }) } catch { /* The dialog may have closed while reading. */ }
+                        channel.close()
+                        if (returnChannel.current === channel) returnChannel.current = null
+                        authorizationWindow.current?.close(); authorizationWindow.current = null
+                        if (mounted.current) window.top?.focus()
+                    })
+                }
+            }
             if (popup && !popup.closed) popup.location.replace(url.toString())
         } catch (error) { if (popup && !popup.closed) popup.close(); report(error) }
     }
@@ -134,9 +168,10 @@ export function GhlAppConnectionDialog({ workspaceSlug, accounts, initialAccount
             {phase === "start" && !initialAccount ? <label className="block text-sm text-neutral-300">Client<Selector name="relationshipId" ariaLabel="Client for HighLevel" appearance="input" value={relationshipId} disabled={busy || !!authorizationUrl} onChange={value => { setRelationshipId(value); setAuthorizationUrl(null); setError(null) }} options={choices.map(item => ({ value: item.relationshipId, label: item.businessName ? `${item.clientName} – ${item.businessName}` : item.clientName }))} /></label> : <p className="text-sm text-neutral-300">{account?.businessName ? `${account.clientName} – ${account.businessName}` : account?.clientName ?? "Loading client…"}</p>}
             {busy ? <p role="status" className="text-sm text-neutral-400">Checking the connection…</p> : null}
             {error ? <p role="alert" className="text-sm text-red-200">{error}</p> : null}
+            {error && authorizationUrl ? <button type="button" disabled={busy} onClick={() => { returnChannel.current?.close(); returnChannel.current = null; authorizationWindow.current?.close(); authorizationWindow.current = null; setAuthorizationUrl(null); setRecoveryNeeded(false); setPhase("start"); setError(null) }} className="min-h-11 text-sm underline underline-offset-4">Start again</button> : null}
             {recoveryNeeded ? <button type="button" disabled={busy} onClick={() => void recover()} className="min-h-11 text-sm underline underline-offset-4">Resume connection</button> : null}
-            {phase === "start" || (phase === "connected" && !notifications?.ready) ? <>
-                <p className="text-sm leading-6 text-neutral-400">Authorise Betelgeze in HighLevel, then choose the sub-account and calendar for this client. HighLevel opens in a new tab.</p>
+            {!authorizationUrl && (phase === "start" || (phase === "connected" && !notifications?.ready)) ? <>
+                <p className="text-sm leading-6 text-neutral-400">Continue an unfinished setup, or authorise an existing HighLevel installation. A temporary window opens for authorisation, then calendar selection continues here.</p>
                 <button type="button" className={button} disabled={busy || !account} onClick={() => void start()}>{busy ? "Preparing…" : "Connect HighLevel"}</button>
             </> : null}
             {authorizationUrl ? <p className="text-sm leading-6 text-neutral-300">Finish authorising in the new tab. If it did not open, <a href={authorizationUrl} target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">continue to HighLevel</a>.</p> : null}
@@ -151,7 +186,7 @@ export function GhlAppConnectionDialog({ workspaceSlug, accounts, initialAccount
                 <button type="button" className={button} disabled={busy || !calendarId} onClick={() => void connect()}>Save calendar connection</button>
             </> : null}
             {phase === "connected" ? <section className="space-y-3 border-t border-neutral-800 pt-4">
-                <Status label={calendarId || account?.calendarId ? "Calendar connected" : "HighLevel account connected"} tone="green" />
+                <Status label={notifications?.ready ? "App calendar connected" : (calendarId || account?.calendarId ? "Calendar saved — app setup unfinished" : "Account saved — app setup unfinished")} tone={notifications?.ready ? "green" : "grey"} />
                 <h3 className="font-semibold">WhatsApp notifications</h3>
                 <p className="text-sm leading-6 text-neutral-400">Send booking, reschedule, cancellation, removal, detail and status updates, plus an appointment reminder, to this client’s confirmed WhatsApp number.</p>
                 {notifications?.error ? <p role="alert" className="text-sm text-yellow-200">{notifications.error}</p> : null}
@@ -162,7 +197,7 @@ export function GhlAppConnectionDialog({ workspaceSlug, accounts, initialAccount
                     <button type="button" className={button} disabled={busy || (!notifications.sendingEnabled && !notifications.consentReady)} onClick={() => void toggleNotifications(!notifications.sendingEnabled)}>{notifications.sendingEnabled ? "Turn off WhatsApp notifications" : "Enable WhatsApp notifications"}</button>
                     <button type="button" disabled={busy} onClick={() => void status(relationshipId, revision!).catch(report)} className="min-h-11 text-sm underline underline-offset-4">Check notification setup</button>
                 </> : null}
-                <button type="button" disabled={busy} onClick={() => { setPhase("start"); setAuthorizationUrl(null); setError(null) }} className="min-h-11 text-sm underline underline-offset-4">Reconnect or choose another calendar</button>
+                <button type="button" disabled={busy || !!authorizationUrl} onClick={() => { setPhase("start"); setError(null) }} className="min-h-11 text-sm underline underline-offset-4">Reconnect or choose another calendar</button>
             </section> : null}
             <div className="flex flex-wrap justify-between gap-3 border-t border-neutral-800 pt-3">
                 <button type="button" disabled={busy} onClick={() => onManual(account ?? null)} className="min-h-11 text-sm text-neutral-400 underline underline-offset-4">Manual connection{account?.connected ? " and retirement" : ""}</button>

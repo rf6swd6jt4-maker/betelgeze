@@ -17,6 +17,10 @@ export class GhlOAuthError extends Error {
 export function ghlAuthorizationUrl(config: GhlOAuthConfig, state: string) {
     const url = new URL(config.installUrl)
     if (url.protocol !== "https:" || url.hostname !== "marketplace.gohighlevel.com" || url.port || url.username || url.password || !["/oauth/chooselocation", "/v2/oauth/chooselocation"].includes(url.pathname) || !/^[A-Za-z0-9_-]{43}$/.test(state)) throw new GhlOAuthError("configuration")
+    // The v2 storefront stops at the app listing once every location is
+    // installed. The OAuth chooser also authorises existing installations.
+    url.pathname = "/oauth/chooselocation"
+    url.searchParams.set("loginWindowOpenMode", "self")
     url.searchParams.set("state", state)
     url.searchParams.set("redirect_uri", GHL_OAUTH_CALLBACK)
     url.searchParams.set("client_id", config.clientId)

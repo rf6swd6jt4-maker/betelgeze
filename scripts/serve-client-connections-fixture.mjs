@@ -3,7 +3,8 @@ import { createServer } from "node:http"
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
-import { createRequire } from "node:module"
+import { createRequire, stripTypeScriptTypes } from "node:module"
+const { ghlPopupResponse } = await import("data:text/javascript;base64," + Buffer.from(stripTypeScriptTypes(readFileSync("lib/ghl-oauth/popup-response.ts", "utf8"))).toString("base64"))
 import postcss from "postcss"
 import tailwind from "@tailwindcss/postcss"
 const require = createRequire(import.meta.url)
@@ -29,8 +30,12 @@ window.account={relationshipId:'relationship',clientName:'Synthetic Client',busi
     }, (error, stats) => error || stats.hasErrors() ? fail(error ?? Error(stats.toString({ all: false, errors: true }))) : done(readFileSync(join(directory, "bundle.js")))))
     const css = await cssPromise
     const html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style.css"></head><body data-workspace-tab-active="true" class="bg-neutral-950 text-white"><div id="root"></div><script src="/bundle.js"></script></body></html>'
-    const server = createServer((request, response) => {
+    const server = createServer(async (request, response) => {
         const url = new URL(request.url, "http://127.0.0.1"), path = url.pathname
+        if (path === "/oauth-fixture-callback") {
+            const result = ghlPopupResponse(url.searchParams.get("state"), true)
+            response.writeHead(result.status, Object.fromEntries(result.headers)); response.end(await result.text()); return
+        }
         if (path.startsWith("/api/")) { response.writeHead(200, { "Content-Type": "application/json" }); response.end('{"calendars":[{"id":"calendar123456789","name":"Visits"},{"id":"secondcalendar123","name":"Estimates"}]}'); return }
         const host = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style.css"></head><body class="bg-neutral-950 text-white"><button id="outside" style="padding:16px">Uncovered control</button><iframe name="betelgeze-tab:transfer-fixture" title="Retained transfer tab" src="/frame${url.search}" style="width:100%;height:750px;border:0"></iframe></body></html>`
         response.writeHead(200, { "Content-Type": path === "/bundle.js" ? "text/javascript" : path === "/style.css" ? "text/css" : path.endsWith(".svg") ? "image/svg+xml" : "text/html", "Cache-Control": "no-store", "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:" })

@@ -19,7 +19,7 @@ function fixture() {
     Object.assign(process.env, { GHL_OAUTH_ENABLED: "true", GHL_OAUTH_CLIENT_ID: "synthetic-client", GHL_OAUTH_CLIENT_SECRET: "synthetic-client-secret", GHL_OAUTH_APP_ID: "synthetic-app", GHL_OAUTH_INSTALL_URL: "https://marketplace.gohighlevel.com/oauth/chooselocation" })
     const calls: Array<{ action: string; input: Record<string, unknown> }> = []
     const jar = new Map<string, string>(), cookieOptions: Record<string, unknown>[] = []
-    let activeUser = id(2), exchanges = 0, phase = "authorizing"
+    let activeUser = id(2), exchanges = 0, phase = "authorizing", readFailure: string | null = null
     const attempt: Record<string, unknown> = { workspace_id: id(1), workspace_slug: "fixture", relationship_id: id(3), user_id: id(2), choices: [{ id: "location123456789", name: "Fixture" }], limited: false, credential_encrypted: null }
     const token = { accessToken: "synthetic-access-token", refreshToken: "synthetic-refresh-token", expiresAt: new Date(Date.now() + 86400000).toISOString(), userType: "Location", locationId: "location123456789", companyId: "company123456789", scope: "fixture" }
     let exchange: () => Promise<typeof token> = async () => token
@@ -47,7 +47,7 @@ function fixture() {
             const { p_action: action, p_input: input } = params; calls.push({ action: `${name}:${action}`, input })
             if (name === "ghl_appointment_setup") return { data: { failure: "portal" } }
             if (action === "prepare") return { data: { accepted: true } }
-            if (action === "read") return { data: { ...attempt, phase } }
+            if (action === "read") return { data: readFailure ? { failure: readFailure } : { ...attempt, phase } }
             if (action === "transition") {
                 if (phase !== input.from) return { data: { failure: "phase" } }
                 phase = String(input.to)
@@ -63,10 +63,11 @@ function fixture() {
     const code = ts.transpileModule(readFileSync("lib/ghl-oauth/server.ts", "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
     new Function("require", "module", "exports", "console", code)((path: string) => path in mocks ? mocks[path] : require(path), compiled, compiled.exports, { error: (...values: unknown[]) => diagnostics.push(values) })
     const api = compiled.exports as typeof import("../lib/ghl-oauth/server")
-    return { api, calls, jar, cookieOptions, diagnostics, exchanges: () => exchanges, phase: () => phase, user: (value: string) => { activeUser = value }, exchange: (value: typeof exchange) => { exchange = value }, list: (value: typeof list) => { list = value }, locationGrant: (value: typeof locationGrant) => { locationGrant = value }, locationExchanges: () => locationExchanges, token }
+    return { api, calls, jar, cookieOptions, diagnostics, readFailure: (value: string) => { readFailure = value }, exchanges: () => exchanges, phase: () => phase, user: (value: string) => { activeUser = value }, exchange: (value: typeof exchange) => { exchange = value }, list: (value: typeof list) => { list = value }, locationGrant: (value: typeof locationGrant) => { locationGrant = value }, locationExchanges: () => locationExchanges, token }
 }
 async function start(f: ReturnType<typeof fixture>) {
     const result = await f.api.startGhlConnection("fixture", { relationshipId: id(3), expectedRevision: null })
+    assert.ok(result.authorizationUrl)
     return new URL(result.authorizationUrl).searchParams.get("state")!
 }
 test("the OAuth browser binding is private, secure, bounded and cannot be reused from another browser", async () => {
@@ -137,4 +138,41 @@ test("a location-grant failure requires new authorization and logs no provider b
     assert.equal(f.phase(), "failed")
     assert.equal(f.locationExchanges(), 1)
     assert.deepEqual(f.diagnostics, [["ghl_connection_step_failed", { step: "location_token", code: "response" }]])
+})
+
+test("reopening unfinished setup resumes the same browser-bound grant without new authorization", async () => {
+    const f = fixture(), state = await start(f)
+    await f.api.completeGhlAuthorization(state, "code", false)
+    const originalCookie = [...f.jar.values()]
+    for (const phase of ["ready", "selected"]) {
+        if (phase === "selected") await f.api.selectGhlLocation("fixture", "location123456789")
+        const before = f.calls.filter(call => call.action.endsWith(":prepare")).length
+        assert.deepEqual(await f.api.startGhlConnection("fixture", { relationshipId: id(3), expectedRevision: null }), { resume: true })
+        assert.equal(f.calls.filter(call => call.action.endsWith(":prepare")).length, before)
+        assert.deepEqual([...f.jar.values()], originalCookie)
+    }
+    assert.equal(f.exchanges(), 1)
+})
+test("resume never returns a grant belonging to another client or signed-in user", async () => {
+    for (const change of ["client", "user"]) {
+        const f = fixture(), state = await start(f)
+        await f.api.completeGhlAuthorization(state, "code", false)
+        if (change === "user") f.user(id(99))
+        const result = await f.api.startGhlConnection("fixture", { relationshipId: change === "client" ? id(99) : id(3), expectedRevision: null })
+        assert.ok(result.authorizationUrl)
+        assert.equal(result.resume, undefined)
+        assert.equal(f.exchanges(), 1)
+    }
+})
+
+test("a read outage preserves the unfinished grant while an expired attempt may start afresh", async () => {
+    for (const failure of ["unavailable", "expired"]) {
+        const f = fixture(), state = await start(f)
+        await f.api.completeGhlAuthorization(state, "code", false)
+        f.readFailure(failure)
+        const pending = f.api.startGhlConnection("fixture", { relationshipId: id(3), expectedRevision: null })
+        if (failure === "expired") assert.ok((await pending).authorizationUrl)
+        else await assert.rejects(pending)
+        assert.equal(f.calls.filter(call => call.action.endsWith(":prepare")).length, failure === "expired" ? 2 : 1)
+    }
 })

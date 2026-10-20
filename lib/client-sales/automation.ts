@@ -813,6 +813,28 @@ async function sendLegacyOnboardingLink(input: {
     }
 }
 
+async function recordReturningWhatsAppConfirmation(sale: ClientSale, input: ConfirmationInput) {
+    if (!sale.relationship_id) return
+    // These completed-sale branches still consume the webhook. Persist its
+    // actual reply before skipping or recovering onboarding, just as the
+    // initial confirmation path does. Replays must not replace history.
+    const { error } = await supabaseAdmin.from("client_messages").upsert({
+        workspace_id: sale.workspace_id,
+        client_id: sale.client_id,
+        relationship_id: sale.relationship_id,
+        direction: "inbound",
+        provider: "meta_whatsapp",
+        provider_message_id: input.messageId ?? null,
+        whatsapp_message_id: input.messageId ?? null,
+        from_address: input.fromAddress,
+        body: input.body,
+        status: "whatsapp_consent_confirmed",
+        sender_kind: "client",
+        raw_payload: input.rawPayload,
+    }, { onConflict: "provider,provider_message_id", ignoreDuplicates: true })
+    if (error) throw new Error(`Could not save the WhatsApp confirmation reply: ${error.message}`)
+}
+
 export async function handleSaleConsentConfirmation({
     workspaceId,
     fromAddress,
@@ -833,6 +855,7 @@ export async function handleSaleConsentConfirmation({
     if (!sale) return { handled: false }
 
     if (sale.service_scope === "selected_services" && sale.consent_confirmed_at && sale.onboarding_session_id && sale.relationship_id) {
+        if (provider === "meta_whatsapp") await recordReturningWhatsAppConfirmation(sale, { workspaceId, fromAddress, messageId, body, rawPayload })
         const recovered = await retrySelectedServiceOnboardingLink(workspaceId,sale.relationship_id,sale.id)
         return {handled:true,ok:recovered.ok}
     }
@@ -843,6 +866,7 @@ export async function handleSaleConsentConfirmation({
 
     const flow = getSaleFlow(sale.raw_payload)
     if (flow === "onboarding_payment_gate" && ["paid", "onboarding_payment_pending", "onboarding_link_sent"].includes(sale.status)) {
+        if (provider === "meta_whatsapp") await recordReturningWhatsAppConfirmation(sale, { workspaceId, fromAddress, messageId, body, rawPayload })
         return { handled: true, ok: true, skipped: true }
     }
 

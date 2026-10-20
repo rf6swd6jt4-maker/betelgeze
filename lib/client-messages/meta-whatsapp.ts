@@ -18,6 +18,8 @@ type SendMetaWhatsAppTemplateInput = {
     languageCode: string
     components?: unknown[]
     callbackData?: string | null
+    signal?: AbortSignal
+    expectedWabaId?: string
 }
 
 type SendMetaWhatsAppMediaInput = {
@@ -299,10 +301,13 @@ export async function sendMetaWhatsAppTemplate({
     languageCode,
     components,
     callbackData,
+    signal,
+    expectedWabaId,
 }: SendMetaWhatsAppTemplateInput) {
     let config: Awaited<ReturnType<typeof metaConfig>>
     try {
         config = await metaConfig(workspaceId)
+        if (expectedWabaId && (!("waba_id" in config) || config.waba_id !== expectedWabaId)) throw new Error("The WhatsApp business account changed before template dispatch.")
     } catch (error) {
         throw new MetaWhatsAppSendError(error instanceof Error ? error.message : "WhatsApp is not configured", true)
     }
@@ -315,6 +320,7 @@ export async function sendMetaWhatsAppTemplate({
             `https://graph.facebook.com/v25.0/${phoneNumberId}/messages`,
             {
             method: "POST",
+            signal,
             headers: {
                 Authorization: `Bearer ${accessToken}`,
                 "Content-Type": "application/json",

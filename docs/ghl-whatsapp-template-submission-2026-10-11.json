@@ -1,0 +1,969 @@
+{
+  "schema_version": 1,
+  "prepared_on": "2026-10-11",
+  "artifact_kind": "WHATSAPP_TEMPLATE_SUBMISSION_CONTRACT",
+  "overall_submission_status": "SUBMITTED_PENDING_REVIEW",
+  "purpose": "Seven factual B2B calendar-service notifications to the business client, such as Jason, about appointments in their connected GHL calendar. The appointment contact is not the message recipient.",
+  "requested_category": "UTILITY",
+  "language": "en_US",
+  "parameter_format": "POSITIONAL",
+  "submission_notes": [
+    "All seven templates were submitted through authenticated Safari WhatsApp Manager on 2026-10-11. Each provider detail page was independently verified as In review, Utility, English (US), with its template ID. No message delivery was enabled or tested.",
+    "All examples are synthetic. They do not represent a real appointment, recipient consent, provider acceptance or a usable access token.",
+    "Meta decides the approved category and status. Utility submission and approval do not guarantee delivery.",
+    "The View appointment destination is a proposed route contract to implement while template review is pending. This file does not assert that the route or sample URL currently works.",
+    "Examples use Eastern Daylight Time to match the verified GHL location timezone US/Eastern for October dates. Production values must be derived from the verified appointment/calendar timezone, not hardcoded from samples.",
+    "Provider statuses were observed in WhatsApp Manager, not retrieved through the Graph API. PENDING below normalizes the UI label In review. submitted_at uses date precision; verified_at records the evidence capture completion time.",
+    "Custom message validity was explicitly set to 1 hour for lifecycle changes and 30 minutes for the reminder. Link tracking was disabled. Expiry limits delayed delivery but does not replace application-level supersession or reconciliation."
+  ],
+  "button_contract": {
+    "type": "URL",
+    "text": "View appointment",
+    "url": "https://portal.scaylup.com/appointment/{{1}}",
+    "synthetic_full_url_example": "https://portal.scaylup.com/appointment/0000000000000000000000000000000000000000000000000000000000000001",
+    "dynamic_parameter_meaning": "Opaque authorized appointment-summary reference after the fixed URL prefix; the sample is a 64-character hexadecimal value consisting of 63 zero digits followed by 1.",
+    "route_status": "PROPOSED_NOT_IMPLEMENTED_OR_VERIFIED",
+    "required_behavior": "Open the exact relationship-authorized appointment summary, preserve identity across ordinary reschedules, and show retained historical state after cancellation or deletion. Existing portal revocation and access rules must still apply."
+  },
+  "content_contract": [
+    "Variable values must be factual, bounded and mapped from authorized retained appointment/contact data.",
+    "Use sequential body positions starting at 1 for each template; URL-button parameter numbering is independent and also starts at 1.",
+    "Do not add marketing language, offers, upsells, engagement prompts or unrestricted promotional content to dynamic details.",
+    "Distinguish absent optional source data from a failed lookup. Essential information retrieval failures must not become invented values or successful empty records.",
+    "Capture and validate realistic complete body lengths and parameter formatting before delivery. Submission samples are not evidence that every possible booking answer fits.",
+    "Update recorded and Change recorded describe the retained update, not delivery time. Reminder generated describes the validated reminder snapshot.",
+    "Apply event precedence and supersession so reschedule, cancellation and removal do not produce conflicting stale notices or obsolete reminders."
+  ],
+  "templates": [
+    {
+      "name": "be_appointment_added",
+      "submission_status": "SUBMITTED",
+      "submitted_at": "2026-10-11",
+      "meta_template_id": "1415800937309351",
+      "meta_status": "PENDING",
+      "meta_category": "UTILITY",
+      "submission_evidence": {
+        "source": "Safari native UI, WhatsApp Manager",
+        "ui_status": "In review",
+        "ui_category": "Utility",
+        "ui_language": "English (US)",
+        "detail_url": "https://business.facebook.com/latest/whatsapp_manager/template_details/?business_id=27370488859306956&tab=template-details&childRoute=CAPI&id=1415800937309351&nav_ref=whatsapp_manager&asset_id=1928719317836909",
+        "verification": "Creation result confirmed submission; template list and individual template detail page confirmed persisted name, provider ID, category, language and review status."
+      },
+      "delivery_enabled": false,
+      "trigger_contract": "A verified new appointment is added to the connected calendar, including a verified move into that calendar.",
+      "body_variables": [
+        {
+          "position": 1,
+          "placeholder": "{{1}}",
+          "name": "calendar_name",
+          "meaning": "Name of the connected calendar to which this notification applies.",
+          "synthetic_example": "Consultations"
+        },
+        {
+          "position": 2,
+          "placeholder": "{{2}}",
+          "name": "contact_name",
+          "meaning": "Name of the person associated with the appointment; this person is not the WhatsApp recipient.",
+          "synthetic_example": "Alex Morgan"
+        },
+        {
+          "position": 3,
+          "placeholder": "{{3}}",
+          "name": "appointment_name",
+          "meaning": "Verified appointment title or type from the retained appointment record.",
+          "synthetic_example": "Window consultation"
+        },
+        {
+          "position": 4,
+          "placeholder": "{{4}}",
+          "name": "schedule",
+          "meaning": "Full appointment date, start and end times, and explicit timezone from the verified appointment snapshot.",
+          "synthetic_example": "Oct 14 2026 2:30-3:00 PM EDT (UTC-04:00)"
+        },
+        {
+          "position": 5,
+          "placeholder": "{{5}}",
+          "name": "status",
+          "meaning": "Verified status of the appointment when the update was recorded.",
+          "synthetic_example": "Confirmed"
+        },
+        {
+          "position": 6,
+          "placeholder": "{{6}}",
+          "name": "contact_details",
+          "meaning": "Mapped appointment-contact phone and email, where supplied; do not substitute the notification recipient's contact information.",
+          "synthetic_example": "+1 202 555 0123; alex@example.com"
+        },
+        {
+          "position": 7,
+          "placeholder": "{{7}}",
+          "name": "meeting_details",
+          "meaning": "Verified appointment medium, location or meeting instructions; a contact address must not be assumed to be the meeting location.",
+          "synthetic_example": "Phone consultation; call +1 202 555 0123"
+        },
+        {
+          "position": 8,
+          "placeholder": "{{8}}",
+          "name": "booking_details",
+          "meaning": "Factual, explicitly mapped booking information relevant to this appointment; no promotional material or unrestricted message-body content.",
+          "synthetic_example": "Window coverings; six windows; phone consultation requested"
+        },
+        {
+          "position": 9,
+          "placeholder": "{{9}}",
+          "name": "update_recorded_at",
+          "meaning": "Timestamp when this lifecycle update was durably recorded, displayed with date, time and timezone; not the WhatsApp delivery time.",
+          "synthetic_example": "Oct 11 2026 9:00 AM EDT (UTC-04:00)"
+        }
+      ],
+      "button_variables": [
+        {
+          "button_index": 0,
+          "position": 1,
+          "placeholder": "{{1}}",
+          "name": "appointment_summary_reference",
+          "meaning": "Opaque authorized reference for this exact appointment summary; not the appointment contact's phone number, provider credentials or a calendar-wide link.",
+          "synthetic_example": "0000000000000000000000000000000000000000000000000000000000000001",
+          "synthetic_full_url_example": "https://portal.scaylup.com/appointment/0000000000000000000000000000000000000000000000000000000000000001"
+        }
+      ],
+      "meta_create_payload": {
+        "name": "be_appointment_added",
+        "language": "en_US",
+        "category": "UTILITY",
+        "parameter_format": "POSITIONAL",
+        "components": [
+          {
+            "type": "BODY",
+            "text": "An appointment has been added to your connected calendar.\n\nCalendar: {{1}}\nAppointment contact: {{2}}\nAppointment: {{3}}\nDate and time: {{4}}\nStatus at update: {{5}}\nContact details: {{6}}\nMeeting details: {{7}}\nBooking details: {{8}}\nUpdate recorded: {{9}}\n\nYou can view the appointment summary and latest status below.",
+            "example": {
+              "body_text": [
+                [
+                  "Consultations",
+                  "Alex Morgan",
+                  "Window consultation",
+                  "Oct 14 2026 2:30-3:00 PM EDT (UTC-04:00)",
+                  "Confirmed",
+                  "+1 202 555 0123; alex@example.com",
+                  "Phone consultation; call +1 202 555 0123",
+                  "Window coverings; six windows; phone consultation requested",
+                  "Oct 11 2026 9:00 AM EDT (UTC-04:00)"
+                ]
+              ]
+            }
+          },
+          {
+            "type": "BUTTONS",
+            "buttons": [
+              {
+                "type": "URL",
+                "text": "View appointment",
+                "url": "https://portal.scaylup.com/appointment/{{1}}",
+                "example": [
+                  "https://portal.scaylup.com/appointment/0000000000000000000000000000000000000000000000000000000000000001"
+                ]
+              }
+            ]
+          }
+        ],
+        "message_send_ttl_seconds": 3600
+      },
+      "rendered_synthetic_body": "An appointment has been added to your connected calendar.\n\nCalendar: Consultations\nAppointment contact: Alex Morgan\nAppointment: Window consultation\nDate and time: Oct 14 2026 2:30-3:00 PM EDT (UTC-04:00)\nStatus at update: Confirmed\nContact details: +1 202 555 0123; alex@example.com\nMeeting details: Phone consultation; call +1 202 555 0123\nBooking details: Window coverings; six windows; phone consultation requested\nUpdate recorded: Oct 11 2026 9:00 AM EDT (UTC-04:00)\n\nYou can view the appointment summary and latest status below.",
+      "meta_language": "en_US",
+      "verified_at": "2026-10-11T20:58:36.411603+00:00",
+      "submitted_settings": {
+        "header": "NONE",
+        "footer": "",
+        "variable_type": "Number",
+        "button_text": "View appointment",
+        "button_url_type": "Dynamic",
+        "button_url": "https://portal.scaylup.com/appointment/{{1}}",
+        "link_tracking_enabled": false,
+        "message_send_ttl_seconds": 3600
+      }
+    },
+    {
+      "name": "be_appointment_rescheduled",
+      "submission_status": "SUBMITTED",
+      "submitted_at": "2026-10-11",
+      "meta_template_id": "1796403754961389",
+      "meta_status": "PENDING",
+      "meta_category": "UTILITY",
+      "submission_evidence": {
+        "source": "Safari native UI, WhatsApp Manager",
+        "ui_status": "In review",
+        "ui_category": "Utility",
+        "ui_language": "English (US)",
+        "detail_url": "https://business.facebook.com/latest/whatsapp_manager/template_details/?business_id=27370488859306956&tab=template-details&childRoute=CAPI&id=1796403754961389&nav_ref=whatsapp_manager&asset_id=1928719317836909",
+        "verification": "Creation result confirmed submission; template list and individual template detail page confirmed persisted name, provider ID, category, language and review status."
+      },
+      "delivery_enabled": false,
+      "trigger_contract": "A verified start or end time changes for an existing appointment; compare retained previous and updated versions.",
+      "body_variables": [
+        {
+          "position": 1,
+          "placeholder": "{{1}}",
+          "name": "calendar_name",
+          "meaning": "Name of the connected calendar to which this notification applies.",
+          "synthetic_example": "Consultations"
+        },
+        {
+          "position": 2,
+          "placeholder": "{{2}}",
+          "name": "contact_name",
+          "meaning": "Name of the person associated with the appointment; this person is not the WhatsApp recipient.",
+          "synthetic_example": "Alex Morgan"
+        },
+        {
+          "position": 3,
+          "placeholder": "{{3}}",
+          "name": "previous_schedule",
+          "meaning": "Full date, start and end times, and timezone from the retained previous appointment version.",
+          "synthetic_example": "Oct 14 2026 2:30-3:00 PM EDT (UTC-04:00)"
+        },
+        {
+          "position": 4,
+          "placeholder": "{{4}}",
+          "name": "current_schedule",
+          "meaning": "Full replacement date, start and end times, and timezone from the verified rescheduled appointment version.",
+          "synthetic_example": "Oct 15 2026 2:30-3:00 PM EDT (UTC-04:00)"
+        },
+        {
+          "position": 5,
+          "placeholder": "{{5}}",
+          "name": "contact_details",
+          "meaning": "Mapped appointment-contact phone and email, where supplied; do not substitute the notification recipient's contact information.",
+          "synthetic_example": "+1 202 555 0123; alex@example.com"
+        },
+        {
+          "position": 6,
+          "placeholder": "{{6}}",
+          "name": "meeting_details",
+          "meaning": "Verified appointment medium, location or meeting instructions; a contact address must not be assumed to be the meeting location.",
+          "synthetic_example": "Phone consultation; call +1 202 555 0123"
+        },
+        {
+          "position": 7,
+          "placeholder": "{{7}}",
+          "name": "booking_details",
+          "meaning": "Factual, explicitly mapped booking information relevant to this appointment; no promotional material or unrestricted message-body content.",
+          "synthetic_example": "Window coverings; six windows; phone consultation requested"
+        },
+        {
+          "position": 8,
+          "placeholder": "{{8}}",
+          "name": "update_recorded_at",
+          "meaning": "Timestamp when this lifecycle update was durably recorded, displayed with date, time and timezone; not the WhatsApp delivery time.",
+          "synthetic_example": "Oct 11 2026 9:00 AM EDT (UTC-04:00)"
+        }
+      ],
+      "button_variables": [
+        {
+          "button_index": 0,
+          "position": 1,
+          "placeholder": "{{1}}",
+          "name": "appointment_summary_reference",
+          "meaning": "Opaque authorized reference for this exact appointment summary; not the appointment contact's phone number, provider credentials or a calendar-wide link.",
+          "synthetic_example": "0000000000000000000000000000000000000000000000000000000000000001",
+          "synthetic_full_url_example": "https://portal.scaylup.com/appointment/0000000000000000000000000000000000000000000000000000000000000001"
+        }
+      ],
+      "meta_create_payload": {
+        "name": "be_appointment_rescheduled",
+        "language": "en_US",
+        "category": "UTILITY",
+        "parameter_format": "POSITIONAL",
+        "components": [
+          {
+            "type": "BODY",
+            "text": "An appointment in your connected calendar has been rescheduled.\n\nCalendar: {{1}}\nAppointment contact: {{2}}\nPrevious date and time: {{3}}\nNew date and time: {{4}}\nContact details: {{5}}\nMeeting details: {{6}}\nBooking details: {{7}}\nUpdate recorded: {{8}}\n\nThe new date and time replace the previous schedule. You can view the appointment summary below.",
+            "example": {
+              "body_text": [
+                [
+                  "Consultations",
+                  "Alex Morgan",
+                  "Oct 14 2026 2:30-3:00 PM EDT (UTC-04:00)",
+                  "Oct 15 2026 2:30-3:00 PM EDT (UTC-04:00)",
+                  "+1 202 555 0123; alex@example.com",
+                  "Phone consultation; call +1 202 555 0123",
+                  "Window coverings; six windows; phone consultation requested",
+                  "Oct 11 2026 9:00 AM EDT (UTC-04:00)"
+                ]
+              ]
+            }
+          },
+          {
+            "type": "BUTTONS",
+            "buttons": [
+              {
+                "type": "URL",
+                "text": "View appointment",
+                "url": "https://portal.scaylup.com/appointment/{{1}}",
+                "example": [
+                  "https://portal.scaylup.com/appointment/0000000000000000000000000000000000000000000000000000000000000001"
+                ]
+              }
+            ]
+          }
+        ],
+        "message_send_ttl_seconds": 3600
+      },
+      "rendered_synthetic_body": "An appointment in your connected calendar has been rescheduled.\n\nCalendar: Consultations\nAppointment contact: Alex Morgan\nPrevious date and time: Oct 14 2026 2:30-3:00 PM EDT (UTC-04:00)\nNew date and time: Oct 15 2026 2:30-3:00 PM EDT (UTC-04:00)\nContact details: +1 202 555 0123; alex@example.com\nMeeting details: Phone consultation; call +1 202 555 0123\nBooking details: Window coverings; six windows; phone consultation requested\nUpdate recorded: Oct 11 2026 9:00 AM EDT (UTC-04:00)\n\nThe new date and time replace the previous schedule. You can view the appointment summary below.",
+      "meta_language": "en_US",
+      "verified_at": "2026-10-11T20:58:36.411603+00:00",
+      "submitted_settings": {
+        "header": "NONE",
+        "footer": "",
+        "variable_type": "Number",
+        "button_text": "View appointment",
+        "button_url_type": "Dynamic",
+        "button_url": "https://portal.scaylup.com/appointment/{{1}}",
+        "link_tracking_enabled": false,
+        "message_send_ttl_seconds": 3600
+      }
+    },
+    {
+      "name": "be_appointment_cancelled",
+      "submission_status": "SUBMITTED",
+      "submitted_at": "2026-10-11",
+      "meta_template_id": "2521941414984943",
+      "meta_status": "PENDING",
+      "meta_category": "UTILITY",
+      "submission_evidence": {
+        "source": "Safari native UI, WhatsApp Manager",
+        "ui_status": "In review",
+        "ui_category": "Utility",
+        "ui_language": "English (US)",
+        "detail_url": "https://business.facebook.com/latest/whatsapp_manager/template_details/?business_id=27370488859306956&tab=template-details&childRoute=CAPI&id=2521941414984943&nav_ref=whatsapp_manager&asset_id=1928719317836909",
+        "verification": "Creation result confirmed submission; template list and individual template detail page confirmed persisted name, provider ID, category, language and review status."
+      },
+      "delivery_enabled": false,
+      "trigger_contract": "The verified appointment status changes to cancelled. Deletion or a missing lookup alone does not qualify.",
+      "body_variables": [
+        {
+          "position": 1,
+          "placeholder": "{{1}}",
+          "name": "calendar_name",
+          "meaning": "Name of the connected calendar to which this notification applies.",
+          "synthetic_example": "Consultations"
+        },
+        {
+          "position": 2,
+          "placeholder": "{{2}}",
+          "name": "contact_name",
+          "meaning": "Name of the person associated with the appointment; this person is not the WhatsApp recipient.",
+          "synthetic_example": "Alex Morgan"
+        },
+        {
+          "position": 3,
+          "placeholder": "{{3}}",
+          "name": "appointment_name",
+          "meaning": "Verified appointment title or type from the retained appointment record.",
+          "synthetic_example": "Window consultation"
+        },
+        {
+          "position": 4,
+          "placeholder": "{{4}}",
+          "name": "previous_schedule",
+          "meaning": "Full date, start and end times, and timezone from the retained previous appointment version.",
+          "synthetic_example": "Oct 14 2026 2:30-3:00 PM EDT (UTC-04:00)"
+        },
+        {
+          "position": 5,
+          "placeholder": "{{5}}",
+          "name": "contact_details",
+          "meaning": "Mapped appointment-contact phone and email, where supplied; do not substitute the notification recipient's contact information.",
+          "synthetic_example": "+1 202 555 0123; alex@example.com"
+        },
+        {
+          "position": 6,
+          "placeholder": "{{6}}",
+          "name": "update_recorded_at",
+          "meaning": "Timestamp when this lifecycle update was durably recorded, displayed with date, time and timezone; not the WhatsApp delivery time.",
+          "synthetic_example": "Oct 11 2026 9:00 AM EDT (UTC-04:00)"
+        }
+      ],
+      "button_variables": [
+        {
+          "button_index": 0,
+          "position": 1,
+          "placeholder": "{{1}}",
+          "name": "appointment_summary_reference",
+          "meaning": "Opaque authorized reference for this exact appointment summary; not the appointment contact's phone number, provider credentials or a calendar-wide link.",
+          "synthetic_example": "0000000000000000000000000000000000000000000000000000000000000001",
+          "synthetic_full_url_example": "https://portal.scaylup.com/appointment/0000000000000000000000000000000000000000000000000000000000000001"
+        }
+      ],
+      "meta_create_payload": {
+        "name": "be_appointment_cancelled",
+        "language": "en_US",
+        "category": "UTILITY",
+        "parameter_format": "POSITIONAL",
+        "components": [
+          {
+            "type": "BODY",
+            "text": "An appointment in your connected calendar has been cancelled.\n\nCalendar: {{1}}\nAppointment contact: {{2}}\nAppointment: {{3}}\nPreviously scheduled for: {{4}}\nContact details: {{5}}\nUpdate recorded: {{6}}\n\nThe recorded change is a cancellation. You can view the saved appointment details and latest status below.",
+            "example": {
+              "body_text": [
+                [
+                  "Consultations",
+                  "Alex Morgan",
+                  "Window consultation",
+                  "Oct 14 2026 2:30-3:00 PM EDT (UTC-04:00)",
+                  "+1 202 555 0123; alex@example.com",
+                  "Oct 11 2026 9:00 AM EDT (UTC-04:00)"
+                ]
+              ]
+            }
+          },
+          {
+            "type": "BUTTONS",
+            "buttons": [
+              {
+                "type": "URL",
+                "text": "View appointment",
+                "url": "https://portal.scaylup.com/appointment/{{1}}",
+                "example": [
+                  "https://portal.scaylup.com/appointment/0000000000000000000000000000000000000000000000000000000000000001"
+                ]
+              }
+            ]
+          }
+        ],
+        "message_send_ttl_seconds": 3600
+      },
+      "rendered_synthetic_body": "An appointment in your connected calendar has been cancelled.\n\nCalendar: Consultations\nAppointment contact: Alex Morgan\nAppointment: Window consultation\nPreviously scheduled for: Oct 14 2026 2:30-3:00 PM EDT (UTC-04:00)\nContact details: +1 202 555 0123; alex@example.com\nUpdate recorded: Oct 11 2026 9:00 AM EDT (UTC-04:00)\n\nThe recorded change is a cancellation. You can view the saved appointment details and latest status below.",
+      "meta_language": "en_US",
+      "verified_at": "2026-10-11T20:58:36.411603+00:00",
+      "submitted_settings": {
+        "header": "NONE",
+        "footer": "",
+        "variable_type": "Number",
+        "button_text": "View appointment",
+        "button_url_type": "Dynamic",
+        "button_url": "https://portal.scaylup.com/appointment/{{1}}",
+        "link_tracking_enabled": false,
+        "message_send_ttl_seconds": 3600
+      }
+    },
+    {
+      "name": "be_appointment_removed",
+      "submission_status": "SUBMITTED",
+      "submitted_at": "2026-10-11",
+      "meta_template_id": "2622511831545035",
+      "meta_status": "PENDING",
+      "meta_category": "UTILITY",
+      "submission_evidence": {
+        "source": "Safari native UI, WhatsApp Manager",
+        "ui_status": "In review",
+        "ui_category": "Utility",
+        "ui_language": "English (US)",
+        "detail_url": "https://business.facebook.com/latest/whatsapp_manager/template_details/?business_id=27370488859306956&tab=template-details&childRoute=CAPI&id=2622511831545035&nav_ref=whatsapp_manager&asset_id=1928719317836909",
+        "verification": "Creation result confirmed submission; template list and individual template detail page confirmed persisted name, provider ID, category, language and review status."
+      },
+      "delivery_enabled": false,
+      "trigger_contract": "A verified deletion or move out of the connected calendar. Preserve the last authorized appointment version; do not infer cancellation or a reason.",
+      "body_variables": [
+        {
+          "position": 1,
+          "placeholder": "{{1}}",
+          "name": "calendar_name",
+          "meaning": "Name of the connected calendar to which this notification applies.",
+          "synthetic_example": "Consultations"
+        },
+        {
+          "position": 2,
+          "placeholder": "{{2}}",
+          "name": "contact_name",
+          "meaning": "Name of the person associated with the appointment; this person is not the WhatsApp recipient.",
+          "synthetic_example": "Alex Morgan"
+        },
+        {
+          "position": 3,
+          "placeholder": "{{3}}",
+          "name": "appointment_name",
+          "meaning": "Verified appointment title or type from the retained appointment record.",
+          "synthetic_example": "Window consultation"
+        },
+        {
+          "position": 4,
+          "placeholder": "{{4}}",
+          "name": "previous_schedule",
+          "meaning": "Full date, start and end times, and timezone from the retained previous appointment version.",
+          "synthetic_example": "Oct 14 2026 2:30-3:00 PM EDT (UTC-04:00)"
+        },
+        {
+          "position": 5,
+          "placeholder": "{{5}}",
+          "name": "change_recorded_at",
+          "meaning": "Timestamp when the verified removal or move out of this calendar was durably recorded; this value is a timestamp, not an inferred deletion reason.",
+          "synthetic_example": "Oct 11 2026 9:00 AM EDT (UTC-04:00)"
+        }
+      ],
+      "button_variables": [
+        {
+          "button_index": 0,
+          "position": 1,
+          "placeholder": "{{1}}",
+          "name": "appointment_summary_reference",
+          "meaning": "Opaque authorized reference for this exact appointment summary; not the appointment contact's phone number, provider credentials or a calendar-wide link.",
+          "synthetic_example": "0000000000000000000000000000000000000000000000000000000000000001",
+          "synthetic_full_url_example": "https://portal.scaylup.com/appointment/0000000000000000000000000000000000000000000000000000000000000001"
+        }
+      ],
+      "meta_create_payload": {
+        "name": "be_appointment_removed",
+        "language": "en_US",
+        "category": "UTILITY",
+        "parameter_format": "POSITIONAL",
+        "components": [
+          {
+            "type": "BODY",
+            "text": "An appointment has been removed from your connected calendar.\n\nCalendar: {{1}}\nAppointment contact: {{2}}\nAppointment: {{3}}\nPreviously scheduled for: {{4}}\nChange recorded: {{5}}\n\nYou can view the saved appointment summary below.",
+            "example": {
+              "body_text": [
+                [
+                  "Consultations",
+                  "Alex Morgan",
+                  "Window consultation",
+                  "Oct 14 2026 2:30-3:00 PM EDT (UTC-04:00)",
+                  "Oct 11 2026 9:00 AM EDT (UTC-04:00)"
+                ]
+              ]
+            }
+          },
+          {
+            "type": "BUTTONS",
+            "buttons": [
+              {
+                "type": "URL",
+                "text": "View appointment",
+                "url": "https://portal.scaylup.com/appointment/{{1}}",
+                "example": [
+                  "https://portal.scaylup.com/appointment/0000000000000000000000000000000000000000000000000000000000000001"
+                ]
+              }
+            ]
+          }
+        ],
+        "message_send_ttl_seconds": 3600
+      },
+      "rendered_synthetic_body": "An appointment has been removed from your connected calendar.\n\nCalendar: Consultations\nAppointment contact: Alex Morgan\nAppointment: Window consultation\nPreviously scheduled for: Oct 14 2026 2:30-3:00 PM EDT (UTC-04:00)\nChange recorded: Oct 11 2026 9:00 AM EDT (UTC-04:00)\n\nYou can view the saved appointment summary below.",
+      "meta_language": "en_US",
+      "verified_at": "2026-10-11T20:58:36.411603+00:00",
+      "submitted_settings": {
+        "header": "NONE",
+        "footer": "",
+        "variable_type": "Number",
+        "button_text": "View appointment",
+        "button_url_type": "Dynamic",
+        "button_url": "https://portal.scaylup.com/appointment/{{1}}",
+        "link_tracking_enabled": false,
+        "message_send_ttl_seconds": 3600
+      }
+    },
+    {
+      "name": "be_appointment_details_updated",
+      "submission_status": "SUBMITTED",
+      "submitted_at": "2026-10-11",
+      "meta_template_id": "1084971824315078",
+      "meta_status": "PENDING",
+      "meta_category": "UTILITY",
+      "submission_evidence": {
+        "source": "Safari native UI, WhatsApp Manager",
+        "ui_status": "In review",
+        "ui_category": "Utility",
+        "ui_language": "English (US)",
+        "detail_url": "https://business.facebook.com/latest/whatsapp_manager/template_details/?business_id=27370488859306956&tab=template-details&childRoute=CAPI&id=1084971824315078&nav_ref=whatsapp_manager&asset_id=1928719317836909",
+        "verification": "Creation result confirmed submission; template list and individual template detail page confirmed persisted name, provider ID, category, language and review status."
+      },
+      "delivery_enabled": false,
+      "trigger_contract": "Relevant mapped appointment, meeting or contact details change, with verified before-and-after values and lifecycle precedence applied.",
+      "body_variables": [
+        {
+          "position": 1,
+          "placeholder": "{{1}}",
+          "name": "calendar_name",
+          "meaning": "Name of the connected calendar to which this notification applies.",
+          "synthetic_example": "Consultations"
+        },
+        {
+          "position": 2,
+          "placeholder": "{{2}}",
+          "name": "contact_name",
+          "meaning": "Name of the person associated with the appointment; this person is not the WhatsApp recipient.",
+          "synthetic_example": "Alex Morgan"
+        },
+        {
+          "position": 3,
+          "placeholder": "{{3}}",
+          "name": "appointment_name",
+          "meaning": "Verified appointment title or type from the retained appointment record.",
+          "synthetic_example": "Window consultation"
+        },
+        {
+          "position": 4,
+          "placeholder": "{{4}}",
+          "name": "schedule",
+          "meaning": "Full appointment date, start and end times, and explicit timezone from the verified appointment snapshot.",
+          "synthetic_example": "Oct 14 2026 2:30-3:00 PM EDT (UTC-04:00)"
+        },
+        {
+          "position": 5,
+          "placeholder": "{{5}}",
+          "name": "changed_details",
+          "meaning": "Specific verified before-and-after details from retained versions, with enough context to understand the change; use concise factual text.",
+          "synthetic_example": "Contact phone changed from +1 202 555 0123 to +1 202 555 0145"
+        },
+        {
+          "position": 6,
+          "placeholder": "{{6}}",
+          "name": "update_recorded_at",
+          "meaning": "Timestamp when this lifecycle update was durably recorded, displayed with date, time and timezone; not the WhatsApp delivery time.",
+          "synthetic_example": "Oct 11 2026 9:00 AM EDT (UTC-04:00)"
+        }
+      ],
+      "button_variables": [
+        {
+          "button_index": 0,
+          "position": 1,
+          "placeholder": "{{1}}",
+          "name": "appointment_summary_reference",
+          "meaning": "Opaque authorized reference for this exact appointment summary; not the appointment contact's phone number, provider credentials or a calendar-wide link.",
+          "synthetic_example": "0000000000000000000000000000000000000000000000000000000000000001",
+          "synthetic_full_url_example": "https://portal.scaylup.com/appointment/0000000000000000000000000000000000000000000000000000000000000001"
+        }
+      ],
+      "meta_create_payload": {
+        "name": "be_appointment_details_updated",
+        "language": "en_US",
+        "category": "UTILITY",
+        "parameter_format": "POSITIONAL",
+        "components": [
+          {
+            "type": "BODY",
+            "text": "Details have changed for an appointment in your connected calendar.\n\nCalendar: {{1}}\nAppointment contact: {{2}}\nAppointment: {{3}}\nDate and time: {{4}}\nChanged details: {{5}}\nUpdate recorded: {{6}}\n\nThe changes shown above have been saved. You can view the appointment summary below.",
+            "example": {
+              "body_text": [
+                [
+                  "Consultations",
+                  "Alex Morgan",
+                  "Window consultation",
+                  "Oct 14 2026 2:30-3:00 PM EDT (UTC-04:00)",
+                  "Contact phone changed from +1 202 555 0123 to +1 202 555 0145",
+                  "Oct 11 2026 9:00 AM EDT (UTC-04:00)"
+                ]
+              ]
+            }
+          },
+          {
+            "type": "BUTTONS",
+            "buttons": [
+              {
+                "type": "URL",
+                "text": "View appointment",
+                "url": "https://portal.scaylup.com/appointment/{{1}}",
+                "example": [
+                  "https://portal.scaylup.com/appointment/0000000000000000000000000000000000000000000000000000000000000001"
+                ]
+              }
+            ]
+          }
+        ],
+        "message_send_ttl_seconds": 3600
+      },
+      "rendered_synthetic_body": "Details have changed for an appointment in your connected calendar.\n\nCalendar: Consultations\nAppointment contact: Alex Morgan\nAppointment: Window consultation\nDate and time: Oct 14 2026 2:30-3:00 PM EDT (UTC-04:00)\nChanged details: Contact phone changed from +1 202 555 0123 to +1 202 555 0145\nUpdate recorded: Oct 11 2026 9:00 AM EDT (UTC-04:00)\n\nThe changes shown above have been saved. You can view the appointment summary below.",
+      "meta_language": "en_US",
+      "verified_at": "2026-10-11T20:58:36.411603+00:00",
+      "submitted_settings": {
+        "header": "NONE",
+        "footer": "",
+        "variable_type": "Number",
+        "button_text": "View appointment",
+        "button_url_type": "Dynamic",
+        "button_url": "https://portal.scaylup.com/appointment/{{1}}",
+        "link_tracking_enabled": false,
+        "message_send_ttl_seconds": 3600
+      }
+    },
+    {
+      "name": "be_appointment_status_updated",
+      "submission_status": "SUBMITTED",
+      "submitted_at": "2026-10-11",
+      "meta_template_id": "28383522704653151",
+      "meta_status": "PENDING",
+      "meta_category": "UTILITY",
+      "submission_evidence": {
+        "source": "Safari native UI, WhatsApp Manager",
+        "ui_status": "In review",
+        "ui_category": "Utility",
+        "ui_language": "English (US)",
+        "detail_url": "https://business.facebook.com/latest/whatsapp_manager/template_details/?business_id=27370488859306956&tab=template-details&childRoute=CAPI&id=28383522704653151&nav_ref=whatsapp_manager&asset_id=1928719317836909",
+        "verification": "Creation result confirmed submission; template list and individual template detail page confirmed persisted name, provider ID, category, language and review status."
+      },
+      "delivery_enabled": false,
+      "trigger_contract": "A verified confirmation, restoration or recorded outcome changes the appointment status. Do not duplicate the dedicated cancellation notification.",
+      "body_variables": [
+        {
+          "position": 1,
+          "placeholder": "{{1}}",
+          "name": "calendar_name",
+          "meaning": "Name of the connected calendar to which this notification applies.",
+          "synthetic_example": "Consultations"
+        },
+        {
+          "position": 2,
+          "placeholder": "{{2}}",
+          "name": "contact_name",
+          "meaning": "Name of the person associated with the appointment; this person is not the WhatsApp recipient.",
+          "synthetic_example": "Alex Morgan"
+        },
+        {
+          "position": 3,
+          "placeholder": "{{3}}",
+          "name": "appointment_name",
+          "meaning": "Verified appointment title or type from the retained appointment record.",
+          "synthetic_example": "Window consultation"
+        },
+        {
+          "position": 4,
+          "placeholder": "{{4}}",
+          "name": "schedule",
+          "meaning": "Full appointment date, start and end times, and explicit timezone from the verified appointment snapshot.",
+          "synthetic_example": "Oct 14 2026 2:30-3:00 PM EDT (UTC-04:00)"
+        },
+        {
+          "position": 5,
+          "placeholder": "{{5}}",
+          "name": "previous_status",
+          "meaning": "Verified status from the retained previous appointment version.",
+          "synthetic_example": "New"
+        },
+        {
+          "position": 6,
+          "placeholder": "{{6}}",
+          "name": "current_status",
+          "meaning": "Verified status from the retained updated appointment version.",
+          "synthetic_example": "Confirmed"
+        },
+        {
+          "position": 7,
+          "placeholder": "{{7}}",
+          "name": "update_recorded_at",
+          "meaning": "Timestamp when this lifecycle update was durably recorded, displayed with date, time and timezone; not the WhatsApp delivery time.",
+          "synthetic_example": "Oct 11 2026 9:00 AM EDT (UTC-04:00)"
+        }
+      ],
+      "button_variables": [
+        {
+          "button_index": 0,
+          "position": 1,
+          "placeholder": "{{1}}",
+          "name": "appointment_summary_reference",
+          "meaning": "Opaque authorized reference for this exact appointment summary; not the appointment contact's phone number, provider credentials or a calendar-wide link.",
+          "synthetic_example": "0000000000000000000000000000000000000000000000000000000000000001",
+          "synthetic_full_url_example": "https://portal.scaylup.com/appointment/0000000000000000000000000000000000000000000000000000000000000001"
+        }
+      ],
+      "meta_create_payload": {
+        "name": "be_appointment_status_updated",
+        "language": "en_US",
+        "category": "UTILITY",
+        "parameter_format": "POSITIONAL",
+        "components": [
+          {
+            "type": "BODY",
+            "text": "The status of an appointment in your connected calendar has changed.\n\nCalendar: {{1}}\nAppointment contact: {{2}}\nAppointment: {{3}}\nDate and time: {{4}}\nPrevious status: {{5}}\nStatus at update: {{6}}\nUpdate recorded: {{7}}\n\nYou can view the appointment summary and latest status below.",
+            "example": {
+              "body_text": [
+                [
+                  "Consultations",
+                  "Alex Morgan",
+                  "Window consultation",
+                  "Oct 14 2026 2:30-3:00 PM EDT (UTC-04:00)",
+                  "New",
+                  "Confirmed",
+                  "Oct 11 2026 9:00 AM EDT (UTC-04:00)"
+                ]
+              ]
+            }
+          },
+          {
+            "type": "BUTTONS",
+            "buttons": [
+              {
+                "type": "URL",
+                "text": "View appointment",
+                "url": "https://portal.scaylup.com/appointment/{{1}}",
+                "example": [
+                  "https://portal.scaylup.com/appointment/0000000000000000000000000000000000000000000000000000000000000001"
+                ]
+              }
+            ]
+          }
+        ],
+        "message_send_ttl_seconds": 3600
+      },
+      "rendered_synthetic_body": "The status of an appointment in your connected calendar has changed.\n\nCalendar: Consultations\nAppointment contact: Alex Morgan\nAppointment: Window consultation\nDate and time: Oct 14 2026 2:30-3:00 PM EDT (UTC-04:00)\nPrevious status: New\nStatus at update: Confirmed\nUpdate recorded: Oct 11 2026 9:00 AM EDT (UTC-04:00)\n\nYou can view the appointment summary and latest status below.",
+      "meta_language": "en_US",
+      "verified_at": "2026-10-11T20:58:36.411603+00:00",
+      "submitted_settings": {
+        "header": "NONE",
+        "footer": "",
+        "variable_type": "Number",
+        "button_text": "View appointment",
+        "button_url_type": "Dynamic",
+        "button_url": "https://portal.scaylup.com/appointment/{{1}}",
+        "link_tracking_enabled": false,
+        "message_send_ttl_seconds": 3600
+      }
+    },
+    {
+      "name": "be_appointment_reminder",
+      "submission_status": "SUBMITTED",
+      "submitted_at": "2026-10-11",
+      "meta_template_id": "4488234441393579",
+      "meta_status": "PENDING",
+      "meta_category": "UTILITY",
+      "submission_evidence": {
+        "source": "Safari native UI, WhatsApp Manager",
+        "ui_status": "In review",
+        "ui_category": "Utility",
+        "ui_language": "English (US)",
+        "detail_url": "https://business.facebook.com/latest/whatsapp_manager/template_details/?business_id=27370488859306956&tab=template-details&childRoute=CAPI&id=4488234441393579&nav_ref=whatsapp_manager&asset_id=1928719317836909",
+        "verification": "Creation result confirmed submission; template list and individual template detail page confirmed persisted name, provider ID, category, language and review status."
+      },
+      "delivery_enabled": false,
+      "trigger_contract": "A configured reminder is due for an eligible upcoming appointment. Revalidate the appointment and suppress cancelled, removed or obsolete schedules before dispatch.",
+      "body_variables": [
+        {
+          "position": 1,
+          "placeholder": "{{1}}",
+          "name": "calendar_name",
+          "meaning": "Name of the connected calendar to which this notification applies.",
+          "synthetic_example": "Consultations"
+        },
+        {
+          "position": 2,
+          "placeholder": "{{2}}",
+          "name": "contact_name",
+          "meaning": "Name of the person associated with the appointment; this person is not the WhatsApp recipient.",
+          "synthetic_example": "Alex Morgan"
+        },
+        {
+          "position": 3,
+          "placeholder": "{{3}}",
+          "name": "appointment_name",
+          "meaning": "Verified appointment title or type from the retained appointment record.",
+          "synthetic_example": "Window consultation"
+        },
+        {
+          "position": 4,
+          "placeholder": "{{4}}",
+          "name": "schedule",
+          "meaning": "Full appointment date, start and end times, and explicit timezone from the verified appointment snapshot.",
+          "synthetic_example": "Oct 14 2026 2:30-3:00 PM EDT (UTC-04:00)"
+        },
+        {
+          "position": 5,
+          "placeholder": "{{5}}",
+          "name": "contact_details",
+          "meaning": "Mapped appointment-contact phone and email, where supplied; do not substitute the notification recipient's contact information.",
+          "synthetic_example": "+1 202 555 0123; alex@example.com"
+        },
+        {
+          "position": 6,
+          "placeholder": "{{6}}",
+          "name": "meeting_details",
+          "meaning": "Verified appointment medium, location or meeting instructions; a contact address must not be assumed to be the meeting location.",
+          "synthetic_example": "Phone consultation; call +1 202 555 0123"
+        },
+        {
+          "position": 7,
+          "placeholder": "{{7}}",
+          "name": "booking_details",
+          "meaning": "Factual, explicitly mapped booking information relevant to this appointment; no promotional material or unrestricted message-body content.",
+          "synthetic_example": "Window coverings; six windows; phone consultation requested"
+        },
+        {
+          "position": 8,
+          "placeholder": "{{8}}",
+          "name": "reminder_generated_at",
+          "meaning": "Timestamp when the reminder snapshot was generated after checking the appointment's eligibility, displayed with date, time and timezone.",
+          "synthetic_example": "Oct 11 2026 9:00 AM EDT (UTC-04:00)"
+        }
+      ],
+      "button_variables": [
+        {
+          "button_index": 0,
+          "position": 1,
+          "placeholder": "{{1}}",
+          "name": "appointment_summary_reference",
+          "meaning": "Opaque authorized reference for this exact appointment summary; not the appointment contact's phone number, provider credentials or a calendar-wide link.",
+          "synthetic_example": "0000000000000000000000000000000000000000000000000000000000000001",
+          "synthetic_full_url_example": "https://portal.scaylup.com/appointment/0000000000000000000000000000000000000000000000000000000000000001"
+        }
+      ],
+      "meta_create_payload": {
+        "name": "be_appointment_reminder",
+        "language": "en_US",
+        "category": "UTILITY",
+        "parameter_format": "POSITIONAL",
+        "components": [
+          {
+            "type": "BODY",
+            "text": "This is a reminder for an appointment in your connected calendar.\n\nCalendar: {{1}}\nAppointment contact: {{2}}\nAppointment: {{3}}\nDate and time: {{4}}\nContact details: {{5}}\nMeeting details: {{6}}\nBooking details: {{7}}\nReminder generated: {{8}}\n\nYou can view the appointment summary and latest status below.",
+            "example": {
+              "body_text": [
+                [
+                  "Consultations",
+                  "Alex Morgan",
+                  "Window consultation",
+                  "Oct 14 2026 2:30-3:00 PM EDT (UTC-04:00)",
+                  "+1 202 555 0123; alex@example.com",
+                  "Phone consultation; call +1 202 555 0123",
+                  "Window coverings; six windows; phone consultation requested",
+                  "Oct 11 2026 9:00 AM EDT (UTC-04:00)"
+                ]
+              ]
+            }
+          },
+          {
+            "type": "BUTTONS",
+            "buttons": [
+              {
+                "type": "URL",
+                "text": "View appointment",
+                "url": "https://portal.scaylup.com/appointment/{{1}}",
+                "example": [
+                  "https://portal.scaylup.com/appointment/0000000000000000000000000000000000000000000000000000000000000001"
+                ]
+              }
+            ]
+          }
+        ],
+        "message_send_ttl_seconds": 1800
+      },
+      "rendered_synthetic_body": "This is a reminder for an appointment in your connected calendar.\n\nCalendar: Consultations\nAppointment contact: Alex Morgan\nAppointment: Window consultation\nDate and time: Oct 14 2026 2:30-3:00 PM EDT (UTC-04:00)\nContact details: +1 202 555 0123; alex@example.com\nMeeting details: Phone consultation; call +1 202 555 0123\nBooking details: Window coverings; six windows; phone consultation requested\nReminder generated: Oct 11 2026 9:00 AM EDT (UTC-04:00)\n\nYou can view the appointment summary and latest status below.",
+      "meta_language": "en_US",
+      "verified_at": "2026-10-11T20:58:36.411603+00:00",
+      "submitted_settings": {
+        "header": "NONE",
+        "footer": "",
+        "variable_type": "Number",
+        "button_text": "View appointment",
+        "button_url_type": "Dynamic",
+        "button_url": "https://portal.scaylup.com/appointment/{{1}}",
+        "link_tracking_enabled": false,
+        "message_send_ttl_seconds": 1800
+      }
+    }
+  ],
+  "whatsapp_business_account": {
+    "name": "ScaylUp",
+    "id": "1928719317836909",
+    "business_id": "27370488859306956"
+  },
+  "verified_at": "2026-10-11T20:58:36.411603+00:00"
+}

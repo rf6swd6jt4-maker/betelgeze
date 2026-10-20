@@ -500,6 +500,7 @@ The record-specific middle remains flexible. The header, fields, and destructive
 - Do not promote field values such as progress, trigger, source, or status into the header merely because there is room.
 - On narrow screens the metadata rail moves below the identity, wraps between whole elements, and never splits a pill or status.
 - The header owns its `border-neutral-800`, `pb-4`, and internal `gap-3`. A page must not wrap it in a second card, add another record title, or override its typography and spacing.
+- Use `surface="light"` for client-facing record summaries; it preserves the same header geometry with readable light-surface text and dividers.
 
 `DetailPageHeader` is distinct from `PanelTabHeader`: a panel-tab header names a workspace view or collection, while a detail header identifies one record. A detail route nested under a panel may retain the panel's shared tab navigation above it, but must not use a second panel heading as the record header.
 
@@ -634,7 +635,9 @@ At `lg` and above, retain the desktop sidebar preference and reserve its width i
 
 ## Client portal calendar
 
-Connected GHL portals show a month calendar in place of the BE appointment list. The in-app Appointment Setting panel and unconnected portals retain their current behavior. A date grid is a temporal view; its selected-day appointments use the shared embedded light `List`, with title and time only. Appointment briefs and editing are deferred.
+Connected GHL portals show a month calendar in place of the BE appointment list. The in-app Appointment Setting panel and unconnected portals retain their current behavior. A date grid is a temporal view; its selected-day appointments use the shared embedded light `List`, with title and time only. Editing remains deferred.
+
+Appointment links from operational messages open a single saved summary using light-surface `DetailPageHeader` and `DetailFields`. Show the saved update time, explicit calendar time zone, contact, meeting and booking details. Keep cancelled and removed records readable with their state clearly labelled. A summary capability grants access to that appointment only and must not expose a whole-portal session token. It remains tied to the current active portal session and verified agency hostname. These links add no startup fetch, polling or provider read to the existing portal calendar.
 
 Use the automatically identified GHL owner user across booking calendars; do not expose a calendar picker. Show private blocked slots as muted Busy events and cancelled appointments with a struck-through title. Use box-less month arrows, a filled today marker and a restrained selected-day outline. Small screens show appointment counts in date cells and readable times underneath for the selected day. Keep the full month above the provider cards on smaller screens; preserve Results/Files state. State the GHL location timezone and last update. Empty cached months, unloaded months and permission failures must be distinguishable. Calendar management stays read-only.
 

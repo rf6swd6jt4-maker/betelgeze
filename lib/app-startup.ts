@@ -2,7 +2,7 @@
 export const appStartupBootstrap = String.raw`(() => {
   const root = document.documentElement;
   const path = window.location.pathname;
-  const client = /^\/(?:client-portal|onboarding)(?:\/|$)/.test(path) || /^\/[a-f0-9]{64}\/?$/i.test(path);
+  const client = /^\/(?:client-portal|onboarding)(?:\/|$)/.test(path) || /^\/(?:appointment\/)?[a-f0-9]{64}\/?$/i.test(path);
   const frame = window.self !== window.top;
   const appHost = /^(?:app\.betelgeze\.com|dashboard\.betelgeze\.com|localhost|127\.0\.0\.1)$/.test(window.location.hostname);
   root.dataset.appStartup = client ? "client" : frame ? "panel" : appHost ? "launch" : "none";

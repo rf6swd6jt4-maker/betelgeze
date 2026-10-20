@@ -24,7 +24,7 @@ test("BE launch diamond is confined to the top-level app document", () => {
 })
 test("all public token surfaces suppress BE branding, including custom-domain rewrites", () => {
     const token = "a".repeat(64)
-    for (const path of [`/client-portal/session/${token}`, `/onboarding/session/${token}`, `/onboarding/smsoptin`, `/${token}`]) {
+    for (const path of [`/client-portal/session/${token}`, `/client-portal/appointment/${token}`, `/appointment/${token}`, `/onboarding/session/${token}`, `/onboarding/smsoptin`, `/${token}`]) {
         assert.equal(boot(path).root.dataset.appStartup, "client")
         assert.equal(boot(path, "client.example.com").root.dataset.appStartup, "client")
     }

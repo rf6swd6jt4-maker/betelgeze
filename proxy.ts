@@ -319,6 +319,19 @@ export async function proxy(request: NextRequest) {
             if (workspace.surface === "onboarding" && platformSessionToken) {
                 return withSession(withRedirect(request, `/${platformSessionToken[1]}`))
             }
+            // Appointment capabilities grant only one retained summary, never a
+            // general portal session. Resolve them only on a verified portal host.
+            const appointmentToken = path.match(/^\/appointment\/([a-f0-9]{64})\/?$/i)
+            if (workspace.surface === "client_portal" && workspace.status === "verified" && appointmentToken) {
+                const headers = requestHeadersWithCurrentPath(request)
+                headers.set("x-betelgeze-workspace-slug", workspace.slug)
+                headers.set("x-betelgeze-custom-client-portal-domain", domain)
+                const response = withRewrite(request, `/client-portal/appointment/${appointmentToken[1]}`, headers)
+                response.headers.set("Cache-Control", "private, no-store")
+                response.headers.set("Referrer-Policy", "no-referrer")
+                response.headers.set("X-Robots-Tag", "noindex, nofollow, noarchive")
+                return response
+            }
             if (!customToken) return new NextResponse("Not Found", { status: 404 })
             const headers = requestHeadersWithCurrentPath(request)
             headers.set("x-betelgeze-workspace-slug", workspace.slug)

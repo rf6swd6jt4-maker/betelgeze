@@ -60,6 +60,8 @@ jobs:
           BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-client-connection-controls-sql.mjs
           BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-free-client-ghl-sql.mjs
           BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-client-connection-retirement-sql.mjs
+          BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-ghl-appointment-automation-sql.mjs
+          BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-ghl-oauth-sql.mjs
       - name: Shared service queue authorization and lifecycle
         run: BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-shared-service-queue.mjs
       - name: Full test suite
@@ -105,6 +107,10 @@ jobs:
           BE_DEVICE_POSTGRES_URL=postgresql://fixture_owner@127.0.0.1:45680/postgres BE_PG_ROOT="$RUNNER_TEMP/device-pg-deps" BE_PGLITE_ROOT="$RUNNER_TEMP/device-pg-deps" node scripts/device-unread-progressive/postgres-checks.mjs "$RUNNER_TEMP/device-unread-native-postgres.json"
       - name: Verify shared service queue concurrent actions and removal
         run: BE_PG_ROOT="$RUNNER_TEMP/device-pg-deps" node scripts/shared-service-queue/postgres.mjs
+      - name: Verify GHL OAuth and appointment workers across independent PostgreSQL connections
+        run: |
+          BE_GHL_NATIVE_PG=1 BE_PG_ROOT="$RUNNER_TEMP/device-pg-deps" BE_PGLITE_ROOT="$RUNNER_TEMP/device-pg-deps" node scripts/validate-ghl-oauth-sql.mjs
+          BE_GHL_NATIVE_PG=1 BE_PG_ROOT="$RUNNER_TEMP/device-pg-deps" BE_PGLITE_ROOT="$RUNNER_TEMP/device-pg-deps" node scripts/validate-ghl-appointment-automation-sql.mjs
       - name: Print device concurrency evidence
         if: always()
         run: cat "$RUNNER_TEMP/device-unread-native-postgres.json"
@@ -229,6 +235,8 @@ jobs:
         run: node scripts/browser/run-native-loading.mjs "${{ matrix.engine }}"
       - name: Exercise asset selection and single and archive downloads
         run: node scripts/browser/run-asset-library.mjs "${{ matrix.engine }}"
+      - name: Exercise appointment summary links and retained lifecycle states
+        run: node scripts/browser/run-ghl-appointment-summary.mjs "${{ matrix.engine }}"
       - name: Exercise client connection menus and calendar selection
         run: node scripts/browser/run-client-connections.mjs "${{ matrix.engine }}"
       - name: Exercise shared service assignment and command recovery

@@ -8,7 +8,7 @@ import { decryptWorkspaceIntegration, encryptIntegrationCredential } from "@/lib
 import { fetchGhlCalendars, type GhlCalendarChoice } from "@/lib/client-portal/ghl-calendar-list-provider"
 import { fetchGhlCalendar } from "@/lib/client-portal/ghl-calendar-provider"
 import { fetchGhlMetrics } from "@/lib/client-portal/ghl-provider"
-import { exchangeGhlCode, ghlAuthorizationUrl, ghlLocationToken, listGhlInstalledLocations, refreshGhlToken, GHL_OAUTH_CALLBACK, type GhlOAuthConfig, type GhlOAuthLocation, type GhlOAuthToken } from "./provider"
+import { exchangeGhlCode, ghlAuthorizationUrl, ghlLocationToken, listGhlInstalledLocations, refreshGhlToken, GhlOAuthError, GHL_OAUTH_CALLBACK, type GhlOAuthConfig, type GhlOAuthLocation, type GhlOAuthToken } from "./provider"
 
 const COOKIE = "__Host-be-ghl-connect"
 const hash = (value: string) => createHash("sha256").update(value).digest("hex")
@@ -32,6 +32,20 @@ const safeMessages: Record<string, string> = {
 }
 export class GhlConnectionError extends Error {}
 const unavailable = () => new GhlConnectionError("The HighLevel connection could not be completed. Start again from Client Connections.")
+const selectionSteps = {
+    saved_authorization: "BE could not read the saved HighLevel authorisation. Start a new connection attempt.",
+    installed_accounts: "BE could not verify the selected HighLevel sub-account. Your existing calendar connection is unchanged.",
+    location_token: "HighLevel did not provide usable access to the selected sub-account. Start a new connection attempt.",
+    calendar_list: "BE could not load this sub-account’s calendars. Your existing calendar connection is unchanged.",
+} as const
+function selectionFailure(step: keyof typeof selectionSteps, error: unknown) {
+    const code = error instanceof GhlOAuthError ? error.code : "unexpected"
+    const status = error instanceof GhlOAuthError ? error.status : undefined
+    // Only fixed labels and the HTTP status: never log tokens, provider bodies,
+    // callback URLs, record identifiers or arbitrary error messages/stacks.
+    console.error("ghl_connection_step_failed", { step, code, ...(status ? { status } : {}) })
+    return new GhlConnectionError(`${selectionSteps[step]} Reference: ${step}/${code}${status ? `/${status}` : ""}.`)
+}
 
 type Attempt = { state_hash: string; workspace_id: string; workspace_slug: string; relationship_id: string; user_id: string; phase: string; credential_encrypted: string | null; choices: GhlOAuthLocation[]; limited: boolean; selected_location: string | null }
 type SavedGrant = { token: GhlOAuthToken; calendars?: GhlCalendarChoice[] }
@@ -112,19 +126,25 @@ export async function selectGhlLocation(workspaceSlug: string, locationId: unkno
     const { config, keys, attempt } = await context(workspaceSlug)
     if (typeof locationId !== "string" || !/^[a-zA-Z0-9_-]{10,80}$/.test(locationId)) throw unavailable()
     if (attempt.phase !== "ready") throw new GhlConnectionError(safeMessages.phase)
-    const grant = decrypt(attempt.credential_encrypted)
-    const installed = await listGhlInstalledLocations(config, grant.token, fetch, locationId)
+    let grant: SavedGrant
+    try { grant = decrypt(attempt.credential_encrypted) }
+    catch (error) { throw selectionFailure("saved_authorization", error) }
+    let installed: Awaited<ReturnType<typeof listGhlInstalledLocations>>
+    try { installed = await listGhlInstalledLocations(config, grant.token, fetch, locationId) }
+    catch (error) { throw selectionFailure("installed_accounts", error) }
     if (!installed.locations.some(location => location.id === locationId)) throw new GhlConnectionError(safeMessages.access)
     await rpc("transition", { ...keys, from: "ready", to: "selecting", locationId })
+    let step: keyof typeof selectionSteps = "location_token"
     try {
         const token = await ghlLocationToken(grant.token, locationId)
+        step = "calendar_list"
         const calendars = await fetchGhlCalendars({ locationId, privateToken: token.accessToken })
         if (!calendars.length) throw unavailable()
         await rpc("transition", { ...keys, from: "selecting", to: "selected", credential: encrypt({ token, calendars }) })
         return { calendars, locationId }
-    } catch {
+    } catch (error) {
         await rpc("transition", { ...keys, from: "selecting", to: "failed" }).catch(() => {})
-        throw unavailable()
+        throw selectionFailure(step, error)
     }
 }
 export async function finishGhlConnection(workspaceSlug: string, calendarId: unknown) {

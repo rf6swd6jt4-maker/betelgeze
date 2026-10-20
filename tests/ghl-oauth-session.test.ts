@@ -6,6 +6,15 @@ import ts from "typescript"
 
 const require = createRequire(import.meta.url)
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`
+class ProviderError extends Error {
+    code: string
+    uncertain: boolean
+    status?: number
+    constructor(code: string, uncertain = false, status?: number) {
+        super("synthetic-private-provider-body")
+        this.code = code; this.uncertain = uncertain; this.status = status
+    }
+}
 function fixture() {
     Object.assign(process.env, { GHL_OAUTH_ENABLED: "true", GHL_OAUTH_CLIENT_ID: "synthetic-client", GHL_OAUTH_CLIENT_SECRET: "synthetic-client-secret", GHL_OAUTH_APP_ID: "synthetic-app", GHL_OAUTH_INSTALL_URL: "https://marketplace.gohighlevel.com/oauth/chooselocation" })
     const calls: Array<{ action: string; input: Record<string, unknown> }> = []
@@ -14,6 +23,10 @@ function fixture() {
     const attempt: Record<string, unknown> = { workspace_id: id(1), workspace_slug: "fixture", relationship_id: id(3), user_id: id(2), choices: [{ id: "location123456789", name: "Fixture" }], limited: false, credential_encrypted: null }
     const token = { accessToken: "synthetic-access-token", refreshToken: "synthetic-refresh-token", expiresAt: new Date(Date.now() + 86400000).toISOString(), userType: "Location", locationId: "location123456789", companyId: "company123456789", scope: "fixture" }
     let exchange: () => Promise<typeof token> = async () => token
+    let list: () => Promise<{ locations: unknown; limited: boolean }> = async () => ({ locations: attempt.choices, limited: false })
+    let locationGrant: () => Promise<typeof token> = async () => token
+    let locationExchanges = 0
+    const diagnostics: unknown[][] = []
     const mocks: Record<string, unknown> = {
         "server-only": {},
         "next/headers": { cookies: async () => ({ get: (name: string) => jar.has(name) ? { value: jar.get(name) } : undefined, set: (name: string, value: string, options: Record<string, unknown>) => { jar.set(name, value); cookieOptions.push(options) } }) },
@@ -23,11 +36,12 @@ function fixture() {
         "@/lib/client-portal/ghl-calendar-provider": { fetchGhlCalendar: async () => ({}) },
         "@/lib/client-portal/ghl-provider": { fetchGhlMetrics: async () => ({ companyId: token.companyId, locationName: "Fixture", metrics: {} }) },
         "./provider": {
+            GhlOAuthError: ProviderError,
             GHL_OAUTH_CALLBACK: "https://app.betelgeze.com/api/integrations/calendar/callback",
             ghlAuthorizationUrl: (_config: unknown, state: string) => `https://marketplace.gohighlevel.com/oauth/chooselocation?state=${state}`,
             exchangeGhlCode: async () => { exchanges++; return exchange() },
-            listGhlInstalledLocations: async () => ({ locations: attempt.choices, limited: false }),
-            ghlLocationToken: async () => token,
+            listGhlInstalledLocations: async () => list(),
+            ghlLocationToken: async () => { locationExchanges++; return locationGrant() },
         },
         "@/lib/supabase/admin": { supabaseAdmin: { rpc: async (name: string, params: { p_action: string; p_input: Record<string, unknown> }) => {
             const { p_action: action, p_input: input } = params; calls.push({ action: `${name}:${action}`, input })
@@ -47,9 +61,9 @@ function fixture() {
     }
     const compiled = { exports: {} }
     const code = ts.transpileModule(readFileSync("lib/ghl-oauth/server.ts", "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
-    new Function("require", "module", "exports", code)((path: string) => path in mocks ? mocks[path] : require(path), compiled, compiled.exports)
+    new Function("require", "module", "exports", "console", code)((path: string) => path in mocks ? mocks[path] : require(path), compiled, compiled.exports, { error: (...values: unknown[]) => diagnostics.push(values) })
     const api = compiled.exports as typeof import("../lib/ghl-oauth/server")
-    return { api, calls, jar, cookieOptions, exchanges: () => exchanges, phase: () => phase, user: (value: string) => { activeUser = value }, exchange: (value: typeof exchange) => { exchange = value }, token }
+    return { api, calls, jar, cookieOptions, diagnostics, exchanges: () => exchanges, phase: () => phase, user: (value: string) => { activeUser = value }, exchange: (value: typeof exchange) => { exchange = value }, list: (value: typeof list) => { list = value }, locationGrant: (value: typeof locationGrant) => { locationGrant = value }, locationExchanges: () => locationExchanges, token }
 }
 async function start(f: ReturnType<typeof fixture>) {
     const result = await f.api.startGhlConnection("fixture", { relationshipId: id(3), expectedRevision: null })
@@ -100,4 +114,27 @@ test("a committed connection remains distinguishable from incomplete notificatio
         assert.equal(result.notifications.sendingEnabled, false)
     }
     assert.equal(f.exchanges(), 1)
+})
+test("an installed-account read failure identifies its stage without consuming the grant or exposing provider data", async () => {
+    const f = fixture(), state = await start(f)
+    await f.api.completeGhlAuthorization(state, "code", false)
+    f.list(async () => { throw new ProviderError("provider", false, 403) })
+    await assert.rejects(f.api.selectGhlLocation("fixture", "location123456789"), (error: unknown) => {
+        assert.ok(error instanceof f.api.GhlConnectionError)
+        assert.match(error.message, /installed_accounts\/provider\/403/)
+        assert.equal(error.message.includes("synthetic-private"), false)
+        return true
+    })
+    assert.equal(f.phase(), "ready")
+    assert.equal(f.locationExchanges(), 0)
+    assert.deepEqual(f.diagnostics, [["ghl_connection_step_failed", { step: "installed_accounts", code: "provider", status: 403 }]])
+})
+test("a location-grant failure requires new authorization and logs no provider body", async () => {
+    const f = fixture(), state = await start(f)
+    await f.api.completeGhlAuthorization(state, "code", false)
+    f.locationGrant(async () => { throw new ProviderError("response", true) })
+    await assert.rejects(f.api.selectGhlLocation("fixture", "location123456789"), /location_token\/response/)
+    assert.equal(f.phase(), "failed")
+    assert.equal(f.locationExchanges(), 1)
+    assert.deepEqual(f.diagnostics, [["ghl_connection_step_failed", { step: "location_token", code: "response" }]])
 })

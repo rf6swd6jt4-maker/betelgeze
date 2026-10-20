@@ -11,7 +11,7 @@ export type GhlOAuthLocation = { id: string; name: string }
 
 // Safe codes only: never include provider bodies, credentials or callback URLs.
 export class GhlOAuthError extends Error {
-    constructor(public code: "provider" | "response" | "scope" | "identity" | "configuration", public uncertain = false) { super(`HighLevel connection ${code}.`) }
+    constructor(public code: "provider" | "response" | "scope" | "identity" | "configuration", public uncertain = false, public status?: number) { super(`HighLevel connection ${code}.`) }
 }
 
 export function ghlAuthorizationUrl(config: GhlOAuthConfig, state: string) {
@@ -40,7 +40,7 @@ async function request(path: string, init: RequestInit, fetcher: typeof fetch) {
         const response = await fetcher(`${API}${path}`, { ...init, cache: "no-store", redirect: "error", signal: AbortSignal.timeout(20_000), headers: { Accept: "application/json", Version: "v3", ...init.headers } })
         if (!response.ok) {
             await response.body?.cancel()
-            throw new GhlOAuthError("provider", response.status >= 500)
+            throw new GhlOAuthError("provider", response.status >= 500, response.status)
         }
         return await readGhlJson(response, 262144)
     } catch (error) {
@@ -62,10 +62,17 @@ export async function listGhlInstalledLocations(config: GhlOAuthConfig, token: G
     const body = await request(`/oauth/installed-locations?${query}`, { headers: { Authorization: `Bearer ${token.accessToken}` } }, fetcher)
     if (!Array.isArray(body.items) || body.items.length > 50 || !body.pagination || typeof body.pagination !== "object" || typeof (body.pagination as Record<string, unknown>).hasNextPage !== "boolean") throw new GhlOAuthError("response")
     const locations: GhlOAuthLocation[] = body.items.map(value => {
-        if (!value || typeof value !== "object" || !identifier(value._id) || typeof value.name !== "string" || !value.name.trim() || value.isInstalled !== true || (locationId && value._id !== locationId)) throw new GhlOAuthError("response")
+        if (!value || typeof value !== "object" || !identifier(value._id) || typeof value.name !== "string" || !value.name.trim() || value.isInstalled !== true) throw new GhlOAuthError("response")
         return { id: value._id, name: value.name.trim().slice(0, 200) }
     })
     if (new Set(locations.map(location => location.id)).size !== locations.length) throw new GhlOAuthError("response")
+    // A provider-side filter is not an authorization boundary. Check the exact
+    // selection locally, even when the bounded response contains other installs.
+    if (locationId) {
+        const selected = locations.find(location => location.id === locationId)
+        if (!selected) throw new GhlOAuthError("identity")
+        return { locations: [selected], limited: false }
+    }
     return { locations, limited: (body.pagination as Record<string, unknown>).hasNextPage === true }
 }
 

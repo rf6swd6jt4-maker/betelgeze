@@ -73,3 +73,17 @@ test("location-token and refresh cannot silently switch sub-account, company or 
     assert.notEqual(rotated.refreshToken, token.refreshToken)
     assert.equal(new URLSearchParams(f.calls[0].init!.body as URLSearchParams).get("user_type"), "Location")
 })
+test("selecting an installed sub-account accepts a bounded response containing other installed accounts", async () => {
+    const company = await exchangeGhlCode(config, "code", fake(body({ userType: "Company", locationId: undefined })).fetcher, now)
+    const selected = { _id: "location123456789", name: "Selected", isInstalled: true }
+    const other = { _id: "differentlocation123", name: "Other", isInstalled: true }
+    const f = fake({ items: [other, selected], pagination: { hasNextPage: false } })
+    assert.deepEqual(await listGhlInstalledLocations(config, company, f.fetcher, selected._id), {
+        locations: [{ id: selected._id, name: selected.name }], limited: false,
+    })
+    assert.equal(f.calls.length, 1)
+    assert.equal(new URL(f.calls[0].url).searchParams.get("locationId"), selected._id)
+    for (const items of [[other], [other, { ...selected, isInstalled: false }], [selected, selected]]) {
+        await assert.rejects(listGhlInstalledLocations(config, company, fake({ items, pagination: { hasNextPage: false } }).fetcher, selected._id))
+    }
+})

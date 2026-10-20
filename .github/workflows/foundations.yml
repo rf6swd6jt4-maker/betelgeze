@@ -156,6 +156,8 @@ jobs:
         run: |
           echo "BE_PGLITE_ROOT=$RUNNER_TEMP/communications-pglite" >> "$GITHUB_ENV"
           npm install --prefix "$RUNNER_TEMP/communications-pglite" --no-save --ignore-scripts --package-lock=false @electric-sql/pglite@0.5.8
+      - name: Validate indexed WhatsApp phone routing and isolation
+        run: node scripts/validate-whatsapp-inbound-routing.mjs
       - name: Validate atomic cursors, deletion boundaries, summaries and authorization
         run: node scripts/validate-communications-unread-sql.mjs
       - name: Validate encrypted device counts, previews, search and rollback

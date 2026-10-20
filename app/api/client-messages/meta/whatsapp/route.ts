@@ -122,6 +122,7 @@ type ClientCommunicationChannel = {
 }
 
 type InboundDestination = {
+    ambiguous?: true
     channel: ClientCommunicationChannel | null
     clientId: string | null
     relationshipId: string | null
@@ -139,43 +140,17 @@ async function resolveInboundDestination(
     workspaceId: string
 ): Promise<InboundDestination | null> {
     const equivalentAddresses = getEquivalentMessageAddresses(fromAddress)
-    const relationshipAddresses = [...new Set(equivalentAddresses.flatMap((address) => [
-        address,
-        address.replace(/^whatsapp:/iu, ""),
-    ]))]
-    const [whatsAppRelationships, primaryRelationships] = await Promise.all([
-        supabaseAdmin
-            .from("relationships")
-            .select("id, client_id, created_at")
-            .eq("workspace_id", workspaceId)
-            .neq("status", "archived")
-            .in("whatsapp_phone", relationshipAddresses),
-        supabaseAdmin
-            .from("relationships")
-            .select("id, client_id, created_at")
-            .eq("workspace_id", workspaceId)
-            .neq("status", "archived")
-            .in("primary_phone", relationshipAddresses),
-    ])
-
-    if (whatsAppRelationships.error) {
-        throw new Error(
-            `Could not look up relationship by WhatsApp phone: ${whatsAppRelationships.error.message}`
-        )
-    }
-    if (primaryRelationships.error) {
-        throw new Error(
-            `Could not look up relationship by primary phone: ${primaryRelationships.error.message}`
-        )
-    }
-
-    const matchingRelationships = new Map(
-        [...(whatsAppRelationships.data ?? []), ...(primaryRelationships.data ?? [])]
-            .map((relationship) => [relationship.id, relationship] as const)
+    const { data: relationships, error: relationshipError } = await supabaseAdmin.rpc(
+        "find_whatsapp_inbound_relationships",
+        { p_workspace_id: workspaceId, p_from_address: fromAddress }
     )
-    const relationship = [...matchingRelationships.values()].sort((left, right) =>
-        right.created_at.localeCompare(left.created_at)
-    )[0]
+    if (relationshipError) {
+        throw new Error(`Could not look up relationship by WhatsApp phone: ${relationshipError.message}`)
+    }
+    // A shared number is not enough authority to select one client's chat.
+    // The indexed resolver returns at most two distinct candidates.
+    if ((relationships?.length ?? 0) > 1) return { ambiguous: true, channel: null, clientId: null, relationshipId: null }
+    const relationship = relationships?.[0] as { id: string; client_id: string | null } | undefined
 
     if (relationship) {
         if (!relationship.client_id) {
@@ -837,7 +812,7 @@ async function handleInboundMessage({
         if (windowError) throw new Error(`Could not record the WhatsApp service window: ${windowError.message}`)
     }
 
-    const pendingSaleConfirmation = await handleSaleConsentConfirmation({
+    const pendingSaleConfirmation = destination?.ambiguous ? { handled: false } : await handleSaleConsentConfirmation({
         workspaceId,
         fromAddress: from,
         messageId,
@@ -847,7 +822,7 @@ async function handleInboundMessage({
 
     if (pendingSaleConfirmation.handled) return
 
-    if (!destination) {
+    if (!destination || destination.ambiguous) {
         const unmatchedBody =
             getInboundText(message) ||
             `[Unsupported ${message.type ?? "message"}]`

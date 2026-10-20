@@ -198,10 +198,10 @@ test("direct omnichannel sending is durable and idempotent", async () => {
     assert.match(webhook, /statusOrder/)
     assert.match(webhook, /read_at:/)
     assert.match(webhook, /resolveInboundDestination/)
-    assert.match(webhook, /\.in\("whatsapp_phone", relationshipAddresses\)/)
+    assert.match(webhook, /"find_whatsapp_inbound_relationships"/)
     assert.match(webhook, /relationshipId: relationship\.id/)
     assert.ok(
-        webhook.indexOf('from("relationships")') <
+        webhook.indexOf('"find_whatsapp_inbound_relationships"') <
             webhook.indexOf('from("client_communication_channels")'),
         "current relationships must win over legacy channels when a phone number is reused"
     )

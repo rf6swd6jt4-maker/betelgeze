@@ -18,6 +18,7 @@ export async function checkGhlGrowth(db) {
    select $1,'growth-'||n,1,'added',$2,'{}',case when n=25001 then now()+interval '1 hour' else now()-interval '1 hour' end,now()-interval '2 hours' from generate_series(1,25001) n`,[p.id,p.connection_revision])
   await db.exec('analyze client_portal_secure.ghl_appointment_inbox;analyze client_portal_secure.ghl_appointment_profiles;analyze client_portal_secure.ghl_appointment_outbox')
   const definition=(await one("select pg_get_functiondef('public.ghl_appointment_automation(text,jsonb)'::regprocedure) definition")).definition
+  const failures=[]
   for(const [kind,expression,input] of [
    ['scoped event',/for e in (select i\.\* from client_portal_secure\.ghl_appointment_inbox[\s\S]+?) loop/,{locationId:p.location_id,appointmentId:'growth-25001'}],
    ['scoped notification',/for o in (select ob\.\* from client_portal_secure\.ghl_appointment_outbox ob join[\s\S]+?) loop/,{locationId:p.location_id,appointmentId:'growth-25001'}],
@@ -29,8 +30,9 @@ export async function checkGhlGrowth(db) {
    const plan=result['QUERY PLAN'][0],nodes=[]
    const walk=node=>{nodes.push(node);for(const child of node.Plans??[])walk(child)};walk(plan.Plan)
    const removed=nodes.reduce((n,node)=>n+(node['Rows Removed by Filter']??0)*(node['Actual Loops']??1),0)
-   assert.ok(removed<1000,`${kind} inspected ${removed} irrelevant rows`)
    console.log(JSON.stringify({growth:kind,unrelatedPending:25000,expiredNotifications:25000,rowsRemoved:removed,indexes:nodes.map(n=>n['Index Name']).filter(Boolean),executionMs:plan['Execution Time']}))
+   if(removed>=1000) {console.log(JSON.stringify(plan));failures.push(`${kind} inspected ${removed} irrelevant rows`)}
   }
+  assert.deepEqual(failures,[])
  } finally {await db.exec('rollback')}
 }

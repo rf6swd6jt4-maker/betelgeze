@@ -3,7 +3,7 @@ begin;
 set local lock_timeout='5s';
 set local statement_timeout='60s';
 create index ghl_appointment_inbox_profile_due on client_portal_secure.ghl_appointment_inbox(profile_id,available_at,received_at,id) where status in('pending','leased');
-create index ghl_appointment_inbox_occurrence_due on client_portal_secure.ghl_appointment_inbox(profile_id,appointment_id,available_at,received_at,id) where status in('pending','leased');
+create index ghl_appointment_inbox_occurrence_due on client_portal_secure.ghl_appointment_inbox(appointment_id,profile_id,available_at,received_at,id) where status in('pending','leased');
 do $migration$
 declare definition text; needle text;
 begin

@@ -153,11 +153,11 @@ test("connected Windsor Meta Ads relationships receive an on-demand token-scoped
     assert.match(trendChart, /event\.pointerType === "mouse"/u)
     assert.match(portalMetaAds, /<MetricChart title="Daily spend"/u)
     assert.match(portalMetaAds, /<MetricChart title="Daily clicks"/u)
-    assert.match(portalMetaAdsRoute, /loadPortalMetaAdsReport\(token\)/u)
+    assert.match(portalMetaAdsRoute, /loadPortalMetaAdsReport\(token, refresh\)/u)
     assert.match(portalMetaAdsRoute, /private, no-store/u)
     assert.match(portalMetaAdsServer, /resolveClientPortalAccessByToken\(token\)/u)
     assert.match(portalMetaAdsServer, /relationship_windsor_meta_ads_connections/u)
-    assert.match(portalMetaAdsServer, /loadWindsorMetaAdsReport\(apiKey, connection\.account_id\)/u)
+    assert.match(portalMetaAdsServer, /loadWindsorMetaAdsReport\(apiKey, connection\.account_id, startedAt\)/u)
     assert.doesNotMatch(portalSession, /windsor\.ai|connectors\.windsor/u)
 })
 

@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { ClientPortalReport } from "@/components/client-portal/ClientPortalReport"
 import { PortalSection } from "@/components/client-portal/ClientPortalUI"
 import { TrendChart, type TrendChartPoint } from "@/components/ui/TrendChart"
@@ -46,26 +46,47 @@ function MetricChart({ title, rows, metric, currency }: { title: string; rows: P
     </div>
 }
 
-export function ClientPortalMetaAds({ token, reporting }: { token: string; reporting: ClientPortalMetaAdsReporting }) {
+export function ClientPortalMetaAds({ token, reporting, active = true }: { token: string; reporting: ClientPortalMetaAdsReporting; active?: boolean }) {
+    return <MetaAdsContent key={`${token}:${reporting.accountId}`} token={token} reporting={reporting} active={active} />
+}
+
+function MetaAdsContent({ token, reporting, active }: { token: string; reporting: ClientPortalMetaAdsReporting; active: boolean }) {
     const [report, setReport] = useState<PortalMetaAdsReport | null>(null)
     const [status, setStatus] = useState<"loading" | "ready" | "error">("loading")
     const [attempt, setAttempt] = useState(0)
+    const [refreshing, setRefreshing] = useState(false)
+    const handledAttempt = useRef(0)
 
     useEffect(() => {
+        if (!active) return
+        const manualRefresh = attempt !== handledAttempt.current
+        handledAttempt.current = attempt
         const controller = new AbortController()
-        fetch(`/api/client-portal/session/${encodeURIComponent(token)}/meta-ads`, { cache: "no-store", signal: controller.signal })
-            .then(async (response) => {
+        const endpoint = `/api/client-portal/session/${encodeURIComponent(token)}/meta-ads`
+        const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)])
+        async function load(method: "GET" | "POST") {
+                const response = await fetch(endpoint, { method, cache: "no-store", signal })
                 const payload = await response.json().catch(() => null) as { report?: unknown } | null
                 const parsed = response.ok ? portalMetaAdsReport(payload?.report) : null
                 if (!parsed) throw new Error("invalid-report")
+                if (controller.signal.aborted) return null
                 setReport(parsed)
                 setStatus("ready")
+                return parsed
+        }
+        void load(manualRefresh ? "POST" : "GET")
+            .then(async parsed => {
+                if (parsed?.freshness === "stale" && !manualRefresh && document.visibilityState !== "hidden") {
+                    setRefreshing(true)
+                    await load("POST")
+                }
             })
             .catch((error: unknown) => {
-                if (!(error instanceof DOMException && error.name === "AbortError")) setStatus("error")
+                if (!controller.signal.aborted && !(error instanceof DOMException && error.name === "AbortError")) setStatus("error")
             })
+            .finally(() => { if (!controller.signal.aborted) setRefreshing(false) })
         return () => controller.abort()
-    }, [attempt, token])
+    }, [attempt, token, active])
 
     const summary = useMemo(() => report ? [
         { label: "Spend", value: formatMoney(report.totals.spend, report.currency) },
@@ -81,20 +102,22 @@ export function ClientPortalMetaAds({ token, reporting }: { token: string; repor
     ] : [], [report])
 
     return <PortalSection id="meta-ads-reporting" title="Meta Ads" description="Advertising results" icon="chart">
-        {status === "loading" ? <div className="flex min-h-64 flex-1 items-center justify-center text-center"><div><div aria-hidden="true" className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-black/10 border-t-[var(--onboarding-primary,#1E3A5F)]" /><p className="mt-4 text-sm text-[var(--onboarding-muted,#475569)]">Loading the last 30 days…</p></div></div> : null}
-        {status === "error" ? <div className="flex min-h-64 flex-1 items-center justify-center px-4 text-center"><div><h3 className="text-base font-semibold">Metrics could not be loaded</h3><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[var(--onboarding-muted,#475569)]">Your reporting connection is still in place. Please try again.</p><button type="button" onClick={() => { setStatus("loading"); setAttempt((value) => value + 1) }} className="mt-5 inline-flex min-h-11 items-center justify-center rounded-xl border border-black/10 bg-white px-4 text-sm font-semibold text-[var(--onboarding-primary,#1E3A5F)] shadow-sm hover:bg-black/[0.03]">Try again</button></div></div> : null}
-        {status === "ready" && report ? <ClientPortalReport
+        {status === "loading" && !report ? <div className="flex min-h-64 flex-1 items-center justify-center text-center"><div><div aria-hidden="true" className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-black/10 border-t-[var(--onboarding-primary,#1E3A5F)]" /><p className="mt-4 text-sm text-[var(--onboarding-muted,#475569)]">Loading the last 30 days…</p></div></div> : null}
+        {status === "error" ? <p role="alert" className="mt-4 text-sm text-red-700">The latest report could not be loaded.{report ? " The previous figures are retained below." : " Please try again."}</p> : null}
+        {report?.warning ? <p role="status" className="mt-4 text-sm text-[var(--onboarding-muted,#475569)]">{report.warning}</p> : null}
+        {report ? <ClientPortalReport
             title="Campaign performance"
-            periodLabel="Last 30 days"
+            periodLabel={report.dateFrom && report.dateTo ? `${report.dateFrom} – ${report.dateTo}` : "Last 30 days"}
             updatedAt={report.fetchedAt}
             accountName={report.accountName || reporting.accountName}
             stats={summary}
             metrics={metrics}
             emptyMessage={report.totals.impressions === 0 && report.totals.clicks === 0 && report.totals.spend === 0 && report.totals.leads === 0 ? "Meta reported no activity for this period." : null}
-            note="Figures may update as Meta processes activity."
+            note="Figures may update as Meta processes activity. Updated time is the last successful report retrieval."
         >
             <div className="mt-6 flex flex-wrap items-baseline justify-between gap-2"><h3 className="text-sm font-semibold text-[var(--onboarding-text,#0F172A)]">Daily performance</h3><p className="text-xs text-[var(--onboarding-muted,#475569)]">Hover or tap a day for its exact value.</p></div>
             <div className="mt-3 grid gap-4 lg:grid-cols-2"><MetricChart title="Daily spend" rows={report.daily} metric="spend" currency={report.currency} /><MetricChart title="Daily clicks" rows={report.daily} metric="clicks" currency={report.currency} /></div>
         </ClientPortalReport> : null}
+        <button type="button" disabled={refreshing || status === "loading"} onClick={() => { setRefreshing(true); setAttempt(value => value + 1) }} className="mt-4 min-h-11 px-3 text-sm font-semibold text-[var(--onboarding-primary,#1E3A5F)] disabled:opacity-50">{refreshing ? "Updating report…" : "Refresh report"}</button>
     </PortalSection>
 }

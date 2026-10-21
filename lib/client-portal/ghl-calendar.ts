@@ -1,6 +1,6 @@
-export type GhlCalendarEvent = { id: string; title: string; start: string; end: string; status: string; kind: "appointment" | "busy"; allDay: boolean; originalTitle?: string; contactCity?: string }
+export type GhlCalendarEvent = { id: string; title: string; start: string; end: string; status: string; kind: "appointment" | "busy"; allDay: boolean; originalTitle?: string; contactCity?: string; version?: number; detailsRetained?: boolean }
 export type GhlCalendarSnapshot = { source: "owner-user" | "booking-calendar"; calendarId?: string; owner: { id: string; name: string }; timezone: string; month: string; events: GhlCalendarEvent[]; snapshotId?: string; namesStatus?: "pending" | "ready" | "unavailable" }
-export type GhlCalendarState = { calendars?: { id: string; name: string; isActive?: boolean }[]; revision: string | null; snapshot: GhlCalendarSnapshot | null; refreshedAt: string | null; error: string | null; busy: boolean }
+export type GhlCalendarState = { calendars?: { id: string; name: string; isActive?: boolean }[]; revision: string | null; snapshot: GhlCalendarSnapshot | null; refreshedAt: string | null; error: string | null; busy: boolean; complete?: boolean; detailsPending?: boolean; queued?: boolean }
 export const calendarErrors: Record<string, string> = {
     permissions: "Allow Calendars and Calendar Events read access in your GHL private integration, then try again.",
     owner_unavailable: "GHL could not identify one owner for this account. Ask your team to check the account owner setup, then refresh.",
@@ -13,6 +13,7 @@ export const calendarErrors: Record<string, string> = {
     cooldown: "Please wait a few seconds before refreshing this month again.",
     changed: "The GHL connection changed. Reload the calendar before trying again.",
     credentials_missing: "Connect GHL to load its calendar.",
+    portal_setup: "Calendar entries are available, but appointment details need a verified client portal domain. Ask your agency to complete portal setup.",
 }
 export function validMonth(value: unknown): value is string { return typeof value === "string" && /^(20\d{2})-(0[1-9]|1[0-2])$/.test(value) }
 export function shiftMonth(month: string, offset: number) { const [y,m] = month.split("-").map(Number); return new Date(Date.UTC(y,m-1+offset,1)).toISOString().slice(0,7) }

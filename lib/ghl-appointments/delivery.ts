@@ -13,6 +13,7 @@ export type AutomationProfile = {
     calendars?: { id: string; name: string }[]
     connectionRevision: string
     detectionEnabled: boolean
+    portalSyncEnabled?: boolean
     sendingEnabled: boolean
     createdAt?: string
     sendingActivatedAt?: string | null
@@ -29,6 +30,7 @@ export type NotificationJob = {
     previousSnapshot: AppointmentSnapshot | null
     changedDetails?: string
     summaryToken: string
+    version?: number
     profile: AutomationProfile
     recordedAt: string
 }
@@ -73,7 +75,7 @@ export function notificationValues(job: NotificationJob, now: Date): Record<stri
     const previous = job.previousSnapshot
     if ((job.kind === "rescheduled" || job.kind === "status_updated") && !previous) throw new Error("The previous appointment version is unavailable.")
     const recorded = formatAppointmentInstant(job.recordedAt || current.observedAt, current.timezone)
-    return {
+    const values: Record<string, string> = {
         calendar_name: current.calendarName,
         contact_name: current.contactName,
         appointment_name: current.title,
@@ -91,6 +93,22 @@ export function notificationValues(job: NotificationJob, now: Date): Record<stri
         current_status: current.status,
         changed_details: job.changedDetails ?? "",
     }
+    // Approved templates stay concise; complete content remains in the retained
+    // appointment. Preserve factual schedule/status values when shortening text.
+    const variables = appointmentTemplateContracts[job.kind].variables
+    const fixed = new Set(["schedule", "previous_schedule", "current_schedule", "status", "previous_status", "current_status", "update_recorded_at", "change_recorded_at", "reminder_generated_at"])
+    const concise = (value: string, limit: number) => value.length <= limit ? value : `${value.slice(0, limit - 1).trimEnd()}…`
+    for (const key of variables) values[key] = concise(values[key].replace(/[\s\u0000-\u001f\u007f]+/g, " ").replace(/\{\{/g, "{").replace(/\}\}/g, "}").trim() || "Not supplied", 256)
+    const budget = 1024 - appointmentTemplateContracts[job.kind].body.replace(/\{\{\d+\}\}/g, "").length
+    let used = variables.reduce((sum, key) => sum + values[key].length, 0)
+    while (used > budget) {
+        const key = [...variables].filter((name) => !fixed.has(name) && values[name].length > 32).sort((a, b) => values[b].length - values[a].length)[0]
+        if (!key) throw new Error("Appointment notification facts exceed the approved template limit.")
+        const before = values[key].length
+        values[key] = concise(values[key], Math.max(32, before - (used - budget)))
+        used -= before - values[key].length
+    }
+    return values
 }
 
 function externalMessageId(value: unknown) {
@@ -118,6 +136,7 @@ export async function deliverAppointmentNotification(job: NotificationJob, deps:
         if (!context.profile || typeof context.privateToken !== "string" || typeof context.destination !== "string") {
             return await finishPreflight("blocked", "Appointment delivery context is unavailable.")
         }
+        if (context.templateEvidenceVersion !== 1) return await finishPreflight("blocked", "Template evidence storage is not ready.")
         const profile = context.profile as AutomationProfile
         if (!profile.sendingEnabled || !profile.detectionEnabled || profile.portalOrigin !== "https://portal.scaylup.com") {
             return await finishPreflight("blocked", "Appointment sending or portal access is disabled.")
@@ -142,7 +161,7 @@ export async function deliverAppointmentNotification(job: NotificationJob, deps:
             return await finishPreflight("superseded", "The appointment is no longer eligible for this reminder.")
         }
         validateAppointmentTemplate(await deps.liveTemplate(profile.workspaceId, job.kind), job.kind)
-        const template = appointmentTemplateComponents(job.kind, notificationValues(job, now), job.summaryToken)
+        const template = appointmentTemplateComponents(job.kind, notificationValues(job, now), job.summaryToken, job.version)
         // Recheck the process kill switch at the actual dispatch boundary. SQL
         // independently rechecks profile, connection, version, consent and STOP.
         if (!deps.sendingEnabled()) return await finishPreflight("blocked", "Appointment sending is disabled.")
@@ -150,9 +169,10 @@ export async function deliverAppointmentNotification(job: NotificationJob, deps:
         const prepared = record(await deps.rpc("begin_dispatch", {
             id: job.id, leaseToken: job.leaseToken, body: template.body, destination: context.destination,
             templateName: template.name, templateLanguage: template.language,
+            templateEvidence: { ...template.evidence, capturedAt: now.toISOString() },
             templateStatus: "APPROVED", templateCategory: "UTILITY", templateVerifiedAt: deps.now().toISOString(),
         }))
-        if (typeof prepared.messageId !== "string" || typeof prepared.destination !== "string") throw new Error("Dispatch preparation acknowledgement was incomplete.")
+        if (typeof prepared.messageId !== "string" || typeof prepared.destination !== "string" || prepared.templateEvidenceRecorded !== true) throw new Error("Dispatch preparation acknowledgement was incomplete.")
         const response = await deps.sendTemplate({
             workspaceId: profile.workspaceId, to: prepared.destination, templateName: template.name,
             languageCode: template.language, components: template.components, callbackData: prepared.messageId,

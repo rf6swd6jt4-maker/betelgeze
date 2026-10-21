@@ -14,6 +14,7 @@ import type { ClientConnectionAccount, ConnectionHistoryCursor } from "@/lib/cli
 
 const field = "mt-2 h-11 w-full rounded-xl border border-neutral-700 bg-black px-3 text-sm text-white outline-none focus:border-neutral-400"
 const GhlAppConnectionDialog = dynamic(() => import("./GhlAppConnectionDialog").then(module => module.GhlAppConnectionDialog))
+const MetaReportingDialog = dynamic(() => import("./MetaReportingDialog").then(module => module.MetaReportingDialog))
 
 export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAccounts, historyCursor = null, agency, canManageAgency }: {
     workspaceSlug: string
@@ -31,6 +32,7 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAcc
         setNextCursor(historyCursor)
     }
     const [editing, setEditing] = useState<ClientConnectionAccount | null>(null)
+    const [metaReporting, setMetaReporting] = useState<ClientConnectionAccount | null>(null)
     const [removing, setRemoving] = useState<ClientConnectionAccount | null>(null)
     const [loadingHistory, setLoadingHistory] = useState(false)
     const historyRequest = useRef<AbortController | null>(null)
@@ -142,7 +144,7 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAcc
     }
 
     return <div className="mx-auto max-w-7xl px-4 pb-8 pt-5 text-white sm:px-6">
-        <PanelTabHeader title="Client Connections" description="Connect HighLevel calendars and choose which clients receive WhatsApp appointment notifications." actions={<button type="button" disabled={!unconnected.length} onClick={() => setAppDialog({ choices: unconnected })} className="h-10 rounded-lg bg-white px-4 text-sm font-semibold text-black disabled:opacity-40">Connect HighLevel</button>} />
+        <PanelTabHeader title="Client Connections" description="Manage HighLevel calendars, appointment notifications and Meta Ads reporting." actions={<button type="button" disabled={!unconnected.length} onClick={() => setAppDialog({ choices: unconnected })} className="h-10 rounded-lg bg-white px-4 text-sm font-semibold text-black disabled:opacity-40">Connect HighLevel</button>} />
 
         <section className="mt-6 rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
             <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="font-semibold">Agency connection</h2><p className="mt-1 text-sm leading-6 text-neutral-400">Used to verify agency sub-accounts connected with a private token. App connections are authorised directly in HighLevel.</p></div><Status label={agency.connected ? "Connected" : "Not connected"} tone={agency.connected ? "green" : "grey"} /></div>
@@ -160,9 +162,12 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAcc
                 return <ListItem key={account.historyId ?? account.relationshipId}>
                     <ListPrimaryRow><ListTitle className="flex-1">{title}</ListTitle><Status label={status.label} tone={status.tone} /></ListPrimaryRow>
                     <ListSecondaryRow><span className="min-w-0 truncate text-neutral-400">{account.locationName ?? "No HighLevel account linked"}{account.archived ? " · Archived relationship" : ""}{account.retiredAt ? ` · Retired ${new Date(account.retiredAt).toLocaleDateString()}` : ""}</span><ListTrailing><button type="button" aria-label={`Actions for ${title}${account.historyId ? " retired connection" : ""}`} disabled={pending} onClick={() => account.historyId || account.archived ? edit(account) : setAppDialog({ account })} className="-my-3 flex h-11 w-11 shrink-0 items-center justify-center text-neutral-300 hover:text-white disabled:opacity-40"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><circle cx="4" cy="10" r="1.5" /><circle cx="10" cy="10" r="1.5" /><circle cx="16" cy="10" r="1.5" /></svg></button></ListTrailing></ListSecondaryRow>
+                    {!account.historyId && !account.archived ? <ListSecondaryRow><button type="button" onClick={() => setMetaReporting(account)} className="min-h-11 text-sm text-neutral-300 underline underline-offset-4">Manage Meta Ads reporting</button></ListSecondaryRow> : null}
                 </ListItem>
             }) : <div className="p-6"><p className="font-semibold">{selectedRelationship ? "No available connection for this relationship." : "No eligible clients yet."}</p><p className="mt-2 text-sm text-neutral-400">{selectedRelationship ? "It may no longer be eligible or available to your account." : "Clients in onboarding or retention can connect HighLevel without purchasing Appointment Setting."}</p></div>}
         </List>
+
+        {metaReporting ? <MetaReportingDialog key={`${workspaceSlug}:${metaReporting.relationshipId}`} workspaceSlug={workspaceSlug} relationshipId={metaReporting.relationshipId} clientName={metaReporting.businessName ? `${metaReporting.clientName} – ${metaReporting.businessName}` : metaReporting.clientName} onClose={() => setMetaReporting(null)} /> : null}
 
         {appDialog ? <GhlAppConnectionDialog key={appDialog.resume ? "resume" : appDialog.account?.relationshipId ?? "new"} workspaceSlug={workspaceSlug} accounts={accounts.filter(account => !account.historyId && !account.archived)} initialAccount={appDialog.account} initialChoices={appDialog.choices} resume={appDialog.resume} onClose={() => setAppDialog(null)} onManual={account => { setAppDialog(null); edit(account) }} onSaved={() => router.refresh()} /> : null}
         {nextCursor ? <button type="button" disabled={loadingHistory} onClick={() => void loadHistory()} className="mt-4 min-h-11 px-3 text-sm underline underline-offset-4 disabled:opacity-40">{loadingHistory ? "Loading history…" : "Load older connections"}</button> : null}

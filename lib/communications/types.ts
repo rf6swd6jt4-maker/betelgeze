@@ -46,6 +46,7 @@ export type CommunicationSticker = {
 }
 
 export type CommunicationMessage = {
+    templateEvidence?: import("./template-evidence").CommunicationTemplateEvidence | null
     uploadedAssetId?: string | null
     id: string
     clientRequestId: string | null

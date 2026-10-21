@@ -1,3 +1,5 @@
+import type { AppointmentDetails } from "../ghl-appointments/types"
+
 /** Only public, appointment-specific fields may leave the summary reader. */
 export type AppointmentSummary = {
     reference: string
@@ -15,6 +17,7 @@ export type AppointmentSummary = {
     bookingDetails: string
     observedAt: string | null
     version: number
+    details: AppointmentDetails | null
 }
 
 export function appointmentSummaryToken(value: unknown) {
@@ -34,6 +37,35 @@ function text(value: unknown, limit = 4000) {
 function date(value: unknown) {
     if (typeof value !== "string" || !value || !Number.isFinite(Date.parse(value))) return null
     return new Date(value).toISOString()
+}
+
+function object(value: unknown): Record<string, unknown> {
+    return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
+}
+/** Never pass provider objects through to a public capability or portal response. */
+export function appointmentDetails(value: unknown): AppointmentDetails | null {
+    const input = object(value)
+    if (input.schemaVersion !== 1) return null
+    const contact = object(input.contact), meeting = object(input.meeting), source = object(input.source), booking = object(input.booking)
+    const nullable = (value: unknown, limit: number) => text(value, limit) || null
+    const rawUrl = nullable(meeting.joinUrl, 2048)
+    let joinUrl: string | null = null
+    try { if (rawUrl) { const url = new URL(rawUrl); if (url.protocol === "https:" && !url.username && !url.password) joinUrl = url.href } } catch { /* A saved invalid URL remains plain meeting text. */ }
+    return {
+        schemaVersion: 1,
+        contact: { phone: nullable(contact.phone, 80), email: nullable(contact.email, 254), company: nullable(contact.company, 200), address: nullable(contact.address, 1300) },
+        meeting: { location: nullable(meeting.location, 4000), joinUrl },
+        assignedUserId: nullable(input.assignedUserId, 160),
+        source: { createdAt: date(source.createdAt), updatedAt: date(source.updatedAt) },
+        booking: { text: nullable(booking.text, 500), state: ["available", "not_provided", "not_enabled", "too_large"].includes(String(booking.state)) ? booking.state as AppointmentDetails["booking"]["state"] : "not_provided" },
+        formSubmissionState: "unavailable",
+    }
+}
+
+export function notificationVersion(value: unknown): number | null {
+    if (typeof value !== "string" || !/^[1-9][0-9]{0,14}$/.test(value)) return null
+    const version = Number(value)
+    return Number.isSafeInteger(version) ? version : null
 }
 
 export function appointmentSummary(value: unknown): AppointmentSummary | null {
@@ -63,6 +95,7 @@ export function appointmentSummary(value: unknown): AppointmentSummary | null {
         bookingDetails: text(item.bookingDetails),
         observedAt: date(row.observedAt) ?? date(item.observedAt),
         version: typeof row.version === "number" && Number.isSafeInteger(row.version) && row.version > 0 ? row.version : 1,
+        details: appointmentDetails(item.details),
     }
 }
 

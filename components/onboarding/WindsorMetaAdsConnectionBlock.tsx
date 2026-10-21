@@ -4,8 +4,9 @@ import { useEffect, useRef, useState } from "react"
 import { FacebookLogo } from "@/components/brand/FacebookLogo"
 import { createWindsorReturnMonitor } from "@/lib/onboarding/windsor-return"
 import { RequestHelpLink } from "@/components/onboarding/RequestHelpLink"
-import { Status } from "@/components/ui"
+import { Selector, Status } from "@/components/ui"
 import type { ConnectionBlock } from "@/lib/onboarding/block-definition"
+import type { PortalMetaAdsReport } from "@/lib/client-portal/meta-ads-report"
 
 type Connection = {
     status: "pending" | "connected" | "needs_attention"
@@ -41,6 +42,8 @@ export function WindsorMetaAdsConnectionBlock({ block, token, sessionBlockId, in
     const [connection, setConnection] = useState<Connection | null>(initial)
     const [accounts, setAccounts] = useState<Account[]>([])
     const [selectedAccount, setSelectedAccount] = useState("")
+    const [reportPreview, setReportPreview] = useState<{ account: Account; report: PortalMetaAdsReport } | null>(null)
+    const [confirmed, setConfirmed] = useState(false)
     const [loading, setLoading] = useState(!preview && !locked)
     const [pending, setPending] = useState(false)
     const [started, setStarted] = useState(false)
@@ -49,7 +52,8 @@ export function WindsorMetaAdsConnectionBlock({ block, token, sessionBlockId, in
     const [notice, setNotice] = useState<string | null>(null)
     const popup = useRef<Window | null>(null)
     const begin = useRef<() => void>(() => undefined)
-    const choose = useRef<(id: string) => void>(() => undefined)
+    const choose = useRef<(id: string, confirmed?: boolean) => void>(() => undefined)
+    const selection = useRef<{ accountId?: string; confirmed: boolean }>({ confirmed: false })
     const callbacks = useRef({ onSatisfied, onUnsatisfied })
     useEffect(() => { callbacks.current = { onSatisfied, onUnsatisfied } }, [onSatisfied, onUnsatisfied])
 
@@ -59,11 +63,12 @@ export function WindsorMetaAdsConnectionBlock({ block, token, sessionBlockId, in
         let away = false
         let closeTimer: ReturnType<typeof setTimeout> | undefined
         let closeDeadline = 0
-        let accountId: string | undefined
+        selection.current = { confirmed: false }
         const controller = new AbortController()
         const endpoint = `/api/onboarding/session/${encodeURIComponent(token)}/windsor-meta-ads?block=${encodeURIComponent(sessionBlockId)}`
         async function request(method: "GET" | "POST") {
-            const response = await fetch(endpoint + (accountId ? `&account=${encodeURIComponent(accountId)}` : ""), {
+            const { accountId, confirmed: confirmAccount } = selection.current
+            const response = await fetch(endpoint + (accountId ? `&account=${encodeURIComponent(accountId)}` : "") + (confirmAccount ? "&confirm=true" : ""), {
                 method, cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]),
             })
             const outcome = await response.json()
@@ -83,6 +88,7 @@ export function WindsorMetaAdsConnectionBlock({ block, token, sessionBlockId, in
                     if (cancelled) return "complete"
                     setConnection(outcome.connection)
                     setAccounts(outcome.accounts)
+                    setReportPreview(outcome.preview ?? null)
                     if (outcome.satisfied) {
                         stopCloseWatch()
                         popup.current = null
@@ -92,10 +98,10 @@ export function WindsorMetaAdsConnectionBlock({ block, token, sessionBlockId, in
                         return "complete"
                     }
                     callbacks.current.onUnsatisfied()
-                    setNotice(outcome.accounts.length > 1
-                        ? "Choose the Meta Ads account for this relationship."
+                    setNotice(outcome.accounts.length > 0
+                        ? outcome.preview ? "Review the report and confirm that this is your intended advertising account." : "Choose the Meta Ads account for this relationship."
                         : "Your account has not reached us yet. Finish in Windsor, then return here and we’ll confirm it automatically.")
-                    return outcome.accounts.length > 1 ? "pause" : "retry"
+                    return outcome.accounts.length > 0 ? "pause" : "retry"
                 } catch (cause) {
                     if (!cancelled) setError(cause instanceof Error ? cause.message : "Your connection could not be confirmed. Please try again.")
                     return "pause"
@@ -117,11 +123,12 @@ export function WindsorMetaAdsConnectionBlock({ block, token, sessionBlockId, in
         }
         function left() { away = true }
         begin.current = () => {
+            selection.current = { confirmed: false }
             monitor.start()
             closeDeadline = Date.now() + 30 * 60_000
             watchClose()
         }
-        choose.current = (id) => { accountId = id; monitor.start(); monitor.returned() }
+        choose.current = (id, confirmed = false) => { selection.current = { accountId: id || undefined, confirmed }; monitor.start(); monitor.returned() }
         window.addEventListener("blur", left)
         window.addEventListener("focus", returned)
         window.addEventListener("pageshow", returned)
@@ -167,8 +174,10 @@ export function WindsorMetaAdsConnectionBlock({ block, token, sessionBlockId, in
         setRecovery(false)
         setAccounts([])
         setSelectedAccount("")
+        setReportPreview(null)
+        setConfirmed(false)
         setStarted(true)
-        setNotice("Select your Meta Ads account in Windsor and press Finish. Close that window to return here; your connection will be confirmed automatically.")
+        setNotice("Select your Meta Ads account in Windsor and press Finish. Close that window to return here, then review the account and report before confirming.")
         // Open synchronously with the click, before any request, for Safari and
         // mobile popup rules. Isolate the provider from the onboarding opener.
         const child = window.open("about:blank", "_blank", "popup=yes,width=680,height=780")
@@ -188,14 +197,12 @@ export function WindsorMetaAdsConnectionBlock({ block, token, sessionBlockId, in
         {connected ? <div className="mt-4 flex items-center gap-3"><span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#1877F2] text-lg font-bold text-white">f</span><div className="min-w-0"><p className="break-words font-medium text-[var(--onboarding-text)]">{connection.accountName || "Meta Ads account"}</p><p className="break-all text-sm text-[var(--onboarding-muted)]">{connection.accountId?.replace(/^act_/, "")}</p></div></div>
         : locked ? <p className="mt-4 text-sm text-[var(--onboarding-muted)]">This step has been submitted.</p>
         : <div className="mt-4 space-y-3">
-            {accounts.length > 1 ? <div>
-                <label htmlFor={`windsor-account-${block.id}`} className="block text-sm font-medium text-[var(--onboarding-text)]">Advertising account</label>
-                <select id={`windsor-account-${block.id}`} value={selectedAccount} disabled={pending} onChange={(event) => { setSelectedAccount(event.target.value); if (event.target.value) choose.current(event.target.value) }} className="mt-2 min-h-12 w-full rounded-xl border border-black/20 bg-[var(--onboarding-surface)] px-4 text-base text-[var(--onboarding-text)]">
-                    <option value="">Choose an account</option>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name} · {account.id.replace(/^act_/, "")}</option>)}
-                </select>
+            {accounts.length > 0 ? <div>
+                <label className="block text-sm font-medium text-[var(--onboarding-text)]">Advertising account<Selector appearance="input" surface="light" ariaLabel="Advertising account" value={selectedAccount} disabled={pending} onChange={value => { selection.current = { accountId: value || undefined, confirmed: false }; setSelectedAccount(value); setReportPreview(null); setConfirmed(false); if (value) choose.current(value) }} options={[{ value: "", label: "Choose an account" }, ...accounts.map(account => ({ value: account.id, label: `${account.name} · ${account.id.replace(/^act_/, "")}` }))]} /></label>
             </div> : <button type="button" disabled={loading || pending} onClick={() => openConnection()} className={primaryButton}><FacebookLogo />{loading ? "Loading…" : pending ? "Confirming connection…" : recovery ? "Try again" : started ? "Continue in Windsor ↗" : block.label}</button>}
+            {reportPreview ? <div className="space-y-3 border-t border-black/10 pt-3 text-sm text-[var(--onboarding-text)]"><p className="font-medium">{reportPreview.account.name} · {reportPreview.account.id}</p><p>{reportPreview.report.dateFrom} – {reportPreview.report.dateTo} · {reportPreview.report.currency ?? "No currency reported"}</p><p>Spend {reportPreview.report.totals.spend.toLocaleString()} · Clicks {reportPreview.report.totals.clicks.toLocaleString()} · Leads {reportPreview.report.totals.leads.toLocaleString()}</p><p className="text-xs text-[var(--onboarding-muted)]">No activity can be valid. Check that the name and account ID match the account running your campaigns.</p><label className="flex items-start gap-3"><input type="checkbox" checked={confirmed} disabled={pending} onChange={event => setConfirmed(event.target.checked)} className="mt-1" />This is the advertising account for my business.</label><button type="button" disabled={!confirmed || pending} onClick={() => choose.current(reportPreview.account.id, true)} className={primaryButton}>{pending ? "Verifying…" : "Confirm reporting account"}</button></div> : null}
             {recovery && started ? <button type="button" disabled={pending} onClick={() => openConnection(true)} className="block text-sm underline text-[var(--onboarding-muted)]">Start a new connection</button> : null}
-            {!started ? <p className="text-sm leading-6 text-[var(--onboarding-muted)]">Select your account and press <strong>Finish</strong> in Windsor. Your connection will be confirmed automatically when you return.</p> : null}
+            {!started ? <p className="text-sm leading-6 text-[var(--onboarding-muted)]">Select your account and press <strong>Finish</strong> in Windsor. Review the account and report here when you return.</p> : null}
         </div>}
         {preview ? <p className="mt-3 text-xs text-[var(--onboarding-muted)]">Preview only. No account will be contacted.</p> : null}
         {notice ? <p role="status" className="mt-4 text-sm leading-6 text-[var(--onboarding-muted)]">{notice}</p> : null}

@@ -232,7 +232,7 @@ async function notificationRpc(action: string, input: Record<string, unknown>): 
     return data as NotificationSetup
 }
 function publicNotificationSetup(setup: NotificationSetup) {
-    return { ready: setup.profile?.detectionEnabled === true, sendingEnabled: setup.profile?.sendingEnabled === true, consentReady: setup.consentReady === true, reminderMinutes: setup.profile?.reminderMinutes ?? 60, calendars: setup.profile?.calendars ?? (setup.profile ? [{ id: setup.profile.calendarId, name: setup.profile.calendarName }] : []) }
+    return { ready: setup.profile?.detectionEnabled === true, syncAvailable: process.env.GHL_APPOINTMENT_DETECTION_ENABLED === "true", sendingEnabled: setup.profile?.sendingEnabled === true, consentReady: setup.consentReady === true, reminderMinutes: setup.profile?.reminderMinutes ?? 60, calendars: setup.profile?.calendars ?? (setup.profile ? [{ id: setup.profile.calendarId, name: setup.profile.calendarName }] : []) }
 }
 export async function manageGhlNotifications(workspaceSlug: string, input: Record<string, unknown>) {
     const config = ghlOAuthConfig()

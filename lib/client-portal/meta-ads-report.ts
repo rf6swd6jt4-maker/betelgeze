@@ -8,6 +8,12 @@ export type PortalMetaAdsDaily = {
 
 export type PortalMetaAdsReport = {
     accountName: string | null
+    accountId?: string
+    connectionRevision?: string
+    dateFrom?: string
+    dateTo?: string
+    freshness?: "current" | "stale"
+    warning?: string | null
     currency: string | null
     fetchedAt: string
     period: "last_30d"
@@ -31,7 +37,7 @@ export function portalMetaAdsReport(value: unknown): PortalMetaAdsReport | null 
     if (!value || typeof value !== "object") return null
     const report = value as Record<string, unknown>
     const totals = report.totals && typeof report.totals === "object" ? report.totals as Record<string, unknown> : null
-    if (report.period !== "last_30d" || typeof report.fetchedAt !== "string" || !totals || !Array.isArray(report.daily) || report.daily.length > 31) return null
+    if (report.period !== "last_30d" || typeof report.fetchedAt !== "string" || !Number.isFinite(Date.parse(report.fetchedAt)) || !totals || !Array.isArray(report.daily) || report.daily.length > 31) return null
     const spend = finiteNonNegative(totals.spend)
     const impressions = finiteNonNegative(totals.impressions)
     const clicks = finiteNonNegative(totals.clicks)
@@ -53,6 +59,12 @@ export function portalMetaAdsReport(value: unknown): PortalMetaAdsReport | null 
     if (daily.length !== report.daily.length) return null
     return {
         accountName: typeof report.accountName === "string" && report.accountName.trim() ? report.accountName.trim().slice(0, 200) : null,
+        accountId: typeof report.accountId === "string" ? report.accountId : undefined,
+        connectionRevision: typeof report.connectionRevision === "string" ? report.connectionRevision : undefined,
+        dateFrom: typeof report.dateFrom === "string" ? report.dateFrom : undefined,
+        dateTo: typeof report.dateTo === "string" ? report.dateTo : undefined,
+        freshness: report.freshness === "stale" ? "stale" : "current",
+        warning: typeof report.warning === "string" ? report.warning.slice(0, 300) : null,
         currency: typeof report.currency === "string" && /^[A-Z]{3}$/.test(report.currency) ? report.currency : null,
         fetchedAt: report.fetchedAt,
         period: "last_30d",

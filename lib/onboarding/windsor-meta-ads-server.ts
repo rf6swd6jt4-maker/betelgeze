@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { getCanonicalSessionByToken } from "@/lib/onboarding/canonical"
-import { createWindsorMetaAdsAuthorization, listWindsorMetaAdsAccounts, type WindsorMetaAdsAccount } from "@/lib/windsor"
+import { createWindsorMetaAdsAuthorization, listWindsorMetaAdsAccounts, loadWindsorMetaAdsReport } from "@/lib/windsor"
 import { decryptWorkspaceIntegration, encryptIntegrationCredential } from "@/lib/workspace-integrations"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 
@@ -65,7 +65,7 @@ export async function prepareWindsorMetaAdsAuthorization(token: string, blockId:
     return authorization.authorizationUrl
 }
 
-export async function checkWindsorMetaAdsOnboarding(token: string, blockId: string, selectedAccountId?: string | null) {
+export async function checkWindsorMetaAdsOnboarding(token: string, blockId: string, selectedAccountId?: string | null, confirmed = false) {
     const { resolved, integration, apiKey } = await windsorContext(token, blockId, true)
     const { data: pending, error: pendingError } = await supabaseAdmin.from("relationship_windsor_meta_ads_connections")
         .select("authorization_encrypted, authorization_hash, integration_fingerprint, status, account_id, account_name, datasource, connected_at")
@@ -81,11 +81,13 @@ export async function checkWindsorMetaAdsOnboarding(token: string, blockId: stri
     if (!accessToken) throw new Error("This Windsor.ai authorization link is no longer usable. Start the connection again.")
     const accounts = await listWindsorMetaAdsAccounts(apiKey, accessToken)
     if (!accounts.length) return { connection: savedConnection({ status: "pending" }), accounts, satisfied: false }
-    let selected: WindsorMetaAdsAccount | undefined
-    if (selectedAccountId) selected = accounts.find((account) => account.id === selectedAccountId)
-    else if (accounts.length === 1) selected = accounts[0]
+    // Even a single authorized account must be explicitly identified as the
+    // intended business account. Authorization alone does not establish that.
+    const selected = selectedAccountId ? accounts.find((account) => account.id === selectedAccountId) : undefined
     if (!selected) return { connection: savedConnection({ status: "pending" }), accounts, satisfied: false }
-    const { data, error } = await supabaseAdmin.rpc("complete_windsor_meta_ads_onboarding", {
+    const report = { ...await loadWindsorMetaAdsReport(apiKey, selected.id), accountId: selected.id, accountName: selected.name, period: "last_30d" as const, fetchedAt: new Date().toISOString() }
+    if (!confirmed) return { connection: savedConnection({ status: "pending" }), accounts, satisfied: false, preview: { account: selected, report } }
+    const { data, error } = await supabaseAdmin.rpc("complete_verified_windsor_meta_ads_onboarding", {
         p_token: token,
         p_block_id: blockId,
         p_authorization_hash: pending.authorization_hash,
@@ -93,6 +95,7 @@ export async function checkWindsorMetaAdsOnboarding(token: string, blockId: stri
         p_account_name: selected.name,
         p_datasource: selected.datasource,
         p_integration_fingerprint: pending.integration_fingerprint,
+        p_report: report,
     })
     if (error) {
         // Another tab may have committed while this provider request was in flight.

@@ -152,8 +152,10 @@ export function validateAppointmentTemplate(candidate: unknown, kind: Appointmen
     return expected
 }
 
-export function appointmentTemplateComponents(kind: AppointmentTemplateKind, values: Record<string, string>, summaryToken: string) {
+export function appointmentTemplateComponents(kind: AppointmentTemplateKind, values: Record<string, string>, summaryToken: string, appointmentVersion?: number) {
     if (!/^[0-9a-f]{64}$/.test(summaryToken)) throw new Error("Appointment summary reference is invalid.")
+    if (appointmentVersion !== undefined && (!Number.isSafeInteger(appointmentVersion) || appointmentVersion < 1)) throw new Error("Appointment version is invalid.")
+    const suffix = `${summaryToken}${appointmentVersion === undefined ? "" : `?v=${appointmentVersion}`}`
     const contract = appointmentTemplateContracts[kind]
     const parameters = contract.variables.map((name) => {
         const value = values[name]
@@ -165,13 +167,16 @@ export function appointmentTemplateComponents(kind: AppointmentTemplateKind, val
     })
     const body = contract.body.replace(/\{\{(\d+)\}\}/g, (_, position: string) => parameters[Number(position) - 1].text)
     if (body.length > 1024) throw new Error("Appointment notification exceeds its tested maximum length.")
+    const components = [
+        { type: "body", parameters },
+        { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: suffix }] },
+    ]
     return {
-        body,
-        components: [
-            { type: "body", parameters },
-            { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: summaryToken }] },
-        ],
-        name: contract.name,
-        language: contract.language,
+        body, components, name: contract.name, language: contract.language,
+        evidence: {
+            schemaVersion: 1, templateId: contract.id, templateName: contract.name, language: contract.language,
+            components,
+            buttons: [{ index: 0, type: "url", label: "View appointment", url: `${APPOINTMENT_SUMMARY_PREFIX}${suffix}` }],
+        },
     }
 }

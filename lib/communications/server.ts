@@ -1,3 +1,4 @@
+import { communicationTemplateEvidenceFromRawPayload } from "@/lib/communications/template-evidence"
 import { profileAvatarUrl } from "@/lib/profile-avatar"
 import { resourceUploadAssetId } from "@/lib/communications/resource-upload"
 import { supabaseAdmin } from "@/lib/supabase/admin"
@@ -62,7 +63,9 @@ export function communicationMessageFromRow(value: unknown): CommunicationMessag
     const senderKind = (["client", "staff", "automation", "legacy"] as const).includes(row.sender_kind as CommunicationSenderKind)
         ? row.sender_kind as CommunicationSenderKind
         : legacySenderKind(row)
+    const templateEvidence = direction === "outbound" && row.provider === "meta_whatsapp" ? communicationTemplateEvidenceFromRawPayload(row.raw_payload) : null
     return {
+        ...(templateEvidence ? { templateEvidence } : {}),
         id,
         clientRequestId: text(row.client_request_id),
         relationshipId,

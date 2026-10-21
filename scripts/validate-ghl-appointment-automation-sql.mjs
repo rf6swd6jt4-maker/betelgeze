@@ -45,6 +45,9 @@ try {
  create table public.workspace_integrations(workspace_id uuid,provider text,enabled boolean,connection_status text,primary key(workspace_id,provider));`)
  await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20261021190000_ghl_template_consent.sql`,'utf8'))
  await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20261021220000_ghl_prompt_reconciliation.sql`,'utf8'))
+ await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20261022010000_ghl_portal_calendar_freshness.sql`,'utf8'))
+ await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20261022011000_ghl_appointment_details.sql`,'utf8'))
+ await (await import('./validate-whatsapp-template-evidence-sql.mjs')).installTemplateEvidenceFixture(db)
 
 
  // Legacy permission is scoped to the same relationship and current number.
@@ -108,6 +111,8 @@ try {
  await db.exec('rollback')
  console.log('Multiple-calendar SQL: selected intake, one history, moves, reminder deduplication and outside-calendar fencing passed')
  const profile=configured.profile
+ await (await import('./validate-ghl-calendar-freshness.mjs')).validateGhlCalendarFreshness({db,w,r,calendar,location,rpc})
+ await (await import('./validate-ghl-appointment-details-sql.mjs')).validateAppointmentDetails({db,rpc,profile,w,r,calendar,location})
  await (await import('./validate-ghl-recovery-flow.mjs')).validateGhlRecoveryFlow({db,rpc,profile,w,r,calendar,location})
  assert.equal((await rpc('configure',{workspaceId:w,relationshipId:r,portalOrigin:'https://portal.example.com',detectionEnabled:true,includeNotes:'true'})).profile.includeNotes,false)
  assert.equal((await rpc('configure',{workspaceId:w,relationshipId:r,portalOrigin:'https://portal.example.com',detectionEnabled:true,includeNotes:true})).profile.includeNotes,true)
@@ -130,6 +135,7 @@ try {
   await a.query('rollback')
   console.log('PASS native PostgreSQL: competing workers cannot claim the same appointment event')
  }
+ await (await import('./validate-ghl-portal-concurrency.mjs')).validateGhlPortalConcurrency({db,profile,w,r,calendar,location})
  let e=await claim();assert(e?.leaseToken)
  await db.exec("update relationships set status='archived'")
  assert.equal((await rpc('event_context',{id:e.id,leaseToken:e.leaseToken})).failure,'access')
@@ -364,6 +370,7 @@ try {
   for(const table of ['profiles','inbox','snapshots','versions','links','outbox'])assert.equal((await scalar(`select has_table_privilege($1,'client_portal_secure.ghl_appointment_${table}','SELECT') allowed`,[role])).allowed,false)
  }
  await (await import('./ghl-sql-growth.mjs')).checkGhlGrowth(db)
+ await (await import('./validate-whatsapp-template-evidence-sql.mjs')).validateTemplateEvidenceFixture(db,w,r)
  await db.exec("select set_config('request.jwt.claims','{\"role\":\"authenticated\"}',false)")
  assert.equal((await rpc('claim_events')).failure,'access')
  assert.equal((await summary(token)).failure,'access')

@@ -8,7 +8,7 @@ import type { ClientConnectionAccount } from "@/lib/client-connections"
 
 type Choice = { id: string; name: string; isActive?: boolean }
 type Session = { relationshipId: string; phase: string; locations: Choice[]; limited: boolean; locationId: string | null; calendars: Choice[] }
-type Notifications = { ready: boolean; sendingEnabled: boolean; consentReady: boolean; reminderMinutes: number; calendars?: Choice[]; error?: string }
+type Notifications = { ready: boolean; syncAvailable?: boolean; sendingEnabled: boolean; consentReady: boolean; reminderMinutes: number; calendars?: Choice[]; error?: string }
 type Connected = { connected: true; revision: string; notifications: Notifications }
 const button = "min-h-11 w-full rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black disabled:opacity-40"
 const field = "mt-2 h-11 w-full rounded-xl border border-neutral-700 bg-black px-3 text-sm text-white outline-none focus:border-neutral-400"
@@ -206,6 +206,8 @@ export function GhlAppConnectionDialog({ workspaceSlug, accounts, initialAccount
             {phase === "connected" ? <section className="space-y-3 border-t border-neutral-800 pt-4">
                 <Status label={notifications?.ready ? "App calendar connected" : (calendarIds.length || account?.calendarId ? "Calendar saved — app setup unfinished" : "Account saved — app setup unfinished")} tone={notifications?.ready ? "green" : "grey"} />
                 {notifications?.calendars?.length ? <p className="text-sm text-neutral-300">Calendars: {notifications.calendars.map(item => item.name).join(", ")}</p> : null}
+                <p className="text-sm leading-6 text-neutral-400">A saved connection does not confirm that appointments are up to date. Open the client’s portal calendar and check its last successful HighLevel refresh before handing it over. Appointment details and WhatsApp delivery must be checked separately.</p>
+                {notifications?.syncAvailable === false ? <p role="alert" className="text-sm text-yellow-200">Automatic appointment synchronization is disabled in this deployment. Manual calendar refresh remains available.</p> : null}
                 <button type="button" disabled={busy} onClick={() => void editCalendars()} className="block min-h-11 text-sm underline underline-offset-4">Edit calendars</button>
                 <h3 className="font-semibold">WhatsApp notifications</h3>
                 <p className="text-sm leading-6 text-neutral-400">Send booking, reschedule, cancellation, removal, detail and status updates, plus an appointment reminder, from all selected calendars to this client’s confirmed WhatsApp number.</p>

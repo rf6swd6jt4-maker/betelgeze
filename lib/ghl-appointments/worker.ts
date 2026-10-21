@@ -21,6 +21,8 @@ type ReconcileCursor = {
     knownCycleId: string
 }
 export type AppointmentWorkerDependencies = {
+    refreshPortalCalendar?: () => Promise<unknown>
+    enrichAppointmentNotes?: () => Promise<unknown>
     fetchCalendarChanges?: (profile: ProviderProfile, window: { start: string; end: string }) => Promise<CalendarObservation[]>
     rpc: AutomationRpc
     now: () => Date
@@ -40,7 +42,7 @@ export async function processGhlEvent(job: EventJob, deps: AppointmentWorkerDepe
     try {
         const result = await deps.rpc("event_context", { id: job.id, leaseToken: job.leaseToken })
         const context = result as EventContext | null
-        if (!context?.profile || !context.privateToken || !context.profile.detectionEnabled) throw new Error("event_context_unavailable")
+        if (!context?.profile || !context.privateToken || !(context.profile.detectionEnabled || context.profile.portalSyncEnabled)) throw new Error("event_context_unavailable")
         const live = await deps.fetchAppointment(providerProfile(context), job.appointmentId)
         const previous = context.current?.snapshot ?? null
         let snapshot: AppointmentSnapshot
@@ -129,7 +131,7 @@ export async function reconcileGhlProfile(job: ReconciliationJob, deps: Appointm
     try {
         cursor = nextReconcileCursor(job.cursor, deps.now())
         const profile = job.profile
-        if (!profile?.detectionEnabled || !job.privateToken) throw new Error("Reconciliation context is unavailable.")
+        if (!(profile?.detectionEnabled || profile?.portalSyncEnabled) || !job.privateToken) throw new Error("Reconciliation context is unavailable.")
         if (cursor.phase === "window") {
             const end = new Date(Math.min(Date.parse(cursor.windowStart) + DAY, Date.parse(cursor.horizonEnd))).toISOString()
             // Re-read this bounded one-day list and advance by provider ID.
@@ -214,12 +216,18 @@ export async function runGhlAppointmentAutomation(deps: AppointmentWorkerDepende
             deliveries.push(...await Promise.allSettled([deliverAppointmentNotification(notifications[0], deps.delivery)]))
         }
     }
-    const results = [...eventResults, ...reconcileResults, ...deliveries, ...discoveryResults]
+    // Optional calendar work runs after notification delivery and shares the
+    // existing budget. Provider range reads cannot delay a ready notification.
+    const portalResults = !wake && events.length < 5 && deps.refreshPortalCalendar && Date.now() < deliveryDeadline - 30_000
+        ? await Promise.allSettled([deps.refreshPortalCalendar()]) : []
+    const enrichmentResults = !wake && deps.enrichAppointmentNotes && Date.now() < deliveryDeadline - 30_000
+        ? await Promise.allSettled([deps.enrichAppointmentNotes()]) : []
+    const results = [...eventResults, ...reconcileResults, ...deliveries, ...discoveryResults, ...portalResults, ...enrichmentResults]
     return {
         disabled: false, events: eventResults.length,
         reconciled: reconcileResults.filter((result) => result.status === "fulfilled" && result.value === "reconciled").length,
         accepted: deliveries.filter((result) => result.status === "fulfilled" && result.value === "accepted").length,
-        attention: results.filter((result) => result.status === "fulfilled" && ["attention", "uncertain", "blocked"].includes(String(result.value))).length,
+        attention: results.filter((result) => result.status === "fulfilled" && (["attention", "uncertain", "blocked"].includes(String(result.value)) || record(result.value).attention === true)).length,
         failed: results.filter((result) => result.status === "rejected").length,
     }
 }
@@ -242,6 +250,18 @@ export async function processGhlAppointmentAutomation(wake?: AppointmentWake) {
         rpc, now, sendingEnabled, fetchAppointment: provider.fetchAppointment, liveTemplate: readLiveAppointmentTemplate,
         sendTemplate: (input) => meta.sendMetaWhatsAppTemplate({ ...input, signal: AbortSignal.timeout(15_000), expectedWabaId: "1928719317836909" }),
     }
-    return runGhlAppointmentAutomation({ rpc, now, detectionEnabled: () => process.env.GHL_APPOINTMENT_DETECTION_ENABLED === "true", delivery,
+    const refreshPortalCalendar = async () => {
+        const { refreshRequestedGhlCalendar } = await import("@/lib/client-portal/ghl-calendar-worker")
+        return refreshRequestedGhlCalendar({ rpc: async (action, input) => {
+            const result = await supabaseAdmin.rpc("ghl_portal_calendar_refresh", { p_action: action, p_input: input })
+            if (result.error || record(result.data).failure) throw new Error("Calendar range work could not be committed.")
+            return result.data
+        } })
+    }
+    const enrichAppointmentNotes = async () => {
+        const { processAppointmentNoteEnrichment } = await import("./notes")
+        return processAppointmentNoteEnrichment({ rpc: params => supabaseAdmin.rpc("ghl_appointment_note_enrichment", params) })
+    }
+    return runGhlAppointmentAutomation({ rpc, now, detectionEnabled: () => process.env.GHL_APPOINTMENT_DETECTION_ENABLED === "true", delivery, refreshPortalCalendar, enrichAppointmentNotes,
         fetchAppointment: provider.fetchAppointment, fetchCalendarWindow: provider.fetchCalendarWindow, fetchCalendarChanges: provider.fetchCalendarChanges }, wake)
 }

@@ -31,7 +31,8 @@ function load(file) {
 const { ClientPortalAppointmentSummary, ClientPortalAppointmentUnavailable } = load(resolve(root, "components/client-portal/ClientPortalAppointmentSummary.tsx"))
 const { appointmentSummary } = load(resolve(root, "lib/client-portal/appointment-summary.ts"))
 const { appStartupBootstrap, appStartupStyles } = load(resolve(root, "lib/app-startup.ts"))
-const fixture = { snapshot: { id: "example-12345678", title: "Window consultation with a long appointment title", calendarName: "Consultations", contactName: "Alex Morgan", startTime: "2026-10-14T18:30:00Z", endTime: "2026-10-14T19:00:00Z", timezone: "America/New_York", status: "confirmed", contactDetails: "+1 202 555 0123; alex@example.com", meetingDetails: "Phone consultation\nCall +1 202 555 0123", bookingDetails: "Six windows.\n" + "Long booking note ".repeat(25), deleted: false }, observedAt: "2026-10-11T09:00:00Z", version: 3 }
+const fixture = { snapshot: { id: "example-12345678", title: "Window consultation with a long appointment title", calendarName: "Consultations", contactName: "Alex Morgan", startTime: "2026-10-14T18:30:00Z", endTime: "2026-10-14T19:00:00Z", timezone: "America/New_York", status: "confirmed", contactDetails: "+1 202 555 0123; alex@example.com", meetingDetails: "Phone consultation\nCall +1 202 555 0123", bookingDetails: "Six windows.\n" + "Long booking note ".repeat(25), deleted: false,
+    details: { schemaVersion: 1, contact: { phone: "+1 202 555 0123", email: "alex@example.com", company: "Example company", address: "1 Street, Dallas, TX" }, meeting: { location: "Meeting instructions ".repeat(150), joinUrl: "https://meeting.example/consultation" }, booking: { state: "available", text: "Six windows" }, source: { createdAt: "2026-10-01T09:00:00Z" } } }, observedAt: "2026-10-11T09:00:00Z", version: 3 }
 const css = (await postcss([tailwind({ base: root, optimize: false })]).process(readFileSync("app/globals.css", "utf8"), { from: resolve("app/globals.css") })).css
 const server = createServer((request, response) => {
     const url = new URL(request.url, "http://127.0.0.1")
@@ -40,7 +41,7 @@ const server = createServer((request, response) => {
     const summary = appointmentSummary({ ...fixture, snapshot: { ...fixture.snapshot, status: scenario === "cancelled" ? "cancelled" : "confirmed", deleted: scenario === "removed" } })
     const content = ["unavailable", "error"].includes(scenario)
         ? React.createElement(ClientPortalAppointmentUnavailable, { retryable: scenario === "error" })
-        : React.createElement(ClientPortalAppointmentSummary, { summary, displayName: "Example Agency" })
+        : React.createElement(ClientPortalAppointmentSummary, { summary, displayName: "Example Agency", notifiedVersion: scenario === "updated" ? 2 : null })
     response.writeHead(200, { "Content-Type": "text/html", "Cache-Control": "no-store" })
     response.end(`<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>${appStartupStyles}</style><script>${appStartupBootstrap}</script><link rel="stylesheet" href="/style.css"></head><body>${renderToStaticMarkup(content)}</body></html>`)
 })
@@ -57,20 +58,24 @@ try {
                 const page = await context.newPage(), errors = [], requests = []
                 page.on("pageerror", error => errors.push(error.message))
                 page.on("request", request => requests.push(request.url()))
-                for (const scenario of ["confirmed", "cancelled", "removed", "unavailable", "error"]) {
+                for (const scenario of ["confirmed", "updated", "cancelled", "removed", "unavailable", "error"]) {
                     await page.goto(`${origin}/appointment/${"a".repeat(64)}?scenario=${scenario}`)
                     await page.locator("main").waitFor()
                     assert.equal(await page.evaluate(() => document.documentElement.dataset.appStartup), "client")
                     assert.equal(await page.locator("[data-app-startup-screen]").count(), 0)
                     const geometry = await page.evaluate(() => ({ width: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }))
                     assert.ok(geometry.scroll <= geometry.width, JSON.stringify({ engine, width, scenario, geometry }))
-                    if (["confirmed", "cancelled", "removed"].includes(scenario)) {
+                    if (["confirmed", "updated", "cancelled", "removed"].includes(scenario)) {
                         assert.ok(await page.getByText("Alex Morgan", { exact: true }).isVisible())
                         assert.ok(await page.getByText("Oct 14, 2026, 2:30 PM EDT", { exact: true }).isVisible())
                         assert.ok(await page.getByText("Example Agency", { exact: false }).isVisible())
                         assert.equal(await page.locator("h1").evaluate(node => getComputedStyle(node).color), "rgb(15, 23, 42)")
                         assert.ok(await page.getByText(scenario === "removed" ? "Removed from calendar" : scenario === "cancelled" ? "Cancelled" : "Confirmed", { exact: true }).isVisible())
-                        if (scenario !== "confirmed") assert.match(await page.locator("main").innerText(), /retained here/)
+                        assert.equal(await page.getByRole("link", { name: "+1 202 555 0123", exact: true }).getAttribute("href"), "tel:+12025550123")
+                        assert.equal(await page.getByRole("link", { name: "alex@example.com", exact: true }).getAttribute("href"), "mailto:alex@example.com")
+                        assert.equal(await page.getByRole("link", { name: "Open meeting link", exact: true }).getAttribute("rel"), "noopener noreferrer")
+                        if (scenario === "updated") assert.match(await page.locator("main").innerText(), /changed since the notification/)
+                        if (["cancelled", "removed"].includes(scenario)) assert.match(await page.locator("main").innerText(), /retained here/)
                     } else {
                         assert.equal(await page.getByText("Alex Morgan", { exact: true }).count(), 0)
                         assert.match(await page.locator("h1").innerText(), scenario === "error" ? /could not load/ : /not available/)
@@ -83,7 +88,7 @@ try {
                 await context.close()
             }
         } finally { await browser.close() }
-        console.log(`${engine}: 15 summary scenarios passed`)
+        console.log(`${engine}: 18 summary scenarios passed`)
     }
 } finally {
     await new Promise(resolve => server.close(resolve))

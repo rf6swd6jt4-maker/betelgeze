@@ -1,5 +1,7 @@
 "use client"
 
+import { communicationTemplateEvidenceFromRawPayload } from "@/lib/communications/template-evidence"
+
 import { compareChatMessages } from "@/lib/record-version.js"
 
 import { useChatDocumentAttention } from "@/components/communications/useChatDocumentAttention"
@@ -12,6 +14,7 @@ import { ClientPortalActions } from "@/components/communications/ClientPortalAct
 import { resourceUploadAssetId } from "@/lib/communications/resource-upload"
 
 import { chatCheckboxBody } from "@/lib/chat-formatting"
+import { MessageTemplateButtons } from "./MessageTemplateButtons"
 import { ChatMessageText } from "@/components/communications/ChatMessageText"
 
 import Link from "next/link"
@@ -91,7 +94,9 @@ function realtimeMessage(value: unknown): CommunicationMessage | null {
     const senderKind = row.sender_kind === "client" || row.sender_kind === "staff" || row.sender_kind === "automation" || row.sender_kind === "legacy"
         ? row.sender_kind
         : direction === "inbound" ? "client" : raw.outbox_id || raw.template_name || raw.onboarding_url ? "automation" : "legacy"
+    const templateEvidence = direction === "outbound" && row.provider === "meta_whatsapp" ? communicationTemplateEvidenceFromRawPayload(row.raw_payload) : null
     return {
+        ...(templateEvidence ? { templateEvidence } : {}),
         id,
         clientRequestId: stringValue(row.client_request_id),
         relationshipId,
@@ -1155,6 +1160,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                                         {message.replyToMessageId || message.replyToProviderMessageId ? <button type="button" disabled={!repliedMessage} aria-label="Jump to replied message" onPointerDown={(event) => { if (event.button === 0) event.preventDefault() }} onClick={(event) => { event.stopPropagation(); if (repliedMessage) jumpToMessage(repliedMessage.id) }} className={`block w-full text-left disabled:cursor-default focus-visible:outline focus-visible:outline-2 mb-2 rounded-lg border-l-2 px-2.5 py-2 ${isWhatsAppClientMessage ? "border-white/40 bg-black/20" : message.direction === "outbound" ? "border-neutral-500 bg-black/10" : "border-neutral-500 bg-black/35"}`}><p className="truncate text-[10px] font-semibold opacity-70">{repliedMessage ? senderName(repliedMessage) : "Replied message"}</p><p className="mt-0.5 truncate text-xs opacity-65">{repliedMessage ? messagePreview(repliedMessage) : "Message unavailable"}</p></button> : null}
                                         {message.attachment ? <MessageAttachment key={message.attachment.storagePath} attachment={message.attachment} onOpenImage={setPreviewMedia} light={message.direction === "outbound"} whiteOnColor={isWhatsAppClientMessage} /> : null}
                                         {message.body && !(message.attachment && message.body === attachmentPlaceholder(message.attachment)) ? <ChatMessageText body={message.body} onToggleCheckbox={selected.canSend && message.id !== message.clientRequestId ? (line, checked, expectedBody) => toggleCheckbox(message, line, checked, expectedBody) : undefined} /> : null}
+                                        {message.templateEvidence ? <MessageTemplateButtons evidence={message.templateEvidence} message={message} /> : null}
                                         {message.uploadedAssetId ? <a href={`/${bootstrap.workspaceSlug}/assets/${message.uploadedAssetId}`} className="mt-3 inline-flex min-h-9 items-center gap-2 rounded-lg border border-current/20 px-3 py-1.5 text-sm font-medium hover:bg-black/5" onPointerDown={(event) => event.stopPropagation()}>View asset <span aria-hidden="true">↗</span></a> : null}
                                         {isSticker && messageReactions.length ? <div className={`relative z-10 -mt-5 flex max-w-full flex-wrap gap-0.5 ${message.direction === "outbound" ? "justify-end" : "justify-start"}`}>{messageReactions.map((reaction) => <span key={`${reaction.messageId}:${reaction.direction}`} title={reaction.direction === "inbound" ? `Reacted by ${selected.title}` : `Reacted in Betelgeze by ${peopleById.get(reaction.reactorUserId ?? "")?.name ?? "Team"}`} className="rounded-full border border-neutral-800 bg-neutral-950 px-1.5 py-0.5 text-sm shadow-sm">{reaction.emoji}</span>)}</div> : null}
                                         <div className={`mt-1.5 flex items-center justify-between gap-3 text-[10px] ${isSticker ? "ml-auto min-w-20 rounded-full bg-neutral-950/80 px-2 py-0.5 text-neutral-400" : isWhatsAppClientMessage ? "text-white/65" : message.direction === "outbound" ? "text-neutral-500" : "text-neutral-600"}`}><MessageReadAvatars readers={readers} /><span className="flex shrink-0 items-center gap-1.5"><time dateTime={message.createdAt}>{messageTime(message.createdAt)}</time>{message.direction === "outbound" ? <DeliveryTicks message={message} /> : null}</span></div>

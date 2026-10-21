@@ -22,7 +22,44 @@ test('deduplicates records, keeps cancelled appointments, hides private busy tit
 test('missing date offsets, permission failures and oversized windows fail explicitly',async()=>{await assert.rejects(fetchGhlCalendar(credentials,'2026-09',null,async()=>new Response('secret',{status:401})),/permissions/);for(const events of [[{...event,startTime:'2026-09-12T09:00:00'}],Array(1001).fill(event)]){const f=fixture((p,v)=>p==='/calendars/events'?{events}:v);await assert.rejects(fetchGhlCalendar(credentials,'2026-09',binding,f.fetcher),/response/)}})
 test('calendar dates cover leap years, year changes, and Chicago daylight saving',()=>{assert.equal(shiftMonth('2026-12',1),'2027-01');assert.equal(shiftMonth('2026-01',-1),'2025-12');assert.equal(monthDays('2028-02').includes('2028-02-29'),true);const march=monthWindow('2026-03','America/Chicago');assert.equal(new Date(march.start).toISOString(),'2026-03-01T06:00:00.000Z');assert.equal(new Date(march.end).toISOString(),'2026-04-12T05:00:00.000Z');assert.equal(dateKey('2026-09-13T01:00:00Z','America/Chicago'),'2026-09-12')})
 const request=(body:unknown)=>new Request('https://portal.example/calendar',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)})
-test('calendar snapshot GET never contacts GHL and never projects credentials',async()=>{const r=await handlePortalGhlCalendar(new Request('https://portal.example/calendar'),'token',{resolve:async()=>({workspace:{id:'w'}}),rpc:async(p)=>{assert.equal(p.p_action,'read');return {data:{snapshot:null,privateToken:'secret'},error:null}},fetchCalendar:async()=>{throw Error('must not call')}});assert.deepEqual(await r.json(),{revision:null,calendars:[],snapshot:null,refreshedAt:null,error:null,busy:false});assert.equal(r.headers.get('cache-control'),'private, no-store')})
+test('month-specific reads validate the requested range before the authorized RPC',async()=>{
+ let calls=0
+ const deps={resolve:async()=>({workspace:{id:'w'}}),rpc:async(p:Record<string,unknown>)=>{calls++;assert.equal(p.p_month,'2026-10');assert.equal(p.p_calendar_id,'calendar123456789');return {data:{snapshot:null,complete:false},error:null}}}
+ assert.equal((await handlePortalGhlCalendar(new Request('https://portal.example/calendar?month=2026-10&calendarId=calendar123456789'),'token',deps)).status,200)
+ assert.equal((await handlePortalGhlCalendar(new Request('https://portal.example/calendar?month=invalid'),'token',deps)).status,400)
+ assert.equal(calls,1)
+})
+test('background refresh acknowledges durable admission without a foreground provider read',async()=>{
+ const actions:string[]=[]
+ const deps={resolve:async()=>({workspace:{id:'w'}}),rpc:async(p:Record<string,unknown>)=>{actions.push(String(p.p_action));assert.equal(p.p_month,'2026-10');return {data:{queued:true,busy:true,snapshot:null},error:null}},fetchCalendar:async()=>{throw Error('provider must stay in worker')}}
+ const response=await handlePortalGhlCalendar(request({month:'2026-10',background:true}),'token',deps)
+ assert.equal(response.status,202);assert.equal((await response.json()).queued,true);assert.deepEqual(actions,['request'])
+ const failed=await handlePortalGhlCalendar(request({month:'2026-10',background:true}),'token',{...deps,rpc:async()=>({data:null,error:Error('storage')})})
+ assert.equal(failed.status,503)
+ const crossSite=new Request('https://portal.example/calendar',{method:'POST',headers:{'content-type':'application/json','sec-fetch-site':'cross-site'},body:JSON.stringify({month:'2026-10',background:true})})
+ assert.equal((await handlePortalGhlCalendar(crossSite,'token',deps)).status,403);assert.equal(actions.length,1)
+})
+test('freshness distinguishes complete empty, expired, missing, pending and incomplete ranges',()=>{
+ const {calendarNeedsRefresh}=load('ghl-calendar-freshness') as typeof import('../lib/client-portal/ghl-calendar-freshness')
+ const now=Date.parse('2026-10-21T22:00:00Z'),state={revision:'r1',snapshot:{source:'booking-calendar' as const,owner:{id:ownerId,name:'Owner'},timezone:'UTC',month:'2026-10',events:[]},refreshedAt:new Date(now).toISOString(),busy:false,error:null,complete:true}
+ assert.equal(calendarNeedsRefresh(state,now),false)
+ assert.equal(calendarNeedsRefresh(state,now+300000),true)
+ assert.equal(calendarNeedsRefresh({...state,complete:false},now),true)
+ assert.equal(calendarNeedsRefresh({...state,refreshedAt:'invalid'},now),true)
+ assert.equal(calendarNeedsRefresh(null,now),true)
+ assert.equal(calendarNeedsRefresh({...state,busy:true},now+300000),false)
+})
+test('durable range worker bounds hydration and retains failure without claiming a fresh check',async()=>{
+ const {refreshRequestedGhlCalendar}=load('ghl-calendar-worker') as typeof import('../lib/client-portal/ghl-calendar-worker')
+ const job={relationshipId:'r',calendarId:'calendar123456789',month:'2026-10',revision:'rev',leaseToken:'lease',mode:'hydrate',...credentials,binding:null}
+ const actions:string[]=[]
+ const result=await refreshRequestedGhlCalendar({rpc:async(action)=>{actions.push(action);return action==='claim'?{job}:{accepted:true,queued:10}},fetchCalendar:async()=>{throw Error('hydrate must not read provider')}})
+ assert.deepEqual(result,{refreshed:false,queued:10});assert.deepEqual(actions,['claim','hydrate'])
+ actions.length=0
+ const failure=await refreshRequestedGhlCalendar({rpc:async(action,input)=>{actions.push(action);if(action==='fail')assert.equal(input.revision,'rev');return action==='claim'?{job:{...job,mode:'refresh'}}:{accepted:true}},fetchCalendar:async()=>{throw Error('Provider failed')}})
+ assert.deepEqual(failure,{refreshed:false,queued:0,attention:true});assert.deepEqual(actions,['claim','fail'])
+})
+test('calendar snapshot GET never contacts GHL and never projects credentials',async()=>{const r=await handlePortalGhlCalendar(new Request('https://portal.example/calendar'),'token',{resolve:async()=>({workspace:{id:'w'}}),rpc:async(p)=>{assert.equal(p.p_action,'read');return {data:{snapshot:null,privateToken:'secret'},error:null}},fetchCalendar:async()=>{throw Error('must not call')}});assert.deepEqual(await r.json(),{revision:null,calendars:[],snapshot:null,refreshedAt:null,error:null,busy:false,complete:false,detailsPending:false,queued:false});assert.equal(r.headers.get('cache-control'),'private, no-store')})
 test('calendar authorization and request validation run before provider or write RPC',async()=>{for(const access of [null,{workspace:{id:'w'}}]){const r=await handlePortalGhlCalendar(request({month:'all-history'}),'token',{resolve:async()=>access,rpc:()=>{throw Error('must not call')}});assert.equal(r.status,access?400:404)}})
 test('refresh is leased and failures release only its own operation',async()=>{const actions:string[]=[];const r=await handlePortalGhlCalendar(request({month:'2026-09'}),'token',{resolve:async()=>({workspace:{id:'w'}}),rpc:async(p)=>{actions.push(String(p.p_action));assert.equal(p.p_workspace_id,'w');return {data:p.p_action==='begin'?credentials:{},error:null}},fetchCalendar:async()=>{assert.deepEqual(actions,['begin']);throw Error('private provider payload')}});assert.deepEqual(actions,['begin','fail']);assert.equal(r.status,503);assert.equal(JSON.stringify(await r.json()).includes('private provider'),false)})
 

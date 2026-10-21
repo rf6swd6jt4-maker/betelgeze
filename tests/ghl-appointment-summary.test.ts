@@ -4,7 +4,7 @@ import { createRequire, Module } from "node:module"
 import { resolve } from "node:path"
 import test from "node:test"
 import ts from "typescript"
-import { appointmentSummary, appointmentSummaryHost, appointmentSummaryToken, summaryDateTime, summaryStatus } from "../lib/client-portal/appointment-summary.ts"
+import { appointmentSummary, appointmentSummaryHost, appointmentSummaryToken, notificationVersion, summaryDateTime, summaryStatus } from "../lib/client-portal/appointment-summary.ts"
 
 function load(path: string, dependencies: Record<string, unknown> = {}) {
     const source = ts.transpileModule(readFileSync(path, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 } }).outputText
@@ -93,6 +93,45 @@ test("latest rescheduled snapshot replaces time and reports missing timezone hon
     assert.equal(updated.timezoneKnown, false)
     assert.equal(appointmentSummary({}), null)
     assert.equal(appointmentSummary({ snapshot: { title: "Missing identity" } }), null)
+})
+
+test("richer details allowlist structured fields and safe destinations without exposing internal notes", () => {
+    const details = { schemaVersion: 1, contact: { phone: "+12025550123", email: "alex@example.com", company: "Example", address: "One street", privateFields: "secret" },
+        meeting: { location: "Meeting", joinUrl: "https://meet.example.com/session" }, source: { createdAt: "2026-10-01T09:00:00Z" },
+        booking: { text: "Six windows", state: "available" }, internalNotes: "secret", formAnswers: ["not verified"] }
+    const summary = appointmentSummary({ ...result, snapshot: { ...snapshot, details }, privateToken: "secret" })!
+    assert.equal(summary.details?.contact.phone, "+12025550123")
+    assert.equal(summary.details?.meeting.joinUrl, "https://meet.example.com/session")
+    assert.equal(summary.details?.source.createdAt, "2026-10-01T09:00:00.000Z")
+    assert.equal(summary.details?.formSubmissionState, "unavailable")
+    assert.equal(JSON.stringify(summary).includes("secret"), false)
+    for (const unsafe of ["javascript:alert(1)", "data:text/html,test", "https://user:password@example.com/"]) {
+        assert.equal(appointmentSummary({ ...result, snapshot: { ...snapshot, details: { ...details, meeting: { joinUrl: unsafe } } } })?.details?.meeting.joinUrl, null)
+    }
+    assert.equal(appointmentSummary(result)?.details, null, "Legacy snapshots remain readable")
+})
+
+test("notification version is comparison metadata, never an authorization value", () => {
+    assert.equal(notificationVersion("123"), 123)
+    for (const value of [undefined, "0", "-1", "1.2", "1e3", "999999999999999999999", ["1"], "1&token=secret"]) assert.equal(notificationVersion(value), null)
+})
+
+test("portal details require current session scope and exact appointment/calendar before the retained read", async () => {
+    const calls: unknown[] = []
+    const { handlePortalAppointmentDetail: handle } = load("lib/client-portal/appointment-detail-handler.ts", { "./appointment-summary": { appointmentSummary } })
+    const deps = { resolve: async () => ({ workspace: { id: "workspace" } }), rpc: async (params: unknown) => { calls.push(params); return { data: result, error: null } } }
+    const request = new Request("https://portal.example.com/api/details?calendarId=calendar123")
+    const response = await handle(request, token, "appointment123", deps)
+    assert.equal(response.status, 200)
+    assert.equal(response.headers.get("cache-control"), "private, no-store")
+    assert.deepEqual(calls, [{ p_session_token: token, p_workspace_id: "workspace", p_calendar_id: "calendar123", p_appointment_id: "appointment123" }])
+    assert.equal((await response.json()).summary.contactName, "Alex Morgan")
+    assert.equal((await handle(request, token, "../other", deps)).status, 404)
+    assert.equal((await handle(request, token, "appointment123", { ...deps, resolve: async () => null })).status, 404)
+    assert.equal(calls.length, 1)
+    const pending = await handle(request, token, "appointment123", { ...deps, rpc: async () => ({ data: { failure: "not_retained" }, error: null }) })
+    assert.equal((await pending.json()).code, "not_retained")
+    assert.equal((await handle(request, token, "appointment123", { ...deps, rpc: async () => ({ data: null, error: { message: "secret" } }) })).status, 503)
 })
 
 test("Proxy routes capabilities only on the verified client portal domain and replaces spoofed scope", async (t) => {

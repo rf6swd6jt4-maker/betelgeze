@@ -20,6 +20,20 @@ function timezone(value: unknown): string {
     if (typeof value !== "string" || value.length > 100) throw new GhlError("timezone")
     try { new Intl.DateTimeFormat("en-US", { timeZone: value }).format(); return value } catch { throw new GhlError("timezone") }
 }
+
+function optionalText(value: unknown, maximum: number): string | null {
+    if (typeof value !== "string" || value.length > maximum) return null
+    return value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "").trim() || null
+}
+function concise(value: string | null, fallback: string): string {
+    if (!value) return fallback
+    const compact = value.replace(/\s+/g, " ").trim()
+    return compact.length <= 500 ? compact : `${compact.slice(0, 473).trimEnd()}… See appointment details.`
+}
+function meetingUrl(value: string | null): string | null {
+    if (!value || value.length > 2048) return null
+    try { const url = new URL(value); return url.protocol === "https:" && !url.username && !url.password ? url.href : null } catch { return null }
+}
 async function withProvider<T>(profile: ProviderProfile, fetcher: typeof fetch, work: (request: (path: string, check: "location" | "calendars" | "contacts" | "events", allowMissing?: boolean) => Promise<Record<string, unknown> | null>, location: Record<string, unknown>) => Promise<T>) {
     if (!isGhlIdentifier(profile.locationId) || !isGhlIdentifier(profile.calendarId) || !/^[\x21-\x7e]{20,4096}$/.test(profile.privateToken)) throw new GhlError("credentials")
     const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 20_000)
@@ -69,17 +83,33 @@ export async function fetchAppointment(profile: ProviderProfile, id: string, fet
         if (contact && (contact.id !== contactId || contact.locationId !== profile.locationId)) throw new GhlError("location")
         const contactName = contact ? text(contact.contactName || contact.name || [contact.firstName, contact.lastName].filter(v => typeof v === "string").join(" "), 200) : "Not provided"
         const contactDetails = contact ? [text(contact.phone, 80, ""), text(contact.email, 254, "")].filter(Boolean).join("; ") || "Not provided" : "Not provided"
+        const meeting = optionalText(event.address, 4000)
+        // Keep the existing explicitly enabled legacy booking-text allowance.
+        // Separate appointment-note bodies can be internal and never enter this
+        // client projection merely because the provider supports their retrieval.
+        const booking = profile.includeNotes ? optionalText(event.notes, 500) : null
+        const sourceUpdatedAt = event.dateUpdated == null ? null : timestamp(event.dateUpdated)
+        const sourceCreatedAt = event.dateAdded == null ? null : timestamp(event.dateAdded)
         return {
             id, locationId: profile.locationId, calendarId: event.calendarId, calendarName: text(calendar.name, 200),
             contactId, contactName, title: text(event.title, 200), startTime, endTime,
             timezone: timezone(event.timezone ?? calendar.timezone ?? location.timezone ?? profile.timezone),
             status: text(event.appointmentStatus, 60, "unknown").toLowerCase(),
-            contactDetails, meetingDetails: text(event.address, 500),
+            contactDetails, meetingDetails: concise(meeting, "Not provided"),
             // Arbitrary contact custom fields are not appointment booking answers.
-            bookingDetails: profile.includeNotes ? text(event.notes, 500) : "Booking details are not configured.",
-            sourceUpdatedAt: event.dateUpdated == null ? null : timestamp(event.dateUpdated),
-            sourceCreatedAt: event.dateAdded == null ? null : timestamp(event.dateAdded),
+            bookingDetails: profile.includeNotes ? concise(booking, typeof event.notes === "string" && event.notes.length > 500 ? "Booking text requires an agency review before sharing." : "Not provided") : "Booking details are not configured.",
+            sourceUpdatedAt, sourceCreatedAt,
             observedAt: new Date().toISOString(), deleted: event.deleted === true,
+            details: {
+                schemaVersion: 1,
+                contact: { phone: optionalText(contact?.phone, 80), email: optionalText(contact?.email, 254), company: optionalText(contact?.companyName, 200),
+                    address: [contact?.address1, contact?.city, contact?.state, contact?.postalCode, contact?.country].map(value => optionalText(value, 250)).filter(Boolean).join(", ") || null },
+                meeting: { location: meeting, joinUrl: meetingUrl(meeting) },
+                assignedUserId: isGhlIdentifier(event.assignedUserId) ? event.assignedUserId : null,
+                source: { createdAt: sourceCreatedAt, updatedAt: sourceUpdatedAt },
+                booking: { text: booking, state: !profile.includeNotes ? "not_enabled" : booking ? "available" : typeof event.notes === "string" && event.notes.length > 500 ? "too_large" : "not_provided" },
+                formSubmissionState: "unavailable",
+            },
         }
     })
 }

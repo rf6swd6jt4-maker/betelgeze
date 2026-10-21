@@ -1,5 +1,6 @@
 // Actual settings/admin popup owners with synthetic local data and no writes.
 import { createServer } from "node:http"
+import { execFileSync } from "node:child_process"
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join, resolve } from "node:path"
@@ -12,10 +13,22 @@ const { webpack } = require("next/dist/compiled/webpack/webpack")
 const strict = process.env.SERVICE_TRANSFER_STRICT === "1"
 const root = process.cwd(), directory = mkdtempSync(join(tmpdir(), "be-client-connections-"))
 try {
+    // Optional read-only baseline for matched performance observations; never checks out or edits source.
+    const baseline = process.env.BE_CALENDAR_FIXTURE_BASE
+    const calendarAlias = {}
+    if (baseline) {
+        if (!/^[a-f0-9]{7,40}$/i.test(baseline)) throw new Error("Fixture baseline must be a Git commit SHA")
+        const source = execFileSync("git", ["show", `${baseline}:components/client-portal/ClientPortalCalendar.tsx`], { encoding: "utf8" })
+        const path = join(directory, "BaselineClientPortalCalendar.tsx")
+        writeFileSync(path, source.replaceAll('from "./', 'from "@/components/client-portal/').replaceAll('import("./', 'import("@/components/client-portal/'))
+        calendarAlias["@/components/client-portal/ClientPortalCalendar$"] = path
+    }
     writeFileSync(join(directory, "loader.cjs"), `const ts=require(${JSON.stringify(require.resolve("typescript"))});module.exports=function(source){return ts.transpileModule(source,{fileName:this.resourcePath,compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext,jsx:ts.JsxEmit.ReactJSX}}).outputText}`)
-    writeFileSync(join(directory, "css.cjs"), 'module.exports=function(source){const names=Object.fromEntries([...source.matchAll(/\\.([a-zA-Z][\\w-]*)/g)].map(m=>[m[1],m[1]]));return `const style=document.createElement("style");style.textContent=${JSON.stringify(source)};document.head.append(style);export default ${JSON.stringify(names)}`;}')
+    // Preserve CSS-module isolation: raw `.grid` must never overwrite shared Tailwind grids.
+    writeFileSync(join(directory, "css.cjs"), String.raw`const postcss=require(${JSON.stringify(require.resolve("postcss"))});const{createHash}=require("node:crypto");module.exports=function(source){const names={};const root=postcss.parse(source);if(this.resourcePath.endsWith(".module.css")){const prefix="fixture_"+createHash("sha256").update(this.resourcePath).digest("hex").slice(0,10)+"_";root.walkRules(rule=>{if(/:global|:local/.test(rule.selector))throw Error("Unsupported explicit CSS module scope in fixture");rule.selector=rule.selector.replace(/\.([a-zA-Z][\w-]*)/g,(_,name)=>"."+(names[name]??=(prefix+name)))})}return "const style=document.createElement('style');style.textContent="+JSON.stringify(root.toString())+";document.head.append(style);export default "+JSON.stringify(names)};`)
     writeFileSync(join(directory, "navigation.js"), 'export const useRouter=()=>({refresh:()=>{window.connectionRefreshes=(window.connectionRefreshes||0)+1},push:()=>{throw Error("Unexpected push")}});export const useSearchParams=()=>new URLSearchParams(location.search);export const usePathname=()=>location.pathname;')
     writeFileSync(join(directory, "link.js"), 'import React from "react";export default function Link({href,children,...props}){return React.createElement("a",{href,...props},children)}')
+    writeFileSync(join(directory, "dynamic.js"), 'import React,{useEffect,useState} from "react";export default function dynamic(loader){return function FixtureDynamic(props){const[Component,setComponent]=useState(null);useEffect(()=>{let active=true;loader().then(value=>{if(active)setComponent(()=>value.default||value)});return()=>{active=false}},[]);return Component?React.createElement(Component,props):null}}')
     writeFileSync(join(directory, "image.js"), 'import React from "react";export default function Image({fill,sizes,unoptimized,...props}){return React.createElement("img",props)}')
     writeFileSync(join(directory, "actions.js"), `export async function saveClientAccount(slug,input){window.savedInput={...input,privateToken:!!input.privateToken};return {ok:true,accounts:[{...window.account,calendarId:input.calendarId,calendarName:'Visits'}]}}export async function removeClientAccount(){if(window.failRetirement){window.failRetirement=false;return {ok:false,error:'Fixture retirement failed'}}window.removed=true;return {ok:true,accounts:[{...window.account,connected:false,revision:null,locationId:null,calendarId:null},{...window.account,connected:false,historyId:window.account.revision,retiredAt:'2026-10-13T00:00:00Z'}]}}export async function refreshClientAccount(){return {ok:true,accounts:[window.account]}}`)
     writeFileSync(join(directory, "entry.tsx"), `import React from "react";import{createRoot}from"react-dom/client";import{ClientConnectionsWorkspace}from"@/components/client-connections/ClientConnectionsWorkspace";import{ClientPortalCalendar}from"@/components/client-portal/ClientPortalCalendar";
@@ -24,7 +37,7 @@ window.account={relationshipId:'relationship',clientName:'Synthetic Client',busi
     const bundle = await new Promise((done, fail) => webpack({ mode: strict ? "development" : "production", devtool: false,
         plugins: [new webpack.optimize.LimitChunkCountPlugin({ maxChunks: 1 }), new webpack.DefinePlugin({ "process.env": JSON.stringify({ NODE_ENV: strict ? "development" : "production" }) })],
         entry: join(directory, "entry.tsx"), output: { path: directory, filename: "bundle.js" },
-        resolve: { alias: { "next/navigation$": join(directory, "navigation.js"), "next/link$": join(directory, "link.js"), "next/image$": join(directory, "image.js"),
+        resolve: { alias: { ...calendarAlias, "next/dynamic$": join(directory, "dynamic.js"), "next/navigation$": join(directory, "navigation.js"), "next/link$": join(directory, "link.js"), "next/image$": join(directory, "image.js"),
             "@/app/[workspaceSlug]/client-connections/actions$": join(directory, "actions.js"), "@": root }, extensions: [".tsx", ".ts", ".js"], modules: [resolve("node_modules"), "node_modules"] },
         module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: join(directory, "loader.cjs") }, { test: /\.css$/, use: join(directory, "css.cjs") }] }, optimization: { minimize: false },
     }, (error, stats) => error || stats.hasErrors() ? fail(error ?? Error(stats.toString({ all: false, errors: true }))) : done(readFileSync(join(directory, "bundle.js")))))

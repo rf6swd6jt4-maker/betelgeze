@@ -7,7 +7,7 @@ export async function getWindsorMetaAdsOnboarding(token: string, blockId: string
     catch (error) { return { ok: false as const, error: error instanceof Error ? error.message : "The Meta Ads reporting connection could not be loaded." } }
 }
 
-export async function verifyWindsorMetaAdsOnboarding(token: string, blockId: string, accountId?: string | null) {
-    try { return { ok: true as const, ...await checkWindsorMetaAdsOnboarding(token, blockId, accountId) } }
+export async function verifyWindsorMetaAdsOnboarding(token: string, blockId: string, accountId?: string | null, confirmed = false) {
+    try { return { ok: true as const, ...await checkWindsorMetaAdsOnboarding(token, blockId, accountId, confirmed) } }
     catch (error) { return { ok: false as const, error: error instanceof Error ? error.message : "The Meta Ads reporting connection could not be checked." } }
 }

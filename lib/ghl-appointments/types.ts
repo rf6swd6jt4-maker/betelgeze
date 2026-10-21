@@ -1,5 +1,17 @@
 export type AppointmentKind = "added" | "rescheduled" | "cancelled" | "removed" | "details_updated" | "status_updated" | "reminder"
 
+/** Optional, client-appropriate fields from the exact appointment/contact read.
+ * Never substitute contact custom fields for the original booking submission. */
+export type AppointmentDetails = {
+    schemaVersion: 1
+    contact: { phone: string | null; email: string | null; company: string | null; address: string | null }
+    meeting: { location: string | null; joinUrl: string | null }
+    assignedUserId: string | null
+    source: { createdAt: string | null; updatedAt: string | null }
+    booking: { text: string | null; state: "available" | "not_provided" | "not_enabled" | "too_large" }
+    formSubmissionState: "unavailable"
+}
+
 export type AppointmentSnapshot = {
     id: string
     locationId: string
@@ -19,6 +31,7 @@ export type AppointmentSnapshot = {
     sourceUpdatedAt: string | null
     observedAt: string
     deleted: boolean
+    details?: AppointmentDetails
 }
 
 export type ProviderProfile = {

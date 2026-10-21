@@ -7,8 +7,8 @@ function provider(payload: unknown, status = 200) {
     const compiled = { exports: {} as {
         listWindsorMetaAdsAccounts: (key: string, token: string) => Promise<unknown>
         createWindsorMetaAdsAuthorization: (key: string) => Promise<unknown>
-        loadWindsorMetaAdsReport: (key: string, accountId: string) => Promise<unknown>
-        parseWindsorMetaAdsReport: (payload: unknown, now?: Date) => { daily: Array<{ date: string; spend: number }>; totals: Record<string, number | null>; currency: string | null }
+        loadWindsorMetaAdsReport: (key: string, accountId: string, now?: Date) => Promise<unknown>
+        parseWindsorMetaAdsReport: (payload: unknown, now?: Date, expectedAccountId?: string) => { daily: Array<{ date: string; spend: number }>; totals: Record<string, number | null>; currency: string | null }
     } }
     const calls: URL[] = []
     const code = ts.transpileModule(readFileSync("lib/windsor.ts", "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
@@ -55,16 +55,18 @@ test("grouped Windsor accounts inherit only their explicit Meta source", async (
 
 test("Windsor Meta Ads reports are account scoped, bounded and normalized into a 30-day series", async () => {
     const payload = { data: [
-        { date: "2026-09-21", currency: "EUR", spend: "10.50", impressions: "1,000", clicks: "20", actions_lead: "2" },
-        { date: "2026-09-21", currency: "EUR", spend: 4.5, impressions: 500, clicks: 10, actions_lead: 1 },
+        { date: "2026-09-21", account_id: "123", currency: "EUR", spend: "10.50", impressions: "1,000", clicks: "20", actions_lead: "2" },
+        { date: "2026-09-21", account_id: "act_123", currency: "EUR", spend: 4.5, impressions: 500, clicks: 10, actions_lead: 1 },
     ] }
     const p = provider(payload)
-    const loaded = await p.loadWindsorMetaAdsReport("agency-secret", "act_123") as { totals: Record<string, number>; daily: unknown[]; currency: string }
+    const loaded = await p.loadWindsorMetaAdsReport("agency-secret", "act_123", new Date("2026-09-22T12:00:00Z")) as { totals: Record<string, number>; daily: unknown[]; currency: string }
     assert.equal(p.calls[0].origin, "https://connectors.windsor.ai")
     assert.equal(p.calls[0].pathname, "/facebook")
     assert.equal(p.calls[0].searchParams.get("select_accounts"), "act_123")
-    assert.equal(p.calls[0].searchParams.get("date_preset"), "last_30d")
-    assert.equal(p.calls[0].searchParams.get("fields"), "date,currency,spend,impressions,clicks,actions_lead")
+    assert.equal(p.calls[0].searchParams.get("date_from"), "2026-08-24")
+    assert.equal(p.calls[0].searchParams.get("date_to"), "2026-09-22")
+    assert.equal(p.calls[0].searchParams.get("_max_rows"), "501")
+    assert.equal(p.calls[0].searchParams.get("fields"), "date,account_id,currency,spend,impressions,clicks,actions_lead")
     assert.equal(loaded.daily.length, 30)
     assert.equal(loaded.currency, "EUR")
 
@@ -74,6 +76,22 @@ test("Windsor Meta Ads reports are account scoped, bounded and normalized into a
     assert.equal(report.totals.ctr, 2)
     assert.equal(report.totals.cpc, 0.5)
     assert.equal(report.totals.costPerLead, 5)
+})
+
+test("empty reports are valid but missing metrics, currencies, date coverage and account identity are not zeros", () => {
+    const p = provider([])
+    const now = new Date("2026-09-22T12:00:00Z")
+    const valid = { date: "2026-09-22", account_id: "123", currency: "EUR", spend: 0, impressions: 0, clicks: 0, actions_lead: 0 }
+    assert.equal(p.parseWindsorMetaAdsReport({ data: [] }, now).totals.spend, 0)
+    assert.equal(p.parseWindsorMetaAdsReport({ data: [valid] }, now).totals.spend, 0)
+    for (const change of [{ spend: undefined }, { clicks: null }, { impressions: "" }, { spend: "   " }, { spend: "1,,0" }, { actions_lead: false }, { currency: undefined }, { date: "2026-02-30" }, { date: "2026-09-23" }]) {
+        assert.throws(() => p.parseWindsorMetaAdsReport({ data: [{ ...valid, ...change }] }, now))
+    }
+    assert.throws(() => p.parseWindsorMetaAdsReport({ data: [valid, { ...valid, currency: "USD" }] }, now), /currency/)
+    assert.throws(() => p.parseWindsorMetaAdsReport({ data: [valid] }, now, "456"), /different account/)
+    assert.throws(() => p.parseWindsorMetaAdsReport({ data: Array(501).fill(valid) }, now), /too many/)
+    assert.throws(() => p.parseWindsorMetaAdsReport({ error: { message: "no access" }, data: [] }, now), /could not load/)
+    assert.throws(() => p.parseWindsorMetaAdsReport({ errors: { message: "no access" }, data: [] }, now), /could not load/)
 })
 
 test("Windsor Meta Ads reporting rejects malformed values instead of displaying misleading totals", () => {

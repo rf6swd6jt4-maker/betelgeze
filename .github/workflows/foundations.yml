@@ -62,6 +62,7 @@ jobs:
           BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-client-connection-retirement-sql.mjs
           BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-ghl-appointment-automation-sql.mjs
           BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-ghl-oauth-sql.mjs
+          BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-meta-reporting-sql.mjs
       - name: Shared service queue authorization and lifecycle
         run: BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-shared-service-queue.mjs
       - name: Portal upload team access and private downloads
@@ -116,6 +117,7 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/device-pg-deps" --no-save --ignore-scripts --package-lock=false @electric-sql/pglite@0.5.8 pg@8.16.3 typescript@5.9.3
           BE_GHL_NATIVE_PG=1 BE_PG_ROOT="$RUNNER_TEMP/device-pg-deps" BE_PGLITE_ROOT="$RUNNER_TEMP/device-pg-deps" node scripts/validate-ghl-oauth-sql.mjs
           BE_GHL_NATIVE_PG=1 BE_PG_ROOT="$RUNNER_TEMP/device-pg-deps" BE_PGLITE_ROOT="$RUNNER_TEMP/device-pg-deps" node scripts/validate-ghl-appointment-automation-sql.mjs
+          BE_GHL_NATIVE_PG=1 BE_PG_ROOT="$RUNNER_TEMP/device-pg-deps" BE_PGLITE_ROOT="$RUNNER_TEMP/device-pg-deps" node scripts/validate-meta-reporting-sql.mjs
       - name: Print device concurrency evidence
         if: always()
         run: cat "$RUNNER_TEMP/device-unread-native-postgres.json"
@@ -244,8 +246,12 @@ jobs:
         run: node scripts/browser/run-asset-library.mjs "${{ matrix.engine }}"
       - name: Exercise appointment summary links and retained lifecycle states
         run: node scripts/browser/run-ghl-appointment-summary.mjs "${{ matrix.engine }}"
+      - name: Exercise retained WhatsApp template buttons
+        run: node scripts/browser/run-whatsapp-template-evidence.mjs "${{ matrix.engine }}"
       - name: Exercise client connection menus and calendar selection
         run: node scripts/browser/run-client-connections.mjs "${{ matrix.engine }}"
+      - name: Exercise verified Meta onboarding, maintenance and retained reports
+        run: BE_WINDSOR_BROWSER_OUTPUT="$RUNNER_TEMP/windsor-${{ matrix.engine }}" node scripts/validate-windsor-browser.mjs "${{ matrix.engine }}"
       - name: Exercise app connection and explicit WhatsApp activation
         run: node scripts/browser/run-ghl-app-connections.mjs "${{ matrix.engine }}"
       - name: Exercise multiple portal calendars and cache isolation
@@ -273,6 +279,9 @@ jobs:
       - name: Print detailed browser evidence
         if: always()
         run: |
+          if test -f "$RUNNER_TEMP/windsor-${{ matrix.engine }}/browser-results.json"; then
+            cat "$RUNNER_TEMP/windsor-${{ matrix.engine }}/browser-results.json"
+          fi
           for report in foundations fullscreen-comms-actions comms-reads comms-convergence-candidate comms-pane-lifecycle ui-reconciliation panel-loading native-loading relationship-queue-refresh context-overlays modal-owner-lifecycle settings-popup-ownership settings-popup-ownership-strict anchored-popup-lifetime okr-popup-lifetime comms-roster-cleanup workspace-linked-detail; do
             if test -f "browser-results/$report.json"; then
               cat "browser-results/$report.json"

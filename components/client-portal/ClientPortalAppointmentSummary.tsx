@@ -1,26 +1,11 @@
-import { DetailField, DetailFields } from "@/components/detail/DetailFields"
-import { DetailPageHeader } from "@/components/detail/DetailPageHeader"
-import { Status } from "@/components/ui/Status"
-import { summaryDateTime, summaryStatus, type AppointmentSummary } from "@/lib/client-portal/appointment-summary"
+import type { AppointmentSummary } from "@/lib/client-portal/appointment-summary"
+import { ClientPortalAppointmentDetails } from "./ClientPortalAppointmentDetails"
 
-export function ClientPortalAppointmentSummary({ summary, displayName }: { summary: AppointmentSummary; displayName: string }) {
-    const status = summaryStatus(summary)
+export function ClientPortalAppointmentSummary({ summary, displayName, notifiedVersion }: { summary: AppointmentSummary; displayName: string; notifiedVersion?: number | null }) {
     return <main data-client-portal-main data-client-portal-appointment="ready" className="min-h-screen bg-[#F8F7F3] px-5 py-8 text-slate-900 sm:px-8">
         <div className="mx-auto w-full max-w-3xl">
             <p className="mb-7 text-sm font-semibold text-slate-700">{displayName} <span className="font-normal">· Client portal</span></p>
-            <DetailPageHeader surface="light" category="Appointment" reference={summary.reference} title={summary.title} subtitle={summary.calendarName} updated={summaryDateTime(summary.observedAt, summary.timezone)} />
-            <DetailFields surface="light" columns={1}>
-                <DetailField label="Status" icon="status"><Status surface="light" label={status.label} tone={status.tone} wrap /></DetailField>
-                <DetailField label="Contact" icon="person"><span className="break-words">{summary.contactName}</span></DetailField>
-                <DetailField label={summary.removed || status.label === "Cancelled" ? "Was scheduled" : "Starts"} icon="schedule"><span>{summaryDateTime(summary.startTime, summary.timezone)}</span></DetailField>
-                {summary.endTime ? <DetailField label="Ends" icon="time">{summaryDateTime(summary.endTime, summary.timezone)}</DetailField> : null}
-                <DetailField label="Time zone" icon="location"><span className="break-words">{summary.timezone}{!summary.timezoneKnown ? " (calendar time zone unavailable)" : ""}</span></DetailField>
-                <DetailField label="Contact details" icon="contact" stackOnMobile multiline><p className="whitespace-pre-wrap break-words">{summary.contactDetails || "Not provided"}</p></DetailField>
-                <DetailField label="Meeting details" icon="location" stackOnMobile multiline><p className="whitespace-pre-wrap break-words">{summary.meetingDetails || "Not provided"}</p></DetailField>
-                <DetailField label="Booking details" icon="description" stackOnMobile multiline><p className="whitespace-pre-wrap break-words">{summary.bookingDetails || "Not provided"}</p></DetailField>
-            </DetailFields>
-            {status.explanation ? <p className="mt-5 text-sm text-slate-700">{status.explanation}</p> : null}
-            <p className="mt-5 text-xs leading-relaxed text-slate-600">This summary shows the latest saved calendar update. Reload this page to check for a newer saved update.</p>
+            <ClientPortalAppointmentDetails summary={summary} notifiedVersion={notifiedVersion} />
         </div>
     </main>
 }

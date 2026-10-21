@@ -40,8 +40,8 @@ function deliveryFixture(overrides: Partial<DeliveryDependencies> = {}) {
     const deps: DeliveryDependencies = {
         rpc: async (action, input) => {
             calls.push({ action, input })
-            if (action === "notification_context") return { profile, privateToken: "synthetic-private-token", destination: "+12025550123" }
-            if (action === "begin_dispatch") return { messageId: "message1", deliveryId: "delivery1", destination: "+12025550123" }
+            if (action === "notification_context") return { templateEvidenceVersion: 1, profile, privateToken: "synthetic-private-token", destination: "+12025550123" }
+            if (action === "begin_dispatch") return { messageId: "message1", deliveryId: "delivery1", destination: "+12025550123", templateEvidenceRecorded: true }
             return { accepted: true }
         },
         now: () => now, sendingEnabled: () => true, fetchAppointment: async () => snapshot,
@@ -190,6 +190,22 @@ test("detection off touches no queue; detection on and sending off still runs in
     const f = workerFixture()
     assert.equal((await runGhlAppointmentAutomation(f.deps)).accepted, 0)
     assert.deepEqual(f.calls.map((c) => c.action), ["claim_events", "claim_reconciliations", "enqueue_reminders"])
+})
+test("optional portal work follows ready deliveries and is excluded from webhook wakes", async () => {
+    for (const wake of [undefined, { locationId: "location1", appointmentId: "appointment1" }]) {
+        const order: string[] = []
+        const delivery = deliveryFixture({ sendTemplate: async () => { order.push("sent"); return { messages: [{ id: "wamid.order" }] } } })
+        const f = workerFixture({ delivery: delivery.deps,
+            refreshPortalCalendar: async () => { order.push("calendar"); return { attention: true } },
+            enrichAppointmentNotes: async () => { order.push("notes"); return "attention" },
+        })
+        const rpc = f.deps.rpc; let claimed = false
+        f.deps.rpc = async (action, input) => action === "claim_notifications" ? { items: claimed ? [] : (claimed = true, [job]) } : rpc(action, input)
+        const result = await runGhlAppointmentAutomation(f.deps, wake)
+        assert.equal(result.accepted, 1)
+        assert.deepEqual(order, wake ? ["sent"] : ["sent", "calendar", "notes"])
+        assert.equal(result.attention, wake ? 0 : 2)
+    }
 })
 test("webhook wake scopes immediate processing and leaves reconciliation and timers to the scheduled lane", async () => {
     const f = workerFixture(), delivery = deliveryFixture()
@@ -357,7 +373,7 @@ test('all seven notification kinds verify appointments in a secondary selected c
     for (const kind of Object.keys(appointmentTemplateContracts) as NotificationJob['kind'][]) {
         const current = { ...snapshot, calendarId: 'calendar2', calendarName: 'Estimates', deleted: kind === 'removed' }
         const f = deliveryFixture({ fetchAppointment: async () => current }); const original = f.deps.rpc
-        f.deps.rpc = async (action, input) => action === 'notification_context' ? { profile: multiple, privateToken: 'synthetic', destination: '+12025550123' } : original(action, input)
+        f.deps.rpc = async (action, input) => action === 'notification_context' ? { templateEvidenceVersion: 1, profile: multiple, privateToken: 'synthetic', destination: '+12025550123' } : original(action, input)
         assert.equal(await deliverAppointmentNotification({ ...job, profile: multiple, kind, snapshot: current, previousSnapshot: snapshot, changedDetails: 'Calendar: Estimates' }, f.deps), 'accepted', kind)
         assert.equal(f.sends(), 1, kind)
     }
@@ -382,4 +398,41 @@ test("failed wide discovery preserves narrow recovery and exposes a durable warn
  const result=await runGhlAppointmentAutomation(f.deps)
  assert.equal(result.reconciled,1);assert.equal(result.failed,1)
  assert.match(String(f.calls.find(c=>c.action==='finish_reconciliation')?.input.warning),/Fast calendar discovery failed/)
+})
+
+
+test("prepared evidence exactly matches sent components and versioned destination before provider dispatch", async () => {
+    let prepared: Record<string, unknown> | undefined
+    const f = deliveryFixture({ sendTemplate: async (input) => {
+        const evidence = prepared?.templateEvidence as { components: unknown[]; buttons: Array<{ url: string }> }
+        assert.deepEqual(evidence.components, input.components)
+        assert.equal(evidence.buttons[0].url, `https://portal.scaylup.com/appointment/${job.summaryToken}?v=4`)
+        return { messages: [{ id: "wamid.evidence" }] }
+    } })
+    const original = f.deps.rpc
+    f.deps.rpc = async (action, input) => { if (action === "begin_dispatch") prepared = input; return original(action, input) }
+    assert.equal(await deliverAppointmentNotification({ ...job, version: 4 }, f.deps), "accepted")
+    assert.equal((prepared?.templateEvidence as { capturedAt: string }).capturedAt, now.toISOString())
+})
+test("missing evidence capability blocks before dispatch; lost evidence acknowledgement cannot send or retry", async () => {
+    const f = deliveryFixture(), original = f.deps.rpc
+    f.deps.rpc = async (action, input) => action === "notification_context" ? { profile, privateToken: "synthetic", destination: "+12025550123" } : original(action, input)
+    assert.equal(await deliverAppointmentNotification(job, f.deps), "blocked")
+    assert.equal(f.sends(), 0); assert.equal(f.calls.some(c => c.action === "begin_dispatch"), false)
+    const noAck = deliveryFixture(), rpc = noAck.deps.rpc
+    noAck.deps.rpc = async (action, input) => action === "begin_dispatch" ? { messageId: "message1", destination: "+12025550123" } : rpc(action, input)
+    assert.equal(await deliverAppointmentNotification(job, noAck.deps), "uncertain")
+    assert.equal(noAck.sends(), 0)
+})
+test("rich details are concise in every approved template while retained snapshots stay complete", () => {
+    const rich = { ...snapshot, calendarName: "Calendar ".repeat(60), contactName: "Contact ".repeat(70), title: "Appointment ".repeat(70), contactDetails: "Email: alex@example.com ".repeat(70), meetingDetails: "Office address\n".repeat(80), bookingDetails: "Long booking answers {{not a parameter}}\n".repeat(100) }
+    const original = JSON.stringify(rich)
+    for (const kind of Object.keys(appointmentTemplateContracts) as Array<keyof typeof appointmentTemplateContracts>) {
+        const values = notificationValues({ ...job, kind, snapshot: rich, previousSnapshot: rich, changedDetails: "Changed answers ".repeat(100) }, now)
+        const rendered = appointmentTemplateComponents(kind, values, job.summaryToken)
+        assert.ok(rendered.body.length <= 1024, kind)
+        assert.ok(rendered.body.includes("…"), kind)
+        if (values.schedule) assert.equal(values.schedule, notificationValues(job, now).schedule)
+    }
+    assert.equal(JSON.stringify(rich), original)
 })

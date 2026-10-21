@@ -1,6 +1,7 @@
 import type { Metadata } from "next"
 import { ClientPortalAppointmentSummary, ClientPortalAppointmentUnavailable } from "@/components/client-portal/ClientPortalAppointmentSummary"
 import { loadAppointmentSummary } from "@/lib/client-portal/appointment-summary-server"
+import { notificationVersion } from "@/lib/client-portal/appointment-summary"
 
 export const dynamic = "force-dynamic"
 export const revalidate = 0
@@ -15,9 +16,10 @@ export const metadata: Metadata = {
     icons: { icon: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'/%3E", shortcut: [], apple: [] },
 }
 
-export default async function AppointmentSummaryPage({ params }: { params: Promise<{ token: string }> }) {
+export default async function AppointmentSummaryPage({ params, searchParams }: { params: Promise<{ token: string }>; searchParams: Promise<{ v?: string | string[] }> }) {
     const { token } = await params
     const result = await loadAppointmentSummary(token)
     if (result.status !== "ready") return <ClientPortalAppointmentUnavailable retryable={result.status === "error"} />
-    return <ClientPortalAppointmentSummary summary={result.summary} displayName={result.displayName} />
+    const notifiedVersion = notificationVersion((await searchParams).v)
+    return <ClientPortalAppointmentSummary summary={result.summary} displayName={result.displayName} notifiedVersion={notifiedVersion} />
 }

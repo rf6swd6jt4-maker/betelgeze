@@ -6,6 +6,6 @@ export const runtime = "nodejs"
 export const maxDuration = 30
 async function handle(request: Request, context: {params: Promise<{token:string}>}) {
  const {token}=await context.params
- return handlePortalGhlCalendar(request,token,{resolve:resolveClientPortalAccessByToken,rpc:params=>supabaseAdmin.rpc("client_portal_ghl_calendar",params)})
+ return handlePortalGhlCalendar(request,token,{resolve:resolveClientPortalAccessByToken,rpc:params=>supabaseAdmin.rpc("client_portal_ghl_calendar_v2",params)})
 }
 export {handle as GET,handle as POST}

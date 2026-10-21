@@ -45,7 +45,7 @@ try {
    assert.deepEqual(actions,[],'Opening the panel must not start provider work')
    assert.equal(reads,0,'Opening the panel must not request notification state per client')
    await page.getByRole('button',{name:'Actions for Synthetic Client – Fixture Business',exact:true}).click()
-   await page.getByRole('button',{name:'Reconnect or choose another calendar',exact:true}).click()
+   await page.getByRole('button',{name:'Reconnect HighLevel',exact:true}).click()
    await page.evaluate(()=>{window.preservedDraft='unsaved workspace draft'})
    const popupPromise=page.waitForEvent('popup')
    await page.getByRole('dialog').getByRole('button',{name:'Connect HighLevel',exact:true}).click()
@@ -61,7 +61,7 @@ try {
    // Reopening a completed authorization must resume without another provider window.
    resumeStart=true
    await page.getByRole('button',{name:'Actions for Synthetic Client – Fixture Business',exact:true}).click()
-   await page.getByRole('button',{name:'Reconnect or choose another calendar',exact:true}).click()
+   await page.getByRole('button',{name:'Reconnect HighLevel',exact:true}).click()
    const resumePopupPromise=page.waitForEvent('popup')
    await page.getByRole('dialog').getByRole('button',{name:'Connect HighLevel',exact:true}).click()
    const resumePopup=await resumePopupPromise
@@ -72,7 +72,7 @@ try {
    // Blocked popups keep a usable ordinary link and explicit recovery in place.
    resumeStart=false
    await page.getByRole('button',{name:'Actions for Synthetic Client – Fixture Business',exact:true}).click()
-   await page.getByRole('button',{name:'Reconnect or choose another calendar',exact:true}).click()
+   await page.getByRole('button',{name:'Reconnect HighLevel',exact:true}).click()
    await page.evaluate(()=>{window.open=()=>null})
    await page.getByRole('dialog').getByRole('button',{name:'Connect HighLevel',exact:true}).click()
    await page.getByRole('link',{name:'continue to HighLevel',exact:true}).waitFor()

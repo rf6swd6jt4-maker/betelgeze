@@ -24,12 +24,23 @@ export function useChatDocumentAttention() {
         window.addEventListener("pagehide", leave)
         host.addEventListener("focus", update)
         host.addEventListener("blur", update)
+        // A retained iframe can receive focus without another host focus event.
+        // Reconcile the same top-level predicate; iframe focus is not evidence
+        // that a background app or a covered message has been read.
+        if (host !== window) {
+            window.addEventListener("focus", update)
+            window.addEventListener("blur", update)
+        }
         return () => {
             document.removeEventListener("visibilitychange", update)
             window.removeEventListener("pageshow", update)
             window.removeEventListener("pagehide", leave)
             host.removeEventListener("focus", update)
             host.removeEventListener("blur", update)
+            if (host !== window) {
+                window.removeEventListener("focus", update)
+                window.removeEventListener("blur", update)
+            }
         }
     }, [])
     return attention

@@ -7,6 +7,10 @@ import { assertFixtureReport } from "./report.mjs"
 import { runCommsReferenceNativeInput } from "./comms-reference-native-input.mjs"
 
 const fixtures = [
+    { name: "comms-reading-mobile", expected: 40, script: "scripts/serve-comms-reading-fixture.mjs", global: "commsReadingFixtureResult", viewport: { width: 390, height: 844 } },
+    { name: "comms-reading-desktop", expected: 40, script: "scripts/serve-comms-reading-fixture.mjs", global: "commsReadingFixtureResult", viewport: { width: 1280, height: 900 } },
+    { name: "comms-reading-lifecycle-mobile", expected: 40, script: "scripts/serve-comms-reading-fixture.mjs", args: ["--lifecycle"], global: "commsReadingFixtureResult", viewport: { width: 390, height: 844 } },
+    { name: "comms-reading-lifecycle-desktop", expected: 40, script: "scripts/serve-comms-reading-fixture.mjs", args: ["--lifecycle"], global: "commsReadingFixtureResult", viewport: { width: 1280, height: 900 } },
     { name: "comms-references-mobile", expected: 22, script: "scripts/serve-comms-references-fixture.mjs", global: "commsReferencesFixtureResult", viewport: { width: 390, height: 844 } },
     { name: "comms-references-desktop", expected: 22, script: "scripts/serve-comms-references-fixture.mjs", global: "commsReferencesFixtureResult", viewport: { width: 1280, height: 800 } },
     { name: "comms-references-native-touch", expected: 3, script: "scripts/serve-comms-references-fixture.mjs", nativeInput: "touch", viewport: { width: 390, height: 844 } },

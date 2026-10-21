@@ -63,6 +63,15 @@ export function observeChatReadingVisibility(view: Window, getPane: () => HTMLEl
         check()
     }
     for (const document of documents) {
+        // A lifecycle event must recheck the DOM even when React's attention
+        // snapshot did not change (for example after a missed departure).
+        listen(document, "visibilitychange")
+        const window = document.defaultView
+        if (window) {
+            listen(window, "focus")
+            listen(window, "blur")
+            listen(window, "pageshow")
+        }
         if (options.interactions) {
             listen(document, "pointerup")
             listen(document, "keyup")
@@ -78,7 +87,6 @@ export function observeChatReadingVisibility(view: Window, getPane: () => HTMLEl
     listen(view, "resize")
     listen(view, "scroll")
     listen(view, "scrollend")
-    listen(view, "pageshow")
     if (view.visualViewport) {
         listen(view.visualViewport, "resize")
         listen(view.visualViewport, "scroll")

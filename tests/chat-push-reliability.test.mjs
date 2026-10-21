@@ -28,16 +28,23 @@ test('fingerprint compares actual endpoint and both encryption keys',async()=>{
 })
 test('read attention checks top-level focus rather than an unfocused retained iframe',()=>{
  let focused=true,visible='visible',effect
- const listeners=new Map(),host={document:{hasFocus:()=>focused},addEventListener:(n,fn)=>listeners.set(n,fn),removeEventListener:n=>listeners.delete(n)}
- const window={top:host,addEventListener:(n,fn)=>listeners.set(n,fn),removeEventListener:n=>listeners.delete(n)}
- const document={get visibilityState(){return visible},addEventListener:(n,fn)=>listeners.set(n,fn),removeEventListener:n=>listeners.delete(n)}
+ const host=Object.assign(new EventTarget(),{document:{hasFocus:()=>focused}})
+ const window=Object.assign(new EventTarget(),{top:host})
+ const document=new EventTarget()
+ Object.defineProperty(document,'visibilityState',{get:()=>visible})
  const changes=[]
  const mod=load('components/communications/useChatDocumentAttention.ts',{react:{useEffect:fn=>{effect=fn},useState:()=>[{visible:false,attentive:false},x=>changes.push(typeof x === "function" ? x(changes.at(-1) ?? {visible:false,attentive:false}) : x)]}},{window,document})
  assert.equal(mod.chatDocumentHasAttention(),true);focused=false;assert.equal(mod.chatDocumentHasAttention(),false)
  mod.useChatDocumentAttention();const cleanup=effect();assert.equal(changes.at(-1).attentive,false)
- focused=true;listeners.get('focus')();assert.equal(changes.at(-1).attentive,true)
- visible='hidden';listeners.get('visibilitychange')();assert.equal(changes.at(-1).attentive,false)
- cleanup();assert.equal(listeners.size,0)
+ focused=true;host.dispatchEvent(new Event('focus'));assert.equal(changes.at(-1).attentive,true)
+ focused=false;host.dispatchEvent(new Event('blur'));assert.equal(changes.at(-1).attentive,false)
+ focused=true;window.dispatchEvent(new Event('focus'));assert.equal(changes.at(-1).attentive,true,'iframe-only focus restores attention')
+ focused=false;window.dispatchEvent(new Event('focus'));assert.equal(changes.at(-1).attentive,false,'a synthetic focus event cannot replace actual host attention')
+ focused=true;window.dispatchEvent(new Event('focus'))
+ visible='hidden';document.dispatchEvent(new Event('visibilitychange'));assert.equal(changes.at(-1).attentive,false)
+ cleanup();const count=changes.length
+ for(const target of [host,window,document])for(const name of ['focus','blur','pageshow','pagehide','visibilitychange'])target.dispatchEvent(new Event(name))
+ assert.equal(changes.length,count,'disposed attention owners ignore later lifecycle events')
 })
 function worker(show,fetcher){
  const listeners=new Map()

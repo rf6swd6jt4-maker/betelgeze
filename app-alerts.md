@@ -6,6 +6,12 @@ Established 17 September 2026. This is the protected behavioral contract for sta
 
 Read this document before changing anything that can affect message reading, unread counts, read receipts, foreground/active-chat detection, notification recipients, push subscriptions, delivery/retry/suppression, notification display/click handling, or their database functions and schedulers. **Do not edit this document or change those behaviors without the user's explicit permission for that scope.** An unrelated UI, performance, shell, authentication or cleanup task does not authorize changing these rules. Trace indirect effects before editing shared dependencies. Record the authorized scope, evidence, rollout and rollback here with any authorized change. Do not use a historical repair document to supersede this contract.
 
+### Authorized focus recovery repair (21 October 2026)
+
+The user approved integrating and testing the scoped repair for chats whose unread badge remains after opening. Retained frames now reconcile their own focus/blur events against the existing top-level attention predicate. The existing reading observer rechecks host/frame focus, visibility and page restoration even when React's attention snapshot is unchanged. These events invalidate visibility evidence; they do not themselves acknowledge a read.
+
+Newest-row visibility, active chat/tab, two painted frames, server-confirmed device badges, account receipts and push policy remain unchanged. No polling, history fetch, database or schema change is introduced. Validation and rollout status are recorded separately in [the focus recovery report](docs/comms-read-focus-recovery-2026-10-21.md). Rollback restores the prior two client modules without changing any stored cursor, message, notification job or device state.
+
 ### Shared service assignees (14 October 2026)
 
 The user authorized multiple assignees for one service and membership in its existing internal client Team chat. The opt-in shared-service roster adds eligible assignees through the existing Team membership boundary. It retains that conversation and its messages. Removing an assignee removes only membership recorded as created by this feature, and only when no other current service or independent grant retains it. Existing historical/manual membership stays intact. Workspace offboarding and eligibility removal require the shared assignment to be removed first.

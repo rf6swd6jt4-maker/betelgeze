@@ -44,6 +44,7 @@ try {
  create index relationship_sale_confirmation_lookup on public.client_sales(workspace_id,relationship_id,consent_confirmed_at desc) where consent_confirmed_at is not null;
  create table public.workspace_integrations(workspace_id uuid,provider text,enabled boolean,connection_status text,primary key(workspace_id,provider));`)
  await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20261021190000_ghl_template_consent.sql`,'utf8'))
+ await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20261021220000_ghl_prompt_reconciliation.sql`,'utf8'))
 
 
  // Legacy permission is scoped to the same relationship and current number.
@@ -107,6 +108,7 @@ try {
  await db.exec('rollback')
  console.log('Multiple-calendar SQL: selected intake, one history, moves, reminder deduplication and outside-calendar fencing passed')
  const profile=configured.profile
+ await (await import('./validate-ghl-recovery-flow.mjs')).validateGhlRecoveryFlow({db,rpc,profile,w,r,calendar,location})
  assert.equal((await rpc('configure',{workspaceId:w,relationshipId:r,portalOrigin:'https://portal.example.com',detectionEnabled:true,includeNotes:'true'})).profile.includeNotes,false)
  assert.equal((await rpc('configure',{workspaceId:w,relationshipId:r,portalOrigin:'https://portal.example.com',detectionEnabled:true,includeNotes:true})).profile.includeNotes,true)
  await rpc('configure',{workspaceId:w,relationshipId:r,portalOrigin:'https://portal.example.com',detectionEnabled:true})

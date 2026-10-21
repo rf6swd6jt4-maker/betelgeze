@@ -1,3 +1,4 @@
+import type { CalendarObservation } from "./provider"
 import { createHash } from "node:crypto"
 import { profileCalendars, profileIncludesCalendar, type AppointmentSnapshot, type ProviderProfile } from "./types"
 import { classifyAppointmentChange, reminderDueAt } from "./lifecycle"
@@ -20,6 +21,7 @@ type ReconcileCursor = {
     knownCycleId: string
 }
 export type AppointmentWorkerDependencies = {
+    fetchCalendarChanges?: (profile: ProviderProfile, window: { start: string; end: string }) => Promise<CalendarObservation[]>
     rpc: AutomationRpc
     now: () => Date
     detectionEnabled: () => boolean
@@ -54,7 +56,9 @@ export async function processGhlEvent(job: EventJob, deps: AppointmentWorkerDepe
         } else {
             snapshot = live
         }
-        const baseline = job.payload?.baseline === true
+        const cutoff = typeof job.payload?.baselineBefore === "string" ? Date.parse(job.payload.baselineBefore) : NaN
+        const created = snapshot.sourceCreatedAt ? Date.parse(snapshot.sourceCreatedAt) : NaN
+        const baseline = job.payload?.baseline === true && !(Number.isFinite(cutoff) && Number.isFinite(created) && created >= cutoff)
         const change = classifyAppointmentChange(previous, snapshot, { baseline, eventType: job.eventType })
         const outcome = record(await deps.rpc("apply_event", {
             id: job.id, leaseToken: job.leaseToken, expectedVersion: context.current?.version ?? 0,
@@ -64,8 +68,9 @@ export async function processGhlEvent(job: EventJob, deps: AppointmentWorkerDepe
         if (outcome.ignored === true) return "superseded" as const
         if (outcome.applied !== true) throw new Error("Appointment update was not durably accepted.")
         return "applied" as const
-    } catch {
-        await deps.rpc("fail_event", { id: job.id, leaseToken: job.leaseToken, error: "Appointment could not be verified or its retained version could not be committed.", retryable: true })
+    } catch (error) {
+        const category = error instanceof GhlAutomationRejected ? `database_${error.code}` : ["response", "location", "timezone", "permissions", "credentials", "rate_limit", "unavailable"].includes(String((error as { code?: string })?.code)) ? String((error as { code: string }).code) : "processing"
+        await deps.rpc("fail_event", { id: job.id, leaseToken: job.leaseToken, error: `Appointment verification failed: ${category}.`, retryable: true })
         return "attention" as const
     }
 }
@@ -87,13 +92,39 @@ export function nextReconcileCursor(value: unknown, now: Date): ReconcileCursor 
 async function queueObservation(deps: AppointmentWorkerDependencies, profile: AutomationProfile, appointmentId: string, key: string, baseline: boolean) {
     const accepted = record(await deps.rpc("ingest", {
         locationId: profile.locationId, calendarId: profile.calendarId, appointmentId, eventType: "AppointmentUpdate",
-        eventKey: key, payloadHash: fingerprint(key), payload: { source: "reconciliation", baseline }, occurredAt: deps.now().toISOString(),
+        eventKey: key, payloadHash: fingerprint(key), payload: { source: "reconciliation", baseline, baselineBefore: profile.sendingActivatedAt ?? profile.createdAt }, occurredAt: deps.now().toISOString(),
     }))
     if (accepted.accepted !== true) throw new Error("Reconciliation observation was not durably accepted.")
 }
 
+export async function discoverRecentChanges(job: ReconciliationJob, deps: AppointmentWorkerDependencies) {
+    if (!deps.fetchCalendarChanges) return
+    const start = new Date(deps.now().getTime() - 7 * DAY); start.setUTCHours(0, 0, 0, 0)
+    const window = { start: start.toISOString(), end: new Date(start.getTime() + 97 * DAY).toISOString() }
+    const calendars = profileCalendars(job.profile)
+    // Reuse the durable rotation so a busy first calendar cannot starve others.
+    const offset = (nextReconcileCursor(job.cursor, deps.now()).calendarIndex ?? 0) % calendars.length
+    const deadline = Date.now() + 45_000
+    let budget = 5
+    for (let i = 0; i < calendars.length && budget > 0; i++) {
+        if (Date.now() >= deadline) throw new Error("Discovery deadline reached.")
+        const calendar = calendars[(offset + i) % calendars.length]
+        const profile = { ...job.profile, calendarId: calendar.id, calendarName: calendar.name }
+        const observations = await deps.fetchCalendarChanges(providerProfile({ ...job, profile }), window)
+        const result = record(await deps.rpc("reconciliation_changes", { profileId: profile.id, leaseToken: job.leaseToken, calendarId: calendar.id, observations, limit: budget }))
+        for (const candidate of items<{ id: string; version: number }>(result)) {
+            const observation = observations.find(item => item.id === candidate.id)!
+            const key = `reconcile-fast:${fingerprint(JSON.stringify([profile.id, profile.connectionRevision, candidate.version, observation]))}`
+            const accepted = record(await deps.rpc("ingest", { locationId: profile.locationId, calendarId: calendar.id, appointmentId: candidate.id, eventType: "AppointmentUpdate", eventKey: key, payloadHash: fingerprint(key),
+                payload: { source: "reconciliation", baseline: true, baselineBefore: profile.sendingActivatedAt ?? profile.createdAt ?? deps.now().toISOString() }, occurredAt: deps.now().toISOString() }))
+            if (accepted.accepted !== true) throw new Error("Discovery was not retained.")
+            budget--
+        }
+    }
+}
+
 /** One bounded page per profile. Missing list rows never cause deletions. */
-export async function reconcileGhlProfile(job: ReconciliationJob, deps: AppointmentWorkerDependencies) {
+export async function reconcileGhlProfile(job: ReconciliationJob, deps: AppointmentWorkerDependencies, discoveryWarning: string | null = null) {
     let cursor: ReconcileCursor | null = null
     try {
         cursor = nextReconcileCursor(job.cursor, deps.now())
@@ -140,7 +171,7 @@ export async function reconcileGhlProfile(job: ReconciliationJob, deps: Appointm
             }
             cursor.phase = "window"
         }
-        await deps.rpc("finish_reconciliation", { profileId: profile.id, leaseToken: job.leaseToken, cursor, error: null })
+        await deps.rpc("finish_reconciliation", { profileId: profile.id, leaseToken: job.leaseToken, cursor, error: null, warning: discoveryWarning })
         return "reconciled" as const
     } catch {
         // Preserve the last durably saved cursor: retry the same page, using
@@ -162,8 +193,15 @@ export async function runGhlAppointmentAutomation(deps: AppointmentWorkerDepende
     // A full intake batch applies backpressure to new reconciliation work.
     // Discovery cannot continually enqueue more work than this runner drains.
     const profiles = !wake && events.length < 5 ? items<ReconciliationJob>(await deps.rpc("claim_reconciliations", { limit: 1 })) : []
+    const discoveryResults: PromiseSettledResult<void>[] = []
+    for (const profile of profiles) discoveryResults.push(...await Promise.allSettled([discoverRecentChanges(profile, deps)]))
     const reconcileResults: PromiseSettledResult<Awaited<ReturnType<typeof reconcileGhlProfile>>>[] = []
-    for (const profile of profiles) reconcileResults.push(...await Promise.allSettled([reconcileGhlProfile(profile, deps)]))
+    for (const [index, profile] of profiles.entries()) reconcileResults.push(...await Promise.allSettled([reconcileGhlProfile(profile, deps, discoveryResults[index]?.status === "rejected" ? "Fast calendar discovery failed; narrow recovery remains active." : null)]))
+    // Drain observations discovered in this invocation instead of adding a cron delay.
+    if (profiles.length && deps.fetchCalendarChanges) {
+        const fresh = items<EventJob>(await deps.rpc("claim_events", { limit: 5 }))
+        for (const event of fresh) eventResults.push(...await Promise.allSettled([processGhlEvent(event, deps)]))
+    }
     if (!wake) await deps.rpc("enqueue_reminders", { limit: 20 })
     const deliveries: PromiseSettledResult<Awaited<ReturnType<typeof deliverAppointmentNotification>>>[] = []
     // No claiming/preparing messages while sending is off; detection still runs.
@@ -176,12 +214,12 @@ export async function runGhlAppointmentAutomation(deps: AppointmentWorkerDepende
             deliveries.push(...await Promise.allSettled([deliverAppointmentNotification(notifications[0], deps.delivery)]))
         }
     }
-    const results = [...eventResults, ...reconcileResults, ...deliveries]
+    const results = [...eventResults, ...reconcileResults, ...deliveries, ...discoveryResults]
     return {
-        disabled: false, events: events.length,
+        disabled: false, events: eventResults.length,
         reconciled: reconcileResults.filter((result) => result.status === "fulfilled" && result.value === "reconciled").length,
         accepted: deliveries.filter((result) => result.status === "fulfilled" && result.value === "accepted").length,
-        attention: results.filter((result) => result.status === "fulfilled" && ["attention", "uncertain", "blocked"].includes(result.value)).length,
+        attention: results.filter((result) => result.status === "fulfilled" && ["attention", "uncertain", "blocked"].includes(String(result.value))).length,
         failed: results.filter((result) => result.status === "rejected").length,
     }
 }
@@ -205,5 +243,5 @@ export async function processGhlAppointmentAutomation(wake?: AppointmentWake) {
         sendTemplate: (input) => meta.sendMetaWhatsAppTemplate({ ...input, signal: AbortSignal.timeout(15_000), expectedWabaId: "1928719317836909" }),
     }
     return runGhlAppointmentAutomation({ rpc, now, detectionEnabled: () => process.env.GHL_APPOINTMENT_DETECTION_ENABLED === "true", delivery,
-        fetchAppointment: provider.fetchAppointment, fetchCalendarWindow: provider.fetchCalendarWindow }, wake)
+        fetchAppointment: provider.fetchAppointment, fetchCalendarWindow: provider.fetchCalendarWindow, fetchCalendarChanges: provider.fetchCalendarChanges }, wake)
 }

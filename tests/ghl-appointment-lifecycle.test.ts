@@ -115,3 +115,12 @@ test('signed contact and uninstall events retain routing only and reject a diffe
     assert.equal((await handleGhlAppointmentWebhook(signed(contact),{...deps,ingestAppEvent:async()=>({failure:'not_committed'})})).status,503)
     assert.equal((await handleGhlAppointmentWebhook(signed(contact,true),deps)).status,401)
 })
+
+test('live v3 appointment envelope works; documented legacy event remains supported without ambiguous fallback',async()=>{
+ const live=providerFixture((p,v)=>p.includes('/appointments/')?{appointment:{...(v.event as object),dateAdded:'2026-10-11T08:00:00Z'}}:v)
+ const parsed=await fetchAppointment(profile,snapshot.id,live.fetcher)
+ assert.equal(parsed?.id,snapshot.id);assert.equal(parsed?.sourceCreatedAt,'2026-10-11T08:00:00.000Z')
+ for(const replacement of [{appointment:null,event:snapshot},{appointment:{...snapshot,id:'wrong'}},{appointment:snapshot,event:snapshot}]) {
+  await assert.rejects(fetchAppointment(profile,snapshot.id,providerFixture((p,v)=>p.includes('/appointments/')?replacement:v).fetcher))
+ }
+})

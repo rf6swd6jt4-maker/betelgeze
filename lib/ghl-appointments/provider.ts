@@ -48,7 +48,10 @@ export async function fetchAppointment(profile: ProviderProfile, id: string, fet
     return withProvider(profile, fetcher, async (request, location) => {
         const response = await request(`/calendars/events/appointments/${encodeURIComponent(id)}`, "events", true)
         if (response === null) return null
-        const event = record(response.event)
+        // Live v3 returns `appointment`; the published schema still says `event`.
+        // Never fall back from a present malformed envelope or accept two identities.
+        if (response.appointment !== undefined && response.event !== undefined) throw new GhlError("response")
+        const event = record(response.appointment === undefined ? response.event : response.appointment)
         if (event.id !== id || event.locationId !== profile.locationId) throw new GhlError("location")
         if (event.deleted === true) return null
         if (!isGhlIdentifier(event.calendarId)) throw new GhlError("response")
@@ -75,6 +78,7 @@ export async function fetchAppointment(profile: ProviderProfile, id: string, fet
             // Arbitrary contact custom fields are not appointment booking answers.
             bookingDetails: profile.includeNotes ? text(event.notes, 500) : "Booking details are not configured.",
             sourceUpdatedAt: event.dateUpdated == null ? null : timestamp(event.dateUpdated),
+            sourceCreatedAt: event.dateAdded == null ? null : timestamp(event.dateAdded),
             observedAt: new Date().toISOString(), deleted: event.deleted === true,
         }
     })
@@ -99,5 +103,25 @@ export async function fetchCalendarWindow(profile: ProviderProfile, window: { st
             ids.add(event.id)
         }
         return { appointmentIds: [...ids], complete: true }
+    })
+}
+
+export type CalendarObservation = { id: string; updatedAt: string | null; startTime: string; endTime: string; status: string; title: string; contactId: string }
+// Bounded wide discovery complements the daily/known-ID sweep. A large calendar
+// fails visibly and keeps the existing narrow sweep; never infer a deletion here.
+export async function fetchCalendarChanges(profile: ProviderProfile, window: { start: string; end: string }, fetcher: typeof fetch = fetch): Promise<CalendarObservation[]> {
+    const start = Date.parse(window.start), end = Date.parse(window.end)
+    if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start || end - start > 98 * 86_400_000) throw new GhlError("window")
+    return withProvider(profile, fetcher, async request => {
+        const query = new URLSearchParams({ locationId: profile.locationId, calendarId: profile.calendarId, startTime: String(start), endTime: String(end) })
+        const response = await request(`/calendars/events?${query}`, "events")
+        if (!Array.isArray(response?.events) || response.events.length >= 1000 || response.nextPage || response.nextPageUrl || (typeof response.total === "number" && response.total !== response.events.length)) throw new GhlError("response")
+        const ids = new Set<string>()
+        return response.events.map(raw => {
+            const event = record(raw)
+            if (!isGhlIdentifier(event.id) || ids.has(event.id) || event.locationId !== profile.locationId || event.calendarId !== profile.calendarId) throw new GhlError("location")
+            ids.add(event.id)
+            return { id: event.id, updatedAt: event.dateUpdated == null ? null : timestamp(event.dateUpdated), startTime: timestamp(event.startTime), endTime: timestamp(event.endTime), status: text(event.appointmentStatus, 60, "unknown").toLowerCase(), title: text(event.title, 200), contactId: text(event.contactId, 160, "") }
+        })
     })
 }

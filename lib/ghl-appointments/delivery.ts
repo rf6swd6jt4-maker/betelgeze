@@ -14,6 +14,8 @@ export type AutomationProfile = {
     connectionRevision: string
     detectionEnabled: boolean
     sendingEnabled: boolean
+    createdAt?: string
+    sendingActivatedAt?: string | null
     portalOrigin: string
     reminderMinutes: number
     timezone?: string

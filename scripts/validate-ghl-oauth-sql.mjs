@@ -79,6 +79,7 @@ try {
  create index relationship_sale_confirmation_lookup on public.client_sales(workspace_id,relationship_id,consent_confirmed_at desc) where consent_confirmed_at is not null;
  create table public.workspace_integrations(workspace_id uuid,provider text,enabled boolean,connection_status text,primary key(workspace_id,provider));`)
  await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20261021190000_ghl_template_consent.sql`,'utf8'))
+ await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20261021220000_ghl_prompt_reconciliation.sql`,'utf8'))
 
  const rpc=async(action,input={})=>(await one('select public.ghl_oauth_connection($1,$2::jsonb) result',[action,JSON.stringify(input)])).result
  const state='a'.repeat(64), browser='b'.repeat(64), config='c'.repeat(64)

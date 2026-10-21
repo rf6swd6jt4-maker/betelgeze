@@ -374,3 +374,12 @@ test('reconciliation rotates selected calendars without increasing provider call
     assert.deepEqual(observations.map(c => c.input.calendarId), ['calendar1', 'calendar2'])
     assert.notEqual(observations[0].input.eventKey, observations[1].input.eventKey)
 })
+
+test("failed wide discovery preserves narrow recovery and exposes a durable warning",async()=>{
+ const f=workerFixture({fetchCalendarChanges:async()=>{throw Error('capped provider result')}})
+ const original=f.deps.rpc
+ f.deps.rpc=async(action,input)=>action==='claim_reconciliations'?{items:[{profile,privateToken:'synthetic',leaseToken:'lease'}]}:original(action,input)
+ const result=await runGhlAppointmentAutomation(f.deps)
+ assert.equal(result.reconciled,1);assert.equal(result.failed,1)
+ assert.match(String(f.calls.find(c=>c.action==='finish_reconciliation')?.input.warning),/Fast calendar discovery failed/)
+})

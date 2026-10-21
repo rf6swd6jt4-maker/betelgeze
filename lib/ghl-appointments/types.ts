@@ -15,6 +15,7 @@ export type AppointmentSnapshot = {
     contactDetails: string
     meetingDetails: string
     bookingDetails: string
+    sourceCreatedAt?: string | null
     sourceUpdatedAt: string | null
     observedAt: string
     deleted: boolean

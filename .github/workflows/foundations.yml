@@ -113,6 +113,7 @@ jobs:
         run: BE_PG_ROOT="$RUNNER_TEMP/device-pg-deps" node scripts/shared-service-queue/postgres.mjs
       - name: Verify GHL OAuth and appointment workers across independent PostgreSQL connections
         run: |
+          npm install --prefix "$RUNNER_TEMP/device-pg-deps" --no-save --ignore-scripts --package-lock=false @electric-sql/pglite@0.5.8 pg@8.16.3 typescript@5.9.3
           BE_GHL_NATIVE_PG=1 BE_PG_ROOT="$RUNNER_TEMP/device-pg-deps" BE_PGLITE_ROOT="$RUNNER_TEMP/device-pg-deps" node scripts/validate-ghl-oauth-sql.mjs
           BE_GHL_NATIVE_PG=1 BE_PG_ROOT="$RUNNER_TEMP/device-pg-deps" BE_PGLITE_ROOT="$RUNNER_TEMP/device-pg-deps" node scripts/validate-ghl-appointment-automation-sql.mjs
       - name: Print device concurrency evidence

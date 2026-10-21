@@ -3,8 +3,8 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import { generateKeyPairSync, sign } from 'node:crypto'
-import ts from 'typescript'
 const require=createRequire(import.meta.url), cache=new Map()
+const ts=require(require.resolve('typescript',{paths:[process.cwd(),process.env.BE_PGLITE_ROOT||process.cwd()]}))
 function load(path){
  if(cache.has(path))return cache.get(path)
  const compiled={exports:{}}

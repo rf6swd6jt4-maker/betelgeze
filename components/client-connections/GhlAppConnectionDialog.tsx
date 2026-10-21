@@ -1,12 +1,14 @@
 "use client"
 
+import { GhlCalendarPicker } from "./GhlCalendarPicker"
+
 import { useEffect, useRef, useState } from "react"
 import { CenteredDialog, Selector, Status } from "@/components/ui"
 import type { ClientConnectionAccount } from "@/lib/client-connections"
 
-type Choice = { id: string; name: string }
+type Choice = { id: string; name: string; isActive?: boolean }
 type Session = { relationshipId: string; phase: string; locations: Choice[]; limited: boolean; locationId: string | null; calendars: Choice[] }
-type Notifications = { ready: boolean; sendingEnabled: boolean; consentReady: boolean; reminderMinutes: number; error?: string }
+type Notifications = { ready: boolean; sendingEnabled: boolean; consentReady: boolean; reminderMinutes: number; calendars?: Choice[]; error?: string }
 type Connected = { connected: true; revision: string; notifications: Notifications }
 const button = "min-h-11 w-full rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black disabled:opacity-40"
 const field = "mt-2 h-11 w-full rounded-xl border border-neutral-700 bg-black px-3 text-sm text-white outline-none focus:border-neutral-400"
@@ -21,7 +23,10 @@ export function GhlAppConnectionDialog({ workspaceSlug, accounts, initialAccount
     const [revision, setRevision] = useState(initialAccount?.revision ?? null)
     const [locations, setLocations] = useState<Choice[]>([]), [locationId, setLocationId] = useState("")
     const [limited, setLimited] = useState(false), [exactLocation, setExactLocation] = useState("")
-    const [calendars, setCalendars] = useState<Choice[]>([]), [calendarId, setCalendarId] = useState("")
+    const [calendars, setCalendars] = useState<Choice[]>([]), [calendarIds, setCalendarIds] = useState<string[]>([])
+    const [editingSaved, setEditingSaved] = useState(false)
+    const saveRequestId = useRef<string | null>(null)
+    const [savePending, setSavePending] = useState(false)
     const [notifications, setNotifications] = useState<Notifications | null>(null)
     const [error, setError] = useState<string | null>(null), [busy, setBusy] = useState(resume || Boolean(initialAccount?.connected && initialAccount.revision))
     const [authorizationUrl, setAuthorizationUrl] = useState<string | null>(null)
@@ -78,7 +83,7 @@ export function GhlAppConnectionDialog({ workspaceSlug, accounts, initialAccount
                 if (session.phase === "ready") {
                     setLocations(session.locations); setLocationId(session.locations.length === 1 ? session.locations[0].id : ""); setLimited(session.limited); setPhase("location")
                 } else if (session.phase === "selected") {
-                    setLocationId(session.locationId ?? ""); setCalendars(session.calendars); setCalendarId(session.calendars.length === 1 ? session.calendars[0].id : ""); setPhase("calendar")
+                    setLocationId(session.locationId ?? ""); setCalendars(session.calendars); setCalendarIds(session.calendars.length === 1 ? [session.calendars[0].id] : []); setPhase("calendar")
                 } else if (session.phase === "done") {
                     const result = await request<Connected>({ action: "connect" })
                     setRevision(result.revision); setNotifications(result.notifications); setPhase("connected"); onSaved()
@@ -108,7 +113,14 @@ export function GhlAppConnectionDialog({ workspaceSlug, accounts, initialAccount
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [])
 
+    async function editCalendars() {
+        try {
+            const result = await request<{ calendars: Choice[]; selectedCalendarIds: string[]; revision: string }>(undefined, `?${new URLSearchParams({ action: "calendars", relationshipId, expectedRevision: revision! })}`)
+            setCalendars(result.calendars); setCalendarIds(result.selectedCalendarIds); setRevision(result.revision); setEditingSaved(true); saveRequestId.current = null; setSavePending(false); setPhase("calendar"); setRecoveryNeeded(false)
+        } catch (error) { report(error) }
+    }
     async function start() {
+        setEditingSaved(false); saveRequestId.current = null; setSavePending(false)
         if (!account || currentRequest.current) return
         // Open synchronously from the click, preserving the current workspace's
         // tabs/drafts. If popups are blocked, show an ordinary link instead.
@@ -147,14 +159,19 @@ export function GhlAppConnectionDialog({ workspaceSlug, accounts, initialAccount
         try {
             const chosen = exactLocation.trim() || locationId
             const result = await request<{ calendars: Choice[]; locationId: string }>({ action: "select", locationId: chosen })
-            setLocationId(result.locationId); setCalendars(result.calendars); setCalendarId(result.calendars.length === 1 ? result.calendars[0].id : ""); setPhase("calendar")
+            setLocationId(result.locationId); setCalendars(result.calendars); setCalendarIds(result.calendars.length === 1 ? [result.calendars[0].id] : []); setPhase("calendar")
         } catch (error) { setRecoveryNeeded(true); report(error) }
     }
     async function connect() {
         try {
-            const result = await request<Connected>({ action: "connect", calendarId })
-            setRevision(result.revision); setNotifications(result.notifications); setPhase("connected"); onSaved()
-        } catch (error) { setRecoveryNeeded(true); report(error) }
+            if (editingSaved) { saveRequestId.current ??= crypto.randomUUID(); setSavePending(true) }
+            const result = await request<Connected>(editingSaved ? { action: "save_calendars", calendarIds, relationshipId, expectedRevision: revision, requestId: saveRequestId.current } : { action: "connect", calendarIds })
+            setRevision(result.revision); setNotifications(result.notifications); setPhase("connected"); saveRequestId.current = null; setSavePending(false); onSaved()
+        } catch (error) { if (!editingSaved) setRecoveryNeeded(true); report(error) }
+    }
+    async function checkNotificationSetup() {
+        try { setNotifications(await request<Notifications>({ action: "prepare_notifications", relationshipId, expectedRevision: revision })) }
+        catch (error) { report(error) }
     }
     async function toggleNotifications(enable: boolean) {
         try {
@@ -181,23 +198,26 @@ export function GhlAppConnectionDialog({ workspaceSlug, accounts, initialAccount
                 <button type="button" className={button} disabled={busy || !(locationId || exactLocation.trim())} onClick={() => void selectLocation()}>Choose calendar</button>
             </> : null}
             {phase === "calendar" ? <>
-                <label className="block text-sm text-neutral-300">Client portal calendar<Selector ariaLabel="HighLevel calendar" appearance="input" value={calendarId} disabled={busy} onChange={setCalendarId} options={calendars.map(item => ({ value: item.id, label: item.name }))} /></label>
-                <p className="text-sm leading-6 text-neutral-400">This calendar will appear in the client portal. WhatsApp notifications stay off until you enable them in the next step.</p>
-                <button type="button" className={button} disabled={busy || !calendarId} onClick={() => void connect()}>Save calendar connection</button>
+                <div className="text-sm text-neutral-300">Client portal calendars<GhlCalendarPicker calendars={calendars} value={calendarIds} disabled={busy || savePending} onChange={setCalendarIds} /></div>
+                <p className="text-sm leading-6 text-neutral-400">Inactive/draft calendars can be selected for existing appointments. This does not activate them in HighLevel.</p>
+                <p className="text-sm leading-6 text-neutral-400">Clients can switch between the selected calendars in their portal. Saving turns notifications off until you enable them for this selection in the next step.</p>
+                <button type="button" className={button} disabled={busy || !calendarIds.length} onClick={() => void connect()}>{savePending ? "Check and retry save" : "Save calendar connection"}</button>
             </> : null}
             {phase === "connected" ? <section className="space-y-3 border-t border-neutral-800 pt-4">
-                <Status label={notifications?.ready ? "App calendar connected" : (calendarId || account?.calendarId ? "Calendar saved — app setup unfinished" : "Account saved — app setup unfinished")} tone={notifications?.ready ? "green" : "grey"} />
+                <Status label={notifications?.ready ? "App calendar connected" : (calendarIds.length || account?.calendarId ? "Calendar saved — app setup unfinished" : "Account saved — app setup unfinished")} tone={notifications?.ready ? "green" : "grey"} />
+                {notifications?.calendars?.length ? <p className="text-sm text-neutral-300">Calendars: {notifications.calendars.map(item => item.name).join(", ")}</p> : null}
+                <button type="button" disabled={busy} onClick={() => void editCalendars()} className="block min-h-11 text-sm underline underline-offset-4">Edit calendars</button>
                 <h3 className="font-semibold">WhatsApp notifications</h3>
-                <p className="text-sm leading-6 text-neutral-400">Send booking, reschedule, cancellation, removal, detail and status updates, plus an appointment reminder, to this client’s confirmed WhatsApp number.</p>
+                <p className="text-sm leading-6 text-neutral-400">Send booking, reschedule, cancellation, removal, detail and status updates, plus an appointment reminder, from all selected calendars to this client’s confirmed WhatsApp number.</p>
                 {notifications?.error ? <p role="alert" className="text-sm text-yellow-200">{notifications.error}</p> : null}
                 {notifications?.ready ? <>
                     <Status label={notifications.sendingEnabled ? "Notifications enabled" : "Notifications off"} tone={notifications.sendingEnabled ? "green" : "grey"} />
                     <p className="text-sm text-neutral-400">Reminder: {notifications.reminderMinutes} minutes before the appointment.</p>
                     {!notifications.consentReady ? <p className="text-sm text-yellow-200">Confirm this client’s WhatsApp number before enabling notifications.</p> : null}
                     <button type="button" className={button} disabled={busy || (!notifications.sendingEnabled && !notifications.consentReady)} onClick={() => void toggleNotifications(!notifications.sendingEnabled)}>{notifications.sendingEnabled ? "Turn off WhatsApp notifications" : "Enable WhatsApp notifications"}</button>
-                    <button type="button" disabled={busy} onClick={() => void status(relationshipId, revision!).catch(report)} className="min-h-11 text-sm underline underline-offset-4">Check notification setup</button>
                 </> : null}
-                <button type="button" disabled={busy || !!authorizationUrl} onClick={() => { setPhase("start"); setError(null) }} className="min-h-11 text-sm underline underline-offset-4">Reconnect or choose another calendar</button>
+                <button type="button" disabled={busy} onClick={() => void checkNotificationSetup()} className="block min-h-11 text-sm underline underline-offset-4">Check notification setup</button>
+                <button type="button" disabled={busy || !!authorizationUrl} onClick={() => { setPhase("start"); setError(null) }} className="block min-h-11 text-sm underline underline-offset-4">Reconnect HighLevel</button>
             </section> : null}
             <div className="flex flex-wrap justify-between gap-3 border-t border-neutral-800 pt-3">
                 <button type="button" disabled={busy} onClick={() => onManual(account ?? null)} className="min-h-11 text-sm text-neutral-400 underline underline-offset-4">Manual connection{account?.connected ? " and retirement" : ""}</button>

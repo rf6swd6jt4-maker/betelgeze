@@ -7,7 +7,7 @@ const db = await createGhlFixture()
 const w='00000000-0000-4000-8000-000000000001',r='00000000-0000-4000-8000-000000000002',ps='00000000-0000-4000-8000-000000000003',rev='00000000-0000-4000-8000-000000000004',secret='00000000-0000-4000-8000-000000000005'
 const location='location123456789',calendar='calendar123456789',appt='appointment123456789',phone='+12025550123'
 let key=0
-const rpc=async(action,input={})=>(await db.query('select public.ghl_appointment_automation($1,$2::jsonb) result',[action,JSON.stringify(input)])).rows[0].result
+const rpc=async(action,input={})=>(await db.query('select public.ghl_appointment_automation($1,$2::jsonb) result',[action,JSON.stringify({processorVersion:2,...input})])).rows[0].result
 const sql=async(text,params=[])=>(await db.query(text,params)).rows
 const scalar=async(text,params=[])=>(await sql(text,params))[0]
 const summary=async(token,slug='fixture',host='portal.example.com')=>(await sql('select public.read_ghl_appointment_summary($1,$2,$3) result',[token,slug,host]))[0].result
@@ -24,7 +24,8 @@ try {
  create table public.workspaces(id uuid primary key,slug text,name text,agency_display_name text,status text,custom_client_portal_domain text,custom_client_portal_domain_status text);
  create table public.relationships(id uuid primary key,workspace_id uuid,status text,client_id uuid,whatsapp_phone text,whatsapp_opted_out_at timestamptz);
  create table public.client_portal_sessions(id uuid primary key,workspace_id uuid,relationship_id uuid,session_token text,status text,token_revoked_at timestamptz);
- create table client_portal_secure.ghl_connections(workspace_id uuid,relationship_id uuid primary key,vault_secret_id uuid,location_id text,calendar_revision uuid,selected_calendar_id text,selected_calendar_name text);
+ create table client_portal_secure.ghl_connections(workspace_id uuid,relationship_id uuid primary key,vault_secret_id uuid,location_id text,calendar_revision uuid,selected_calendar_id text,selected_calendar_name text,lease_until timestamptz);
+ create table client_portal_secure.ghl_calendar_snapshots(relationship_id uuid primary key,operation_id uuid,lease_until timestamptz,attempted_at timestamptz,revision uuid,requested_month text,requested_calendar text,snapshot jsonb,refreshed_at timestamptz,last_error text);
  create table vault.decrypted_secrets(id uuid,decrypted_secret text);
  create table public.client_messages(id uuid primary key default gen_random_uuid(),workspace_id uuid,relationship_id uuid,client_id uuid,communication_channel_id uuid,direction text,provider text,to_address text,body text,status text,sender_kind text,automation_kind text,automation_label text,client_request_id uuid,raw_payload jsonb,provider_message_id text,whatsapp_message_id text,sent_at timestamptz,failed_at timestamptz,error text);
  create table public.communication_message_deliveries(id uuid primary key default gen_random_uuid(),workspace_id uuid,relationship_id uuid,client_message_id uuid,communication_channel_id uuid,provider text,destination text,status text,raw_payload jsonb,provider_message_id text,sent_at timestamptz,failed_at timestamptz,error text,updated_at timestamptz);
@@ -34,15 +35,41 @@ try {
  insert into workspaces values('${w}','fixture','Fixture','Fixture Agency','active','portal.example.com','verified');
  insert into relationships values('${r}','${w}','active',null,'${phone}',null);
  insert into client_portal_sessions values('${ps}','${w}','${r}','${'a'.repeat(64)}','active',null);
- insert into client_portal_secure.ghl_connections values('${w}','${r}','${secret}','${location}','${rev}','${calendar}','Consultations');
+ insert into client_portal_secure.ghl_connections values('${w}','${r}','${secret}','${location}','${rev}','${calendar}','Consultations',null);
  insert into vault.decrypted_secrets values('${secret}','fixture-private-token');
  select set_config('request.jwt.claims','{"role":"service_role"}',false);`)
  await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20261011180000_ghl_appointment_automation.sql`,'utf8'))
- for(const file of ['20261020120000_ghl_oauth_connections.sql','20261020130000_ghl_event_processing.sql','20261020140000_ghl_app_events.sql','20261020150000_ghl_notification_setup.sql']) await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/${file}`,'utf8'))
+ for(const file of ['20261020120000_ghl_oauth_connections.sql','20261020130000_ghl_event_processing.sql','20261020140000_ghl_app_events.sql','20261020150000_ghl_notification_setup.sql','20261021100000_ghl_multiple_calendars.sql']) await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/${file}`,'utf8'))
  let configured=await rpc('configure',{workspaceId:w,relationshipId:r,portalOrigin:'https://portal.example.com'})
  assert.equal(configured.profile.detectionEnabled,false);assert.equal(configured.profile.sendingEnabled,false);assert.equal(configured.profile.includeNotes,false)
  assert.equal((await ingest()).queued,0)
  configured=await rpc('configure',{workspaceId:w,relationshipId:r,portalOrigin:'https://portal.example.com',detectionEnabled:true})
+ await db.exec('begin')
+ const calendars=[{id:calendar,name:'Consultations'},{id:'secondcalendar123',name:'Estimates'}]
+ await db.query('update client_portal_secure.ghl_connections set selected_calendars=$1::jsonb',[JSON.stringify(calendars)])
+ const multiple=await rpc('configure',{workspaceId:w,relationshipId:r,portalOrigin:'https://portal.example.com',detectionEnabled:true})
+ assert.equal(multiple.profile.calendars.length,2)
+ assert.equal((await ingest({calendarId:'unselectedcalendar'})).queued,0)
+ assert.equal((await ingest({calendarId:'secondcalendar123'})).queued,1)
+ const multiEvent=await claim(),multiSnapshot=sample({calendarId:'secondcalendar123',calendarName:'Estimates'})
+ assert.equal((await rpc('event_context',{id:multiEvent.id,leaseToken:multiEvent.leaseToken,processorVersion:1})).failure,'processor_version')
+ assert.equal((await rpc('apply_event',{id:multiEvent.id,leaseToken:multiEvent.leaseToken,expectedVersion:0,snapshot:multiSnapshot,processorVersion:1})).failure,'processor_version')
+ assert.equal((await apply(multiEvent,multiSnapshot,0)).version,1)
+ assert.equal((await ingest({calendarId:calendar,eventType:'AppointmentUpdate'})).queued,1,'Move queues once for the client, not once per calendar')
+ const moveEvent=await claim(),moved=sample({...multiSnapshot,calendarId:calendar,calendarName:'Consultations'})
+ assert.equal((await apply(moveEvent,moved,1,['details_updated'])).version,2)
+ assert.equal((await scalar('select count(*)::int n from client_portal_secure.ghl_appointment_snapshots')).n,1)
+ assert.equal((await scalar("select count(*)::int n from client_portal_secure.ghl_appointment_outbox where kind='removed'")).n,0)
+ assert.equal((await rpc('enqueue_reminders')).queued,1);assert.equal((await rpc('enqueue_reminders')).queued,0)
+ await ingest({calendarId:calendar,eventType:'AppointmentUpdate'});const wrongEvent=await claim()
+ assert.equal((await apply(wrongEvent,{...moved,calendarId:'unselectedcalendar'},2)).failure,'snapshot')
+ // Removing a calendar from the selection preserves its history silently.
+ await db.query('update client_portal_secure.ghl_connections set selected_calendars=$1::jsonb',[JSON.stringify([{id:calendar,name:'Consultations'}])])
+ await rpc('configure',{workspaceId:w,relationshipId:r,portalOrigin:'https://portal.example.com',detectionEnabled:true})
+ await db.query("update client_portal_secure.ghl_appointment_snapshots set snapshot=jsonb_set(snapshot,'{calendarId}','\"secondcalendar123\"'::jsonb)")
+ assert.equal((await ingest({calendarId:'secondcalendar123',eventType:'AppointmentUpdate'})).queued,0)
+ await db.exec('rollback')
+ console.log('Multiple-calendar SQL: selected intake, one history, moves, reminder deduplication and outside-calendar fencing passed')
  const profile=configured.profile
  assert.equal((await rpc('configure',{workspaceId:w,relationshipId:r,portalOrigin:'https://portal.example.com',detectionEnabled:true,includeNotes:'true'})).profile.includeNotes,false)
  assert.equal((await rpc('configure',{workspaceId:w,relationshipId:r,portalOrigin:'https://portal.example.com',detectionEnabled:true,includeNotes:true})).profile.includeNotes,true)
@@ -224,7 +251,7 @@ try {
  assert.equal((await scalar("select count(*)::int n from client_portal_secure.ghl_appointment_outbox where profile_id=$1 and kind in('details_updated','status_updated') and status='pending'",[newProfile.id])).n,2,'Ineligible history is retained without draining it during a claim')
  assert.equal((await rpc('claim_notifications',{limit:1})).items.length,0)
  // Contact-only changes fan out through bounded keyset pages, with exact dedup.
- const appRpc=async(action,input={})=>(await scalar('select public.ghl_app_event($1,$2::jsonb) result',[action,JSON.stringify(input)])).result
+ const appRpc=async(action,input={})=>(await scalar('select public.ghl_app_event($1,$2::jsonb) result',[action,JSON.stringify({processorVersion:2,...input})])).result
  await sql(`insert into client_portal_secure.ghl_appointment_snapshots(profile_id,appointment_id,version,connection_revision,snapshot)
  select $1,'fanout-'||lpad(i::text,3,'0'),1,$2,jsonb_set($3::jsonb,'{contactId}','"fanout-contact"') from generate_series(1,21) i`,[newProfile.id,newProfile.connectionRevision,JSON.stringify(other)])
  const contactEvent={eventType:'ContactUpdate',eventKey:'contact-fanout',payloadHash:'e'.repeat(64),appId:'fixture-app',locationId:location,contactId:'fanout-contact'}

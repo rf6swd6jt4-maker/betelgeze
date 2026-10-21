@@ -1,4 +1,4 @@
-import { finishGhlConnection, GhlConnectionError, manageGhlNotifications, readGhlConnection, selectGhlLocation, startGhlConnection } from "@/lib/ghl-oauth/server"
+import { finishGhlConnection, GhlConnectionError, manageGhlCalendars, manageGhlNotifications, readGhlConnection, selectGhlLocation, startGhlConnection } from "@/lib/ghl-oauth/server"
 import { readGhlJson } from "@/lib/client-portal/ghl-provider"
 
 export const runtime = "nodejs"
@@ -10,7 +10,9 @@ function failure(error: unknown) { return Response.json({ error: error instanceo
 export async function GET(request: Request, { params }: Context) {
     try {
         const query = new URL(request.url).searchParams, { workspaceSlug } = await params
-        const result = query.get("action") === "notification_status"
+        const result = query.get("action") === "calendars"
+            ? await manageGhlCalendars(workspaceSlug, { action: "calendars", relationshipId: query.get("relationshipId"), expectedRevision: query.get("expectedRevision") })
+            : query.get("action") === "notification_status"
             ? await manageGhlNotifications(workspaceSlug, { action: "notification_status", relationshipId: query.get("relationshipId"), expectedRevision: query.get("expectedRevision") })
             : await readGhlConnection(workspaceSlug)
         return Response.json(result, { headers })
@@ -23,9 +25,10 @@ export async function POST(request: Request, { params }: Context) {
     try {
         const { workspaceSlug } = await params, body = await readGhlJson(new Response(request.body), 8192)
         const result = body.action === "start" ? await startGhlConnection(workspaceSlug, body)
+            : body.action === "save_calendars" ? await manageGhlCalendars(workspaceSlug, body)
             : body.action === "select" ? await selectGhlLocation(workspaceSlug, body.locationId)
-                : body.action === "connect" ? await finishGhlConnection(workspaceSlug, body.calendarId)
-                    : ["enable_notifications", "disable_notifications"].includes(String(body.action)) ? await manageGhlNotifications(workspaceSlug, body) : null
+                : body.action === "connect" ? await finishGhlConnection(workspaceSlug, body.calendarIds ?? body.calendarId)
+                    : ["prepare_notifications", "enable_notifications", "disable_notifications"].includes(String(body.action)) ? await manageGhlNotifications(workspaceSlug, body) : null
         if (!result) throw new GhlConnectionError("Choose a connection step.")
         return Response.json(result, { headers })
     } catch (error) { return failure(error) }

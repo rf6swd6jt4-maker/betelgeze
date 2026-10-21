@@ -1,6 +1,6 @@
 export type GhlCalendarEvent = { id: string; title: string; start: string; end: string; status: string; kind: "appointment" | "busy"; allDay: boolean; originalTitle?: string; contactCity?: string }
 export type GhlCalendarSnapshot = { source: "owner-user" | "booking-calendar"; calendarId?: string; owner: { id: string; name: string }; timezone: string; month: string; events: GhlCalendarEvent[]; snapshotId?: string; namesStatus?: "pending" | "ready" | "unavailable" }
-export type GhlCalendarState = { revision: string | null; snapshot: GhlCalendarSnapshot | null; refreshedAt: string | null; error: string | null; busy: boolean }
+export type GhlCalendarState = { calendars?: { id: string; name: string; isActive?: boolean }[]; revision: string | null; snapshot: GhlCalendarSnapshot | null; refreshedAt: string | null; error: string | null; busy: boolean }
 export const calendarErrors: Record<string, string> = {
     permissions: "Allow Calendars and Calendar Events read access in your GHL private integration, then try again.",
     owner_unavailable: "GHL could not identify one owner for this account. Ask your team to check the account owner setup, then refresh.",
@@ -43,4 +43,10 @@ export function groupCalendarEvents(events: GhlCalendarEvent[], timezone: string
         }
     }
     return grouped
+}
+
+/** Keep the provider name unchanged in stored bindings and notification templates. */
+export function calendarChoiceLabel(calendar: { id: string; name: string; isActive?: boolean }, choices: { id: string; name: string }[]) {
+    const duplicate = choices.some(item => item.id !== calendar.id && item.name === calendar.name)
+    return `${calendar.name}${calendar.isActive === false ? " · Inactive / draft" : ""}${duplicate ? ` · ${calendar.id.slice(-6)}` : ""}`
 }

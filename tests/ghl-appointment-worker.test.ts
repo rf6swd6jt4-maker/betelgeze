@@ -339,3 +339,38 @@ test("disabled runtime returns before loading database or provider adapters", as
     try { assert.equal((await processGhlAppointmentAutomation()).disabled, true) }
     finally { if (saved === undefined) delete process.env.GHL_APPOINTMENT_DETECTION_ENABLED; else process.env.GHL_APPOINTMENT_DETECTION_ENABLED = saved }
 })
+
+test('moves between selected calendars produce one update, including identical calendar names', async () => {
+    const multiple = { ...profile, calendars: [{ id: 'calendar1', name: 'Consultations' }, { id: 'calendar2', name: 'Consultations' }] }
+    const moved = { ...snapshot, calendarId: 'calendar2' }
+    const f = workerFixture({ fetchAppointment: async () => moved }); const original = f.deps.rpc
+    f.deps.rpc = async (action, input) => action === 'event_context' ? { profile: multiple, current: { version: 7, snapshot }, privateToken: 'synthetic' } : original(action, input)
+    assert.equal(await processGhlEvent(event, f.deps), 'applied')
+    const applied = f.calls.find(c => c.action === 'apply_event')!.input
+    assert.deepEqual(applied.kinds, ['details_updated']); assert.equal(applied.expectedVersion, 7)
+    assert.equal((applied.snapshot as AppointmentSnapshot).deleted, false)
+    assert.equal((applied.snapshot as AppointmentSnapshot).calendarId, 'calendar2')
+    assert.match(String(applied.changedDetails), /Calendar changed/)
+})
+test('all seven notification kinds verify appointments in a secondary selected calendar', async () => {
+    const multiple = { ...profile, calendars: [{ id: 'calendar1', name: 'Consultations' }, { id: 'calendar2', name: 'Estimates' }] }
+    for (const kind of Object.keys(appointmentTemplateContracts) as NotificationJob['kind'][]) {
+        const current = { ...snapshot, calendarId: 'calendar2', calendarName: 'Estimates', deleted: kind === 'removed' }
+        const f = deliveryFixture({ fetchAppointment: async () => current }); const original = f.deps.rpc
+        f.deps.rpc = async (action, input) => action === 'notification_context' ? { profile: multiple, privateToken: 'synthetic', destination: '+12025550123' } : original(action, input)
+        assert.equal(await deliverAppointmentNotification({ ...job, profile: multiple, kind, snapshot: current, previousSnapshot: snapshot, changedDetails: 'Calendar: Estimates' }, f.deps), 'accepted', kind)
+        assert.equal(f.sends(), 1, kind)
+    }
+})
+test('reconciliation rotates selected calendars without increasing provider calls per turn', async () => {
+    const multiple = { ...profile, calendars: [{ id: 'calendar1', name: 'Consultations' }, { id: 'calendar2', name: 'Estimates' }] }
+    const providerCalls: string[] = [], f = workerFixture({ fetchCalendarWindow: async p => { providerCalls.push(p.calendarId); return { appointmentIds: ['one'], complete: true } } })
+    let cursor = nextReconcileCursor(null, now); const start = cursor.windowStart
+    const turn = async () => { await reconcileGhlProfile({ profile: multiple, privateToken: 'synthetic', leaseToken: 'lease', cursor }, f.deps); cursor = f.calls.at(-1)!.input.cursor as typeof cursor }
+    await turn(); assert.deepEqual(providerCalls, ['calendar1']); assert.equal(cursor.windowStart, start); assert.equal(cursor.calendarIndex, 1)
+    await turn(); assert.deepEqual(providerCalls, ['calendar1'])
+    await turn(); assert.deepEqual(providerCalls, ['calendar1', 'calendar2']); assert.ok(cursor.windowStart > start); assert.equal(cursor.calendarIndex, 0)
+    const observations = f.calls.filter(c => c.action === 'ingest')
+    assert.deepEqual(observations.map(c => c.input.calendarId), ['calendar1', 'calendar2'])
+    assert.notEqual(observations[0].input.eventKey, observations[1].input.eventKey)
+})

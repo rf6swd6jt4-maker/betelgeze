@@ -1,5 +1,6 @@
 "use client"
 import {useCallback,useEffect,useMemo,useRef,useState} from "react"
+import { Selector } from "@/components/ui/Selector"
 import { Status } from "@/components/ui/Status"
 import {List,ListItem,ListPrimaryRow,ListSecondaryRow,ListTitle} from "@/components/list/List"
 import {PortalSection} from "./ClientPortalUI"
@@ -8,7 +9,11 @@ import styles from "./ClientPortalCalendar.module.css"
 const control="inline-flex min-h-11 items-center justify-center rounded-lg px-3 text-sm font-medium text-[var(--onboarding-primary,#1E3A5F)] hover:bg-black/5 focus-visible:outline-2 disabled:opacity-40"
 export function ClientPortalCalendar({token,active}:{token:string;active:boolean}) {
  const [state,setState]=useState<GhlCalendarState|null>(null),[month,setMonth]=useState(()=>dateKey(new Date(),"UTC").slice(0,7)),[day,setDay]=useState<string|null>(null)
+ const [calendarId,setCalendarId]=useState("")
+ const selectedCalendar=useRef("")
+ const cacheKey=(id:string|undefined,value:string)=>`${id??"owner"}:${value}`
  const [busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null)
+ const lastProviderAttempt=useRef(0)
  const controller=useRef<AbortController|null>(null),generation=useRef(0),lastRead=useRef(0),mounted=useRef(true)
  const [cache,setCache]=useState(new Map<string,GhlCalendarState>())
  const connectionRevision=useRef<string|null>(null),initialized=useRef(false)
@@ -23,29 +28,38 @@ export function ClientPortalCalendar({token,active}:{token:string;active:boolean
   try{
    const response=await fetch(`${api}/names`,{method:"POST",cache:"no-store",headers:{"Content-Type":"application/json"},body:JSON.stringify({snapshotId:base.snapshot.snapshotId}),signal:request.signal})
    const value=await response.json();if(!response.ok)throw new Error("Contact details could not be updated. Original GHL titles are shown.")
-   const updated=value as GhlCalendarState
+   const updated={...value,calendars:base.calendars} as GhlCalendarState
    if(!mounted.current||version!==generation.current||request.signal.aborted||updated.revision!==base.revision||updated.snapshot?.snapshotId!==base.snapshot.snapshotId||updated.snapshot?.owner.id!==base.snapshot.owner.id)return
    setState(previous=>previous?.snapshot?.snapshotId===base.snapshot?.snapshotId&&previous?.revision===base.revision?updated:previous)
-   setCache(previous=>{const entry=previous.get(base.snapshot!.month);if(entry?.snapshot?.snapshotId!==base.snapshot?.snapshotId||entry?.revision!==base.revision)return previous;const next=new Map(previous);next.set(base.snapshot!.month,updated);return next})
+   setCache(previous=>{const entry=previous.get(cacheKey(base.snapshot!.calendarId,base.snapshot!.month));if(entry?.snapshot?.snapshotId!==base.snapshot?.snapshotId||entry?.revision!==base.revision)return previous;const next=new Map(previous);next.set(cacheKey(base.snapshot!.calendarId,base.snapshot!.month),updated);return next})
   }catch{if(mounted.current&&version===generation.current&&!request.signal.aborted)setNamesError(base.snapshot.snapshotId)}
   finally{window.clearTimeout(timeout);if(namesController.current===request){namesController.current=null;if(mounted.current)setNamesBusy(null)}}
  },[api])
- const load=useCallback(async(refresh=false,nextMonth?:string)=>{
+ const load=useCallback(async(refresh=false,nextMonth?:string,nextCalendar=selectedCalendar.current)=>{
   if(controller.current)return
   const request=new AbortController();controller.current=request;const version=++generation.current
   namesController.current?.abort();namesController.current=null;setNamesBusy(null);setNamesError(null)
   setBusy(true);setError(null);lastRead.current=Date.now()
   const timeout=window.setTimeout(()=>request.abort(),30000)
   try{
-   const response=await fetch(api,{method:refresh?"POST":"GET",cache:"no-store",signal:request.signal,...(refresh?{headers:{"Content-Type":"application/json"},body:JSON.stringify({month:nextMonth})}:{})})
-   const value=await response.json();if(!response.ok)throw new Error(value.error||"The calendar could not be loaded.")
+   if(refresh){
+    // Honour the existing server cooldown when quickly switching calendars.
+    const delay=Math.max(0,lastProviderAttempt.current+2100-Date.now())
+    if(delay)await new Promise<void>((resolve,reject)=>{const timer=window.setTimeout(()=>{request.signal.removeEventListener("abort",cancel);resolve()},delay);const cancel=()=>{window.clearTimeout(timer);reject(new DOMException("Calendar request cancelled.","AbortError"))};request.signal.addEventListener("abort",cancel,{once:true})})
+    if(request.signal.aborted)return
+   }
+   const response=await fetch(api+(refresh||!nextCalendar?"":`?calendarId=${encodeURIComponent(nextCalendar)}`),{method:refresh?"POST":"GET",cache:"no-store",signal:request.signal,...(refresh?{headers:{"Content-Type":"application/json"},body:JSON.stringify({month:nextMonth,...(nextCalendar?{calendarId:nextCalendar}:{})})}:{})})
+   if(refresh)lastProviderAttempt.current=Date.now()
+   const value=await response.json();if(!response.ok){if([401,403,404].includes(response.status)&&mounted.current&&version===generation.current){setState(null);setCache(new Map());connectionRevision.current=null;selectedCalendar.current="";setCalendarId("")}throw new Error(value.error||"The calendar could not be loaded.")}
    if(!mounted.current||version!==generation.current)return
    const saved=value as GhlCalendarState;setState(saved)
-   const identity=`${saved.revision}:${saved.snapshot?.owner.id??""}`
+   const choices=saved.calendars??[]
+   if(!selectedCalendar.current||!choices.some(item=>item.id===selectedCalendar.current)){selectedCalendar.current=choices.find(item=>item.id===saved.snapshot?.calendarId)?.id??choices[0]?.id??"";setCalendarId(selectedCalendar.current)}
+   const identity=`${saved.revision}`
    const changed=connectionRevision.current!==identity;connectionRevision.current=identity
    if(changed)setCache(new Map())
    if(saved.snapshot){
-    const s=saved.snapshot;setCache(previous=>{const next=new Map(previous);next.set(s.month,saved);while(next.size>6)next.delete(next.keys().next().value!);return next})
+    const s=saved.snapshot;setCache(previous=>{const next=new Map(previous);next.set(cacheKey(s.calendarId,s.month),saved);while(next.size>6)next.delete(next.keys().next().value!);return next})
     if(refresh){setMonth(s.month)}
     else if(!initialized.current||changed){setMonth(dateKey(new Date(),s.timezone).slice(0,7))}
     initialized.current=true
@@ -59,15 +73,17 @@ export function ClientPortalCalendar({token,active}:{token:string;active:boolean
  const [localTimezone]=useState(()=>Intl.DateTimeFormat().resolvedOptions().timeZone)
  const snapshot=state?.snapshot,timezone=snapshot?.timezone??localTimezone
  const today=dateKey(new Date(),timezone),days=useMemo(()=>monthDays(month),[month])
- const displayed=cache.get(month)??(snapshot?.month===month?state:null)
+ const displayed=cache.get(cacheKey(calendarId||undefined,month))??(snapshot?.month===month&&(!calendarId||snapshot.calendarId===calendarId)?state:null)
  const ready=Boolean(displayed?.snapshot?.owner.id)
  const events=useMemo(()=>groupCalendarEvents(displayed?.snapshot?.events??[],timezone,days),[displayed,timezone,days])
  const selectedDay=day&&days.includes(day)?day:month===today.slice(0,7)?today:`${month}-01`
  const time=(value:string)=>new Intl.DateTimeFormat(undefined,{timeZone:timezone,hour:"numeric",minute:"2-digit"}).format(new Date(value))
  const monthLabel=new Intl.DateTimeFormat(undefined,{month:"long",year:"numeric",timeZone:"UTC"}).format(new Date(month+"-01T12:00:00Z"))
- const selectMonth=(value:string)=>{if(busy||!validMonth(value))return;setMonth(value);setDay(null);setError(null);if(!cache.has(value))void load(true,value)}
- return <PortalSection id="appointments" title="Your calendar" description="Appointments from GHL, all in one view." icon="calendar">
+ const selectMonth=(value:string)=>{if(busy||!validMonth(value))return;setMonth(value);setDay(null);setError(null);if(!cache.has(cacheKey(selectedCalendar.current||undefined,value)))void load(true,value)}
+ const selectCalendar=(id:string)=>{if(busy||id===selectedCalendar.current)return;selectedCalendar.current=id;setCalendarId(id);setDay(null);setError(null);namesController.current?.abort();namesController.current=null;setNamesBusy(null);setNamesError(null);generation.current++;if(!cache.has(cacheKey(id,month)))void load(true,month,id)}
+ return <PortalSection id="appointments" title="Your calendar" description="Appointments from your connected calendars." icon="calendar">
   <div className="mt-4" aria-busy={busy}>
+   {(state?.calendars?.length??0)>1?<div className="mb-3"><Selector surface="light" appearance="input" ariaLabel="Portal calendar" value={calendarId} disabled={busy} options={state!.calendars!.map(item=>({value:item.id,label:item.name}))} onChange={selectCalendar}/></div>:null}
    <div className="flex flex-wrap items-center justify-between gap-1 pb-2"><h3 aria-live="polite" className="text-base font-semibold">{monthLabel}</h3><div className="flex items-center"><button className={control} onClick={()=>selectMonth(today.slice(0,7))} disabled={busy}>Today</button><button data-icon-button className={`${control} h-11 w-11 px-0`} aria-label="Previous month" onClick={()=>selectMonth(shiftMonth(month,-1))} disabled={busy}><svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="m14 6-6 6 6 6"/></svg></button><button data-icon-button className={`${control} h-11 w-11 px-0`} aria-label="Next month" onClick={()=>selectMonth(shiftMonth(month,1))} disabled={busy}><svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="m10 6 6 6-6 6"/></svg></button></div></div>
    <div className={styles.weekdays} aria-hidden="true">{["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=><span key={d}>{d}</span>)}</div>
    <div className={styles.grid} role="group" aria-label={`${monthLabel} calendar`}>

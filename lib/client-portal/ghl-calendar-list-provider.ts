@@ -1,10 +1,12 @@
 import { GhlError, ghlHttpError, readGhlJson } from "./ghl-provider"
 
-export type GhlCalendarChoice = { id: string; name: string }
+export type GhlCalendarChoice = { id: string; name: string; isActive?: boolean }
 export async function fetchGhlCalendars(credentials: { locationId: string; privateToken: string }, fetcher: typeof fetch = fetch): Promise<GhlCalendarChoice[]> {
     const controller = new AbortController(), deadline = setTimeout(() => controller.abort(), 20_000)
     try {
-        const response = await fetcher(`https://services.leadconnectorhq.com/calendars/?${new URLSearchParams({ locationId: credentials.locationId, showDrafted: "false" })}`, {
+        // Inactive calendars can retain appointments. Selecting one for reads
+        // does not publish it or change HighLevel booking availability.
+        const response = await fetcher(`https://services.leadconnectorhq.com/calendars/?${new URLSearchParams({ locationId: credentials.locationId, showDrafted: "true" })}`, {
             headers: { Authorization: `Bearer ${credentials.privateToken}`, Version: "v3", Accept: "application/json" },
             redirect: "error", cache: "no-store", signal: controller.signal,
         })
@@ -18,7 +20,7 @@ export async function fetchGhlCalendars(credentials: { locationId: string; priva
         return body.calendars.map((row): GhlCalendarChoice => {
             if (!row || typeof row.id !== "string" || !/^[a-zA-Z0-9_-]{10,80}$/.test(row.id) || row.locationId !== credentials.locationId || typeof row.name !== "string" || !row.name.trim() || seen.has(row.id)) throw new GhlError("response")
             seen.add(row.id)
-            return { id: row.id, name: row.name.trim().slice(0, 200) }
+            return { id: row.id, name: row.name.trim().slice(0, 200), ...(typeof row.isActive === "boolean" ? { isActive: row.isActive } : {}) }
         }).sort((a, b) => a.name.localeCompare(b.name) || a.id.localeCompare(b.id))
     } catch (error) { throw error instanceof GhlError ? error : new GhlError("unavailable") }
     finally { clearTimeout(deadline) }

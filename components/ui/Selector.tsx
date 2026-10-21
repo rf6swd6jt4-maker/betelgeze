@@ -37,7 +37,7 @@ export const SelectorTrigger = forwardRef<HTMLButtonElement, {
     </button>
 })
 
-export function SelectorDrawer({ anchor, ariaLabel, title, description, search, onSearch, searchPlaceholder = "Search…", children, empty, footer, onDismiss, className = "", workItemPopup = false, autoFocusOptions = true }: {
+export function SelectorDrawer({ anchor, ariaLabel, title, description, search, onSearch, searchPlaceholder = "Search…", children, empty, footer, onDismiss, className = "", workItemPopup = false, autoFocusOptions = true, multiselectable = false }: {
     anchor: HTMLElement | null
     ariaLabel: string
     title?: string
@@ -52,6 +52,7 @@ export function SelectorDrawer({ anchor, ariaLabel, title, description, search, 
     className?: string
     workItemPopup?: boolean
     autoFocusOptions?: boolean
+    multiselectable?: boolean
 }) {
     const optionsRef = useRef<HTMLDivElement>(null)
     const focusOption = useCallback((position: "selected" | "first" | "last") => {
@@ -83,7 +84,7 @@ export function SelectorDrawer({ anchor, ariaLabel, title, description, search, 
             {description ? <p className={`${title ? "mt-0.5" : ""} text-[11px] leading-4 text-neutral-500`}>{description}</p> : null}
         </header> : null}
         {onSearch ? <input autoFocus aria-label={`Search ${ariaLabel.toLowerCase()}`} value={search ?? ""} onChange={(event) => onSearch(event.target.value)} onKeyDown={(event) => { if (event.key === "ArrowDown") { event.preventDefault(); focusOption("selected") } else if (event.key === "ArrowUp") { event.preventDefault(); focusOption("last") } }} placeholder={searchPlaceholder} className="h-9 w-full border-b border-neutral-800 bg-black/30 px-3 text-sm text-white outline-none placeholder:text-neutral-600" /> : null}
-        <div ref={optionsRef} role="listbox" aria-label={ariaLabel} onKeyDown={moveFocus} className="max-h-[min(16rem,45dvh)] overflow-y-auto overscroll-contain p-1">
+        <div ref={optionsRef} role="listbox" aria-label={ariaLabel} aria-multiselectable={multiselectable || undefined} onKeyDown={moveFocus} className="max-h-[min(16rem,45dvh)] overflow-y-auto overscroll-contain p-1">
             {children}
             {empty}
         </div>

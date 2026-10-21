@@ -206,7 +206,7 @@ export function GhlAppConnectionDialog({ workspaceSlug, accounts, initialAccount
             {phase === "connected" ? <section className="space-y-3 border-t border-neutral-800 pt-4">
                 <Status label={notifications?.ready ? "App calendar connected" : (calendarIds.length || account?.calendarId ? "Calendar saved — app setup unfinished" : "Account saved — app setup unfinished")} tone={notifications?.ready ? "green" : "grey"} />
                 {notifications?.calendars?.length ? <p className="text-sm text-neutral-300">Calendars: {notifications.calendars.map(item => item.name).join(", ")}</p> : null}
-                <button type="button" disabled={busy} onClick={() => void editCalendars()} className="min-h-11 text-sm underline underline-offset-4">Edit calendars</button>
+                <button type="button" disabled={busy} onClick={() => void editCalendars()} className="block min-h-11 text-sm underline underline-offset-4">Edit calendars</button>
                 <h3 className="font-semibold">WhatsApp notifications</h3>
                 <p className="text-sm leading-6 text-neutral-400">Send booking, reschedule, cancellation, removal, detail and status updates, plus an appointment reminder, from all selected calendars to this client’s confirmed WhatsApp number.</p>
                 {notifications?.error ? <p role="alert" className="text-sm text-yellow-200">{notifications.error}</p> : null}
@@ -217,7 +217,7 @@ export function GhlAppConnectionDialog({ workspaceSlug, accounts, initialAccount
                     <button type="button" className={button} disabled={busy || (!notifications.sendingEnabled && !notifications.consentReady)} onClick={() => void toggleNotifications(!notifications.sendingEnabled)}>{notifications.sendingEnabled ? "Turn off WhatsApp notifications" : "Enable WhatsApp notifications"}</button>
                 </> : null}
                 <button type="button" disabled={busy} onClick={() => void checkNotificationSetup()} className="min-h-11 text-sm underline underline-offset-4">Check notification setup</button>
-                <button type="button" disabled={busy || !!authorizationUrl} onClick={() => { setPhase("start"); setError(null) }} className="min-h-11 text-sm underline underline-offset-4">Reconnect or choose another calendar</button>
+                <button type="button" disabled={busy || !!authorizationUrl} onClick={() => { setPhase("start"); setError(null) }} className="min-h-11 text-sm underline underline-offset-4">Reconnect HighLevel</button>
             </section> : null}
             <div className="flex flex-wrap justify-between gap-3 border-t border-neutral-800 pt-3">
                 <button type="button" disabled={busy} onClick={() => onManual(account ?? null)} className="min-h-11 text-sm text-neutral-400 underline underline-offset-4">Manual connection{account?.connected ? " and retirement" : ""}</button>

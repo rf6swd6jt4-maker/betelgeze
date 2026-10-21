@@ -11,7 +11,30 @@ try {
   try { for(const viewport of [{width:1280,height:900},{width:390,height:844}]) {
    const page=await browser.newPage({viewport});const errors=[];page.on('pageerror',error=>errors.push(String(error)))
    await page.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort())
+   let metaReads=0
+   await page.route('**/api/workspaces/fixture/client-connections/meta-ads?*',async route=>{
+    assert.equal(route.request().method(),'GET','Opening maintenance must not change the reporting account')
+    assert.equal(new URL(route.request().url()).searchParams.get('relationship'),'relationship')
+    metaReads++
+    await route.fulfill({json:{connection:null,candidateId:null,history:[]}})
+   })
    await page.goto(url);await page.getByText('Fixture Agency',{exact:false}).waitFor()
+   assert.equal(metaReads,0,'The list must not fetch Meta reporting before it is opened')
+   const metaAction=page.getByRole('button',{name:'Manage Meta Ads reporting for Synthetic Client – Fixture Business',exact:true})
+   await metaAction.scrollIntoViewIfNeeded()
+   assert.equal(await metaAction.innerText(),'Meta Ads')
+   const initialGeometry=await page.getByRole('listitem').evaluateAll(rows=>rows.map(row=>({height:row.getBoundingClientRect().height,bands:row.children.length})))
+   assert.ok(initialGeometry.every(row=>row.height<=96&&row.bands===2),`Regular two-band row geometry: ${JSON.stringify(initialGeometry)}`)
+   const metaBox=await metaAction.boundingBox()
+   assert.ok(metaBox&&metaBox.height>=44&&metaBox.width>=44,'Meta action must retain a 44px target')
+   await page.screenshot({path:`/tmp/client-connections-${name}-${viewport.width}.png`,fullPage:true})
+   await metaAction.click()
+   const metaDialog=page.getByRole('dialog',{name:'Meta Ads reporting',exact:true})
+   await metaDialog.getByText('No reporting account has been selected.',{exact:true}).waitFor()
+   assert.equal(await metaDialog.getByText('Synthetic Client – Fixture Business',{exact:true}).count(),1)
+   assert.equal(metaReads,1,'Opening maintenance must read only the selected relationship once')
+   await page.keyboard.press('Escape')
+   await metaDialog.waitFor({state:'hidden'})
    await page.getByRole('button',{name:'Actions for Synthetic Client – Fixture Business',exact:true}).click()
    await page.getByRole('button',{name:'Manual connection and retirement',exact:true}).click()
    await page.getByRole('button',{name:'Load calendars',exact:true}).click()
@@ -40,6 +63,8 @@ try {
    await page.getByRole('dialog',{name:'Retired connection',exact:true}).waitFor()
    assert.equal(await page.getByRole('button',{name:'Save connection',exact:true}).count(),0)
    await page.keyboard.press('Escape')
+   assert.equal(await page.getByRole('button',{name:'Manage Meta Ads reporting for Archived Client',exact:true}).count(),0)
+   assert.equal(await page.getByRole('listitem').filter({has:page.getByText('Retired',{exact:true})}).getByRole('button',{name:/Manage Meta Ads reporting/}).count(),0)
    await page.getByRole('button',{name:'Actions for Archived Client',exact:true}).click()
    assert.equal(await page.getByRole('button',{name:'Save connection',exact:true}).isDisabled(),true)
    assert.equal(await page.getByRole('button',{name:'Retire connection',exact:true}).isEnabled(),true)
@@ -49,7 +74,7 @@ try {
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true)
    assert.deepEqual(errors,[])
    if(name==='chromium') await page.screenshot({path:`/tmp/ghl-retirement-${viewport.width}.png`,fullPage:true})
-   console.log(`${name} ${viewport.width}: edit with saved token, calendar discovery/save, direct three-dot editor, cancelled and confirmed retirement, retained history and regular row geometry passed`)
+   console.log(`${name} ${viewport.width}: on-demand Meta action, edit with saved token, calendar discovery/save, direct three-dot editor, cancelled and confirmed retirement, retained history and regular row geometry passed (${heights.join(',')}px)`)
    await page.close()
   }} finally {await browser.close()}
  }

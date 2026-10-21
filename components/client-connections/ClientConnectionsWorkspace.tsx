@@ -8,6 +8,7 @@ import { useRouter, useSearchParams } from "@/components/workspace/WorkspaceNavi
 import { useMemo, useState, useTransition, useRef, useEffect, type FormEvent } from "react"
 import { saveClientAccount, removeClientAccount, refreshClientAccount } from "@/app/[workspaceSlug]/client-connections/actions"
 import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle, ListTrailing } from "@/components/list/List"
+import { ListPrimaryAction } from "@/components/list/ListPrimaryAction"
 import { PanelTabHeader } from "@/components/panel/PanelTabHeader"
 import { CenteredDialog, Selector, Status } from "@/components/ui"
 import type { ClientConnectionAccount, ConnectionHistoryCursor } from "@/lib/client-connections"
@@ -161,8 +162,13 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAcc
                 const status = account.historyId ? { label: "Retired", tone: "red" as const } : account.connected ? { label: "Active", tone: account.error ? "yellow" as const : "green" as const } : { label: "Not configured", tone: "yellow" as const }
                 return <ListItem key={account.historyId ?? account.relationshipId}>
                     <ListPrimaryRow><ListTitle className="flex-1">{title}</ListTitle><Status label={status.label} tone={status.tone} /></ListPrimaryRow>
-                    <ListSecondaryRow><span className="min-w-0 truncate text-neutral-400">{account.locationName ?? "No HighLevel account linked"}{account.archived ? " · Archived relationship" : ""}{account.retiredAt ? ` · Retired ${new Date(account.retiredAt).toLocaleDateString()}` : ""}</span><ListTrailing><button type="button" aria-label={`Actions for ${title}${account.historyId ? " retired connection" : ""}`} disabled={pending} onClick={() => account.historyId || account.archived ? edit(account) : setAppDialog({ account })} className="-my-3 flex h-11 w-11 shrink-0 items-center justify-center text-neutral-300 hover:text-white disabled:opacity-40"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><circle cx="4" cy="10" r="1.5" /><circle cx="10" cy="10" r="1.5" /><circle cx="16" cy="10" r="1.5" /></svg></button></ListTrailing></ListSecondaryRow>
-                    {!account.historyId && !account.archived ? <ListSecondaryRow><button type="button" onClick={() => setMetaReporting(account)} className="min-h-11 text-sm text-neutral-300 underline underline-offset-4">Manage Meta Ads reporting</button></ListSecondaryRow> : null}
+                    <ListSecondaryRow>
+                        <span className="min-w-0 truncate text-neutral-400">{account.locationName ?? "No HighLevel account linked"}{account.archived ? " · Archived relationship" : ""}{account.retiredAt ? ` · Retired ${new Date(account.retiredAt).toLocaleDateString()}` : ""}</span>
+                        <ListTrailing>
+                            {!account.historyId && !account.archived ? <span className="-my-2 flex"><ListPrimaryAction label="Meta Ads" accessibleLabel={`Manage Meta Ads reporting for ${title}`} onClick={() => setMetaReporting(account)} /></span> : null}
+                            <button type="button" aria-label={`Actions for ${title}${account.historyId ? " retired connection" : ""}`} disabled={pending} onClick={() => account.historyId || account.archived ? edit(account) : setAppDialog({ account })} className="-my-3 flex h-11 w-11 shrink-0 items-center justify-center text-neutral-300 hover:text-white disabled:opacity-40"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><circle cx="4" cy="10" r="1.5" /><circle cx="10" cy="10" r="1.5" /><circle cx="16" cy="10" r="1.5" /></svg></button>
+                        </ListTrailing>
+                    </ListSecondaryRow>
                 </ListItem>
             }) : <div className="p-6"><p className="font-semibold">{selectedRelationship ? "No available connection for this relationship." : "No eligible clients yet."}</p><p className="mt-2 text-sm text-neutral-400">{selectedRelationship ? "It may no longer be eligible or available to your account." : "Clients in onboarding or retention can connect HighLevel without purchasing Appointment Setting."}</p></div>}
         </List>

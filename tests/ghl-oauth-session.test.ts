@@ -25,15 +25,18 @@ function fixture() {
     let exchange: () => Promise<typeof token> = async () => token
     let list: () => Promise<{ locations: unknown; limited: boolean }> = async () => ({ locations: attempt.choices, limited: false })
     let locationGrant: () => Promise<typeof token> = async () => token
-    let locationExchanges = 0
+    let locationExchanges = 0, providerReads = 0
+    let selectionReply: Record<string, unknown> = { locationId: token.locationId, privateToken: token.accessToken, revision: id(4), calendars: [{id:"calendar123456789",name:"Calendar"}] }
+    const calendarReads: string[] = []
+    const calendars = [{id:"calendar123456789",name:"Calendar"},{id:"secondcalendar123",name:"Draft estimates",isActive:false}]
     const diagnostics: unknown[][] = []
     const mocks: Record<string, unknown> = {
         "server-only": {},
         "next/headers": { cookies: async () => ({ get: (name: string) => jar.has(name) ? { value: jar.get(name) } : undefined, set: (name: string, value: string, options: Record<string, unknown>) => { jar.set(name, value); cookieOptions.push(options) } }) },
         "@/lib/workspace-access": { requireWorkspacePanel: async () => ({ workspace: { id: id(1), slug: "fixture" }, user: { id: activeUser } }) },
         "@/lib/workspace-integrations": { encryptIntegrationCredential: JSON.stringify, decryptWorkspaceIntegration: JSON.parse },
-        "@/lib/client-portal/ghl-calendar-list-provider": { fetchGhlCalendars: async () => [{ id: "calendar123456789", name: "Calendar" }] },
-        "@/lib/client-portal/ghl-calendar-provider": { fetchGhlCalendar: async () => ({}) },
+        "@/lib/client-portal/ghl-calendar-list-provider": { fetchGhlCalendars: async () => {providerReads++;return calendars} },
+        "@/lib/client-portal/ghl-calendar-provider": { fetchGhlCalendar: async (_c:unknown,_m:unknown,b:{calendarId:string}) => {calendarReads.push(b.calendarId);return {}} },
         "@/lib/client-portal/ghl-provider": { fetchGhlMetrics: async () => ({ companyId: token.companyId, locationName: "Fixture", metrics: {} }) },
         "./provider": {
             GhlOAuthError: ProviderError,
@@ -45,6 +48,7 @@ function fixture() {
         },
         "@/lib/supabase/admin": { supabaseAdmin: { rpc: async (name: string, params: { p_action: string; p_input: Record<string, unknown> }) => {
             const { p_action: action, p_input: input } = params; calls.push({ action: `${name}:${action}`, input })
+            if (name === "ghl_calendar_selection") return {data:action === "read" ? selectionReply : {connected:true,revision:id(5),calendars:input.calendars}}
             if (name === "ghl_appointment_setup") return { data: { failure: "portal" } }
             if (action === "prepare") return { data: { accepted: true } }
             if (action === "read") return { data: readFailure ? { failure: readFailure } : { ...attempt, phase } }
@@ -63,7 +67,7 @@ function fixture() {
     const code = ts.transpileModule(readFileSync("lib/ghl-oauth/server.ts", "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
     new Function("require", "module", "exports", "console", code)((path: string) => path in mocks ? mocks[path] : require(path), compiled, compiled.exports, { error: (...values: unknown[]) => diagnostics.push(values) })
     const api = compiled.exports as typeof import("../lib/ghl-oauth/server")
-    return { api, calls, jar, cookieOptions, diagnostics, readFailure: (value: string) => { readFailure = value }, exchanges: () => exchanges, phase: () => phase, user: (value: string) => { activeUser = value }, exchange: (value: typeof exchange) => { exchange = value }, list: (value: typeof list) => { list = value }, locationGrant: (value: typeof locationGrant) => { locationGrant = value }, locationExchanges: () => locationExchanges, token }
+    return { api, calls, jar, calendarReads, providerReads:()=>providerReads, selectionReply:(value:Record<string,unknown>)=>{selectionReply=value}, cookieOptions, diagnostics, readFailure: (value: string) => { readFailure = value }, exchanges: () => exchanges, phase: () => phase, user: (value: string) => { activeUser = value }, exchange: (value: typeof exchange) => { exchange = value }, list: (value: typeof list) => { list = value }, locationGrant: (value: typeof locationGrant) => { locationGrant = value }, locationExchanges: () => locationExchanges, token }
 }
 async function start(f: ReturnType<typeof fixture>) {
     const result = await f.api.startGhlConnection("fixture", { relationshipId: id(3), expectedRevision: null })
@@ -175,4 +179,29 @@ test("a read outage preserves the unfinished grant while an expired attempt may 
         else await assert.rejects(pending)
         assert.equal(f.calls.filter(call => call.action.endsWith(":prepare")).length, failure === "expired" ? 2 : 1)
     }
+})
+
+test('OAuth saves all selected calendars after independently verifying their read access',async()=>{
+ const f=fixture(), state=await start(f)
+ await f.api.completeGhlAuthorization(state,'code',false);await f.api.selectGhlLocation('fixture','location123456789')
+ await f.api.finishGhlConnection('fixture',['calendar123456789','secondcalendar123'])
+ assert.deepEqual(f.calendarReads,['calendar123456789','secondcalendar123'])
+ const saved=f.calls.find(c=>c.action==='ghl_oauth_connection:connect')!.input
+ assert.equal((saved.calendars as unknown[]).length,2);assert.equal(saved.calendarId,'calendar123456789')
+})
+test('saved connections edit calendars without OAuth, and a lost save reply recovers without provider work',async()=>{
+ const f=fixture(),input={action:'save_calendars',relationshipId:id(3),expectedRevision:id(4),requestId:id(9),calendarIds:['calendar123456789','secondcalendar123']}
+ const result=await f.api.manageGhlCalendars('fixture',input)
+ assert.equal(result.connected,true);assert.equal(result.revision,id(5));assert.equal(f.exchanges(),0);assert.deepEqual(f.calendarReads,input.calendarIds)
+ assert.equal(f.calls.some(c=>c.action.startsWith('ghl_oauth_connection:')),false)
+ f.selectionReply({connected:true,revision:id(5),calendars:result.calendars})
+ const reads=f.providerReads(),verified=f.calendarReads.length,saves=f.calls.filter(c=>c.action==='ghl_calendar_selection:save').length
+ const recovered=await f.api.manageGhlCalendars('fixture',input)
+ assert.equal(recovered.revision,id(5));assert.equal(f.providerReads(),reads);assert.equal(f.calendarReads.length,verified);assert.equal(f.calls.filter(c=>c.action==='ghl_calendar_selection:save').length,saves)
+})
+test('selection rejects duplicate, empty, excessive, unavailable and malformed IDs without saving',async()=>{
+ for(const calendarIds of [[],['calendar123456789','calendar123456789'],Array.from({length:11},(_,i)=>'calendar12345678'+i),['invalid calendar'],['missingcalendar123']]){
+  const f=fixture();await assert.rejects(f.api.manageGhlCalendars('fixture',{action:'save_calendars',relationshipId:id(3),expectedRevision:id(4),requestId:id(9),calendarIds}))
+  assert.equal(f.calls.some(c=>c.action==='ghl_calendar_selection:save'),false);assert.equal(f.calendarReads.length,0)
+ }
 })

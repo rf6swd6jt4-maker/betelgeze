@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import type { AppointmentSnapshot, ProviderProfile } from "./types"
+import { profileCalendars, profileIncludesCalendar, type AppointmentSnapshot, type ProviderProfile } from "./types"
 import { classifyAppointmentChange, reminderDueAt } from "./lifecycle"
 import { deliverAppointmentNotification, readLiveAppointmentTemplate, GhlAutomationRejected, type AutomationProfile, type AutomationRpc, type DeliveryDependencies, type NotificationJob } from "./delivery"
 
@@ -16,6 +16,7 @@ type ReconcileCursor = {
     cycleId: string
     windowAfter?: string | null
     knownAfter?: string | null
+    calendarIndex?: number
     knownCycleId: string
 }
 export type AppointmentWorkerDependencies = {
@@ -41,7 +42,7 @@ export async function processGhlEvent(job: EventJob, deps: AppointmentWorkerDepe
         const live = await deps.fetchAppointment(providerProfile(context), job.appointmentId)
         const previous = context.current?.snapshot ?? null
         let snapshot: AppointmentSnapshot
-        if (!live || live.calendarId !== context.profile.calendarId) {
+        if (!live || !profileIncludesCalendar(context.profile, live.calendarId)) {
             // Never use a failed lookup/list omission as proof of removal. The
             // provider returns null only for authenticated exact-ID absence or
             // an explicit deleted flag after verifying its ID and location.
@@ -76,7 +77,7 @@ export function nextReconcileCursor(value: unknown, now: Date): ReconcileCursor 
         && Date.parse(input.horizonEnd) >= Date.parse(input.windowStart) && Date.parse(input.horizonEnd) - Date.parse(input.windowStart) <= 98 * DAY
         && typeof input.baseline === "boolean") {
         if (typeof input.cycleId !== "string" || input.cycleId.length > 64 || (input.windowAfter != null && (typeof input.windowAfter !== "string" || input.windowAfter.length > 200))) throw new Error("Invalid reconciliation cursor.")
-        return { ...input, knownCycleId: typeof input.knownCycleId === "string" ? input.knownCycleId : input.cycleId } as ReconcileCursor
+        return { ...input, calendarIndex: Number.isInteger(input.calendarIndex) && Number(input.calendarIndex) >= 0 && Number(input.calendarIndex) < 10 ? Number(input.calendarIndex) : 0, knownCycleId: typeof input.knownCycleId === "string" ? input.knownCycleId : input.cycleId } as ReconcileCursor
     }
     // First scan establishes a baseline without announcing old bookings as new.
     const start = new Date(now.getTime() - 7 * DAY); start.setUTCHours(0, 0, 0, 0)
@@ -102,19 +103,23 @@ export async function reconcileGhlProfile(job: ReconciliationJob, deps: Appointm
             const end = new Date(Math.min(Date.parse(cursor.windowStart) + DAY, Date.parse(cursor.horizonEnd))).toISOString()
             // Re-read this bounded one-day list and advance by provider ID.
             // The durable cursor remains small even for a busy calendar.
-            const listed = await deps.fetchCalendarWindow(providerProfile(job), { start: cursor.windowStart, end })
+            const calendars = profileCalendars(profile), calendarIndex = (cursor.calendarIndex ?? 0) % calendars.length
+            const calendar = calendars[calendarIndex]
+            const selectedProfile = { ...profile, calendarId: calendar.id, calendarName: calendar.name }
+            const listed = await deps.fetchCalendarWindow(providerProfile({ ...job, profile: selectedProfile }), { start: cursor.windowStart, end })
             if (!listed.complete || listed.appointmentIds.length > 1000) throw new Error("Incomplete calendar response.")
             const remaining = [...new Set(listed.appointmentIds)].sort().filter((id) => id > (cursor!.windowAfter ?? ""))
             const page = remaining.slice(0, 10)
             for (const id of page) {
-                const key = `reconcile:${fingerprint(`${profile.id}:${cursor.cycleId}:${cursor.windowStart}:${id}`)}`
-                await queueObservation(deps, profile, id, key, cursor.baseline)
+                const key = `reconcile:${fingerprint(`${profile.id}:${calendar.id}:${cursor.cycleId}:${cursor.windowStart}:${id}`)}`
+                await queueObservation(deps, selectedProfile, id, key, cursor.baseline)
             }
             if (remaining.length > page.length) cursor.windowAfter = page[page.length - 1]
             else {
                 delete cursor.windowAfter
-                cursor.windowStart = end
-                if (Date.parse(end) >= Date.parse(cursor.horizonEnd)) {
+                cursor.calendarIndex = (calendarIndex + 1) % calendars.length
+                if (cursor.calendarIndex === 0) cursor.windowStart = end
+                if (cursor.calendarIndex === 0 && Date.parse(end) >= Date.parse(cursor.horizonEnd)) {
                     const knownAfter = cursor.knownAfter, knownCycleId = cursor.knownCycleId
                     cursor = { ...nextReconcileCursor(null, deps.now()), baseline: false, knownAfter, knownCycleId }
                 }
@@ -187,7 +192,7 @@ export async function processGhlAppointmentAutomation(wake?: AppointmentWake) {
         import("@/lib/supabase/admin"), import("./provider"), import("@/lib/client-messages/meta-whatsapp"),
     ])
     const rpc: AutomationRpc = async (action, input) => {
-        const result = await supabaseAdmin.rpc("ghl_appointment_automation", { p_action: action, p_input: input })
+        const result = await supabaseAdmin.rpc("ghl_appointment_automation", { p_action: action, p_input: { ...input, processorVersion: 2 } })
         if (result.error) throw new Error(`GHL automation ${action} could not be committed.`)
         const failure = record(result.data).failure
         if (typeof failure === "string") throw new GhlAutomationRejected(action, failure)

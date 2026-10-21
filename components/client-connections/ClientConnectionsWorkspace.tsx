@@ -1,5 +1,7 @@
 "use client"
 
+import { calendarChoiceLabel } from "@/lib/client-portal/ghl-calendar"
+
 import Link from "next/link"
 import dynamic from "next/dynamic"
 import { useRouter, useSearchParams } from "@/components/workspace/WorkspaceNavigation"
@@ -36,7 +38,7 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAcc
     const [locationId, setLocationId] = useState("")
     const [privateToken, setPrivateToken] = useState("")
     const [calendarId, setCalendarId] = useState("")
-    const [calendars, setCalendars] = useState<{ id: string; name: string }[] | null>(null)
+    const [calendars, setCalendars] = useState<{ id: string; name: string; isActive?: boolean }[] | null>(null)
     const [loadingCalendars, setLoadingCalendars] = useState(false)
     const calendarRequest = useRef<AbortController | null>(null)
     useEffect(() => () => calendarRequest.current?.abort(), [])
@@ -173,7 +175,7 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAcc
             <label className="block text-sm text-neutral-300">Private Integration Token<input name="privateToken" value={privateToken} onChange={(event) => { clearCalendars(); setPrivateToken(event.target.value) }} type="password" required={!editing?.connected} maxLength={4096} autoComplete="new-password" className={field} /><span className="mt-2 block text-xs leading-5 text-neutral-500">Use a location-level token with Locations, Contacts, Opportunities, Calendars and Calendar Events read access. Leave the token blank when editing to keep it. Existing credentials stay active until verification succeeds. Retire this connection before changing its location.</span></label>
             {error ? <p role="alert" className="text-sm text-red-200">{error}</p> : null}
             <button type="button" disabled={pending || loadingCalendars || !locationId || (!privateToken && !editing?.connected)} onClick={() => void loadCalendars()} className="min-h-11 px-3 text-sm underline underline-offset-4 disabled:opacity-40">{loadingCalendars ? "Loading calendars…" : "Load calendars"}</button>
-            {calendars ? calendars.length ? <label className="block text-sm text-neutral-300">Client portal calendar<Selector name="calendarId" required appearance="input" ariaLabel="Client portal calendar" value={calendarId} onChange={setCalendarId} options={calendars.map(item => ({ value: item.id, label: item.name }))} /></label> : <p role="status" className="text-sm text-neutral-400">No published calendars were found for this location.</p> : null}
+            {calendars ? calendars.length ? <label className="block text-sm text-neutral-300">Client portal calendar<Selector name="calendarId" required appearance="input" ariaLabel="Client portal calendar" value={calendarId} onChange={setCalendarId} options={calendars.map(item => ({ value: item.id, label: calendarChoiceLabel(item, calendars) }))} /></label> : <p role="status" className="text-sm text-neutral-400">No calendars were found for this location.</p> : null}
             <button type="submit" disabled={pending || !calendars || !calendarId || !relationshipId || (accountType === "agency_subaccount" && !agency.connected)} className="h-11 w-full rounded-lg bg-white px-4 text-sm font-semibold text-black disabled:opacity-40">{pending ? "Verifying…" : editing ? "Save connection" : "Connect account"}</button>
         </fieldset>{editing?.connected ? <div className="mt-5 flex items-center justify-between border-t border-neutral-800 pt-3">{!editing.archived ? <button type="button" disabled={pending} onClick={() => refresh(editing.relationshipId)} className="min-h-11 px-3 text-sm">Refresh connection</button> : <span />}<button type="button" disabled={pending} onClick={() => { setRemoving(editing); setError(null) }} className="min-h-11 px-3 text-sm text-red-300">Retire connection</button></div> : null}</form></CenteredDialog> : null}
         {removing ? <CenteredDialog title="Retire client connection?" busy={pending} onClose={() => setRemoving(null)}>

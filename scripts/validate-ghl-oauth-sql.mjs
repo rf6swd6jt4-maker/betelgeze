@@ -28,7 +28,7 @@ try {
  create table appointment_setting_setup_assignees(workspace_id uuid,relationship_id uuid,user_id uuid,primary key(workspace_id,relationship_id,user_id));
  create index appointment_setup_user_idx on appointment_setting_setup_assignees(workspace_id,user_id,relationship_id);
  create function workspace_role_for_user(w uuid,u uuid) returns text language sql stable security definer as $$ select role from workspace_memberships where workspace_id=w and user_id=u $$;
- create table client_portal_sessions(id uuid default gen_random_uuid(),session_token text unique,workspace_id uuid,relationship_id uuid,onboarding_session_id uuid,status text,token_revoked_at timestamptz);
+ create table client_portal_sessions(id uuid primary key default gen_random_uuid(),session_token text unique,workspace_id uuid,relationship_id uuid,onboarding_session_id uuid,status text,token_revoked_at timestamptz);
  create table relationship_onboarding_sessions(id uuid primary key,workspace_id uuid,status text);
  create table relationship_onboarding_session_blocks(workspace_id uuid,session_id uuid,kind text);
  create index blocks_session_idx on relationship_onboarding_session_blocks(workspace_id,session_id);
@@ -64,6 +64,17 @@ try {
  await db.exec(await sql('20261012210000_free_client_ghl_connections.sql'))
  await db.exec(await sql('20261013010000_client_connection_retirement.sql'))
  await db.exec(await sql('20261020120000_ghl_oauth_connections.sql'))
+ await db.exec(`alter table workspaces add column name text,add column agency_display_name text,add column custom_client_portal_domain text,add column custom_client_portal_domain_status text;
+ alter table relationships add column client_id uuid,add column whatsapp_phone text,add column whatsapp_opted_out_at timestamptz;
+ create function public.relationship_contact_phone(v text) returns text language sql as $$select v$$;
+ create function public.relationship_messaging_choices(w uuid,r uuid) returns jsonb language sql as $$select '[]'::jsonb$$;`)
+ const automationFixture=await readFile(`${repositoryRoot}/scripts/validate-ghl-appointment-automation-sql.mjs`,'utf8')
+ await db.exec(automationFixture.slice(automationFixture.indexOf(' create table public.client_messages('),automationFixture.indexOf(' create function public.relationship_contact_phone(')))
+ await db.exec(await sql('20261011180000_ghl_appointment_automation.sql'))
+ await db.exec(await sql('20261020130000_ghl_event_processing.sql'))
+ await db.exec(await sql('20261020150000_ghl_notification_setup.sql'))
+ await db.exec(await sql('20261021100000_ghl_multiple_calendars.sql'))
+
  const rpc=async(action,input={})=>(await one('select public.ghl_oauth_connection($1,$2::jsonb) result',[action,JSON.stringify(input)])).result
  const state='a'.repeat(64), browser='b'.repeat(64), config='c'.repeat(64)
  const keys={stateHash:state,browserHash:browser,configHash:config,userId:owner}
@@ -127,6 +138,41 @@ try {
  await db.exec("update client_portal_secure.ghl_oauth_credentials set lease_until=now()-interval '1 second'")
  assert.equal((await rpc('claim_refresh',{appId:'fixture-app',limit:1})).items.length,0)
  assert.equal((await one('select status from client_portal_secure.ghl_oauth_credentials')).status,'reconnect_required')
+ // Saved selections are bounded, revision fenced and retryable without reinstallation.
+ const selection=async(action,input)=>(await one('select public.ghl_calendar_selection($1,$2::jsonb) result',[action,JSON.stringify(input)])).result
+ const selectionKeys={workspaceId:w,userId:owner,relationshipId:client,expectedRevision:revision}
+ assert.equal((await selection('read',{...selectionKeys,userId:outsider})).failure,'access')
+ assert.equal((await selection('read',selectionKeys)).calendars.length,1)
+ const calendars=[{id:'secondcalendar123',name:'Inactive estimates',isActive:false},{id:'calendar123456789',name:'Calendar'}]
+ assert.equal((await selection('save',{...selectionKeys,requestId:uuid(801),calendars:[]})).failure,'response')
+ assert.equal((await selection('save',{...selectionKeys,requestId:uuid(801),calendars:[...calendars,...calendars]})).failure,'response')
+ const savedSelection=await selection('save',{...selectionKeys,requestId:uuid(801),calendars})
+ assert.equal(savedSelection.connected,true);assert.notEqual(savedSelection.revision,revision)
+ assert.equal(savedSelection.calendars[0].id,'calendar123456789','Keep the existing notification history anchor')
+ assert.equal((await selection('save',{...selectionKeys,requestId:uuid(801),calendars})).revision,savedSelection.revision)
+ const recoveredSelection=await selection('read',{...selectionKeys,requestId:uuid(801),calendarIds:calendars.map(c=>c.id)})
+ assert.equal(recoveredSelection.connected,true);assert.equal(recoveredSelection.privateToken,undefined)
+ assert.equal((await selection('read',{...selectionKeys,requestId:uuid(801),calendarIds:['othercalendar123']})).failure,'changed')
+ assert.equal((await selection('save',{...selectionKeys,requestId:uuid(802),calendars})).failure,'changed')
+ const portalCalendar=async(action,extra={})=>(await one('select public.client_portal_ghl_calendar($1,$2,$3,$4,$5,$6,$7,$8) result',['free',w,action,extra.op??null,extra.month??null,extra.calendar??null,extra.snapshot?JSON.stringify(extra.snapshot):null,null])).result
+ assert.equal((await portalCalendar('read')).calendars.length,2)
+ assert.equal((await portalCalendar('begin',{op:uuid(810),month:'2026-10',calendar:'notallowedcalendar'})).failure,'access')
+ const started=await portalCalendar('begin',{op:uuid(810),month:'2026-10',calendar:'secondcalendar123'})
+ assert.equal(started.binding.calendarId,'secondcalendar123')
+ const snapshot={source:'booking-calendar',calendarId:'secondcalendar123',companyId:'company123456789',owner:{id:'secondcalendar123',name:'Inactive estimates'},timezone:'America/Chicago',month:'2026-10',events:[]}
+ assert.equal((await portalCalendar('finish',{op:uuid(810),snapshot:{...snapshot,calendarId:'calendar123456789'}})).failure,'response')
+ const finished=await portalCalendar('finish',{op:uuid(810),snapshot});assert.equal(finished.snapshot.calendarId,'secondcalendar123')
+ assert.equal((await portalCalendar('read',{calendar:'calendar123456789'})).snapshot,null,'Never reuse another calendar snapshot')
+ assert.equal((await portalCalendar('read',{calendar:'secondcalendar123'})).snapshot.calendarId,'secondcalendar123')
+ if(db.connect){
+  const a=await db.connect(),b=await db.connect()
+  const input={...selectionKeys,expectedRevision:savedSelection.revision,calendars}
+  await a.query('begin')
+  const first=(await a.query('select public.ghl_calendar_selection($1,$2::jsonb) result',['save',JSON.stringify({...input,requestId:uuid(820)})])).rows[0].result;assert.equal(first.connected,true)
+  const waiting=b.query('select public.ghl_calendar_selection($1,$2::jsonb) result',['save',JSON.stringify({...input,requestId:uuid(821)})]);waiting.catch(()=>{})
+  await db.waitLock(b);await a.query('commit');assert.equal((await waiting).rows[0].result.failure,'changed')
+  console.log('PASS native PostgreSQL: simultaneous calendar edits serialize and reject stale selection')
+ }
  // Access revocation is checked again even with the correct browser cookie.
  await db.exec(`delete from workspace_memberships where user_id='${owner}'`)
  assert.equal((await rpc('read',keys)).failure,'access')

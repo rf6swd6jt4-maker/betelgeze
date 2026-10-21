@@ -22,11 +22,11 @@ test('deduplicates records, keeps cancelled appointments, hides private busy tit
 test('missing date offsets, permission failures and oversized windows fail explicitly',async()=>{await assert.rejects(fetchGhlCalendar(credentials,'2026-09',null,async()=>new Response('secret',{status:401})),/permissions/);for(const events of [[{...event,startTime:'2026-09-12T09:00:00'}],Array(1001).fill(event)]){const f=fixture((p,v)=>p==='/calendars/events'?{events}:v);await assert.rejects(fetchGhlCalendar(credentials,'2026-09',binding,f.fetcher),/response/)}})
 test('calendar dates cover leap years, year changes, and Chicago daylight saving',()=>{assert.equal(shiftMonth('2026-12',1),'2027-01');assert.equal(shiftMonth('2026-01',-1),'2025-12');assert.equal(monthDays('2028-02').includes('2028-02-29'),true);const march=monthWindow('2026-03','America/Chicago');assert.equal(new Date(march.start).toISOString(),'2026-03-01T06:00:00.000Z');assert.equal(new Date(march.end).toISOString(),'2026-04-12T05:00:00.000Z');assert.equal(dateKey('2026-09-13T01:00:00Z','America/Chicago'),'2026-09-12')})
 const request=(body:unknown)=>new Request('https://portal.example/calendar',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)})
-test('calendar snapshot GET never contacts GHL and never projects credentials',async()=>{const r=await handlePortalGhlCalendar(new Request('https://portal.example/calendar'),'token',{resolve:async()=>({workspace:{id:'w'}}),rpc:async(p)=>{assert.equal(p.p_action,'read');return {data:{snapshot:null,privateToken:'secret'},error:null}},fetchCalendar:async()=>{throw Error('must not call')}});assert.deepEqual(await r.json(),{revision:null,snapshot:null,refreshedAt:null,error:null,busy:false});assert.equal(r.headers.get('cache-control'),'private, no-store')})
+test('calendar snapshot GET never contacts GHL and never projects credentials',async()=>{const r=await handlePortalGhlCalendar(new Request('https://portal.example/calendar'),'token',{resolve:async()=>({workspace:{id:'w'}}),rpc:async(p)=>{assert.equal(p.p_action,'read');return {data:{snapshot:null,privateToken:'secret'},error:null}},fetchCalendar:async()=>{throw Error('must not call')}});assert.deepEqual(await r.json(),{revision:null,calendars:[],snapshot:null,refreshedAt:null,error:null,busy:false});assert.equal(r.headers.get('cache-control'),'private, no-store')})
 test('calendar authorization and request validation run before provider or write RPC',async()=>{for(const access of [null,{workspace:{id:'w'}}]){const r=await handlePortalGhlCalendar(request({month:'all-history'}),'token',{resolve:async()=>access,rpc:()=>{throw Error('must not call')}});assert.equal(r.status,access?400:404)}})
 test('refresh is leased and failures release only its own operation',async()=>{const actions:string[]=[];const r=await handlePortalGhlCalendar(request({month:'2026-09'}),'token',{resolve:async()=>({workspace:{id:'w'}}),rpc:async(p)=>{actions.push(String(p.p_action));assert.equal(p.p_workspace_id,'w');return {data:p.p_action==='begin'?credentials:{},error:null}},fetchCalendar:async()=>{assert.deepEqual(actions,['begin']);throw Error('private provider payload')}});assert.deepEqual(actions,['begin','fail']);assert.equal(r.status,503);assert.equal(JSON.stringify(await r.json()).includes('private provider'),false)})
 
-test('the browser cannot select a different user or booking calendar',async()=>{for(const field of ['calendarId','userId','owner']){const r=await handlePortalGhlCalendar(request({month:'2026-09',[field]:'someone-else'}),'token',{resolve:async()=>({workspace:{id:'w'}}),rpc:()=>{throw Error('must not call')}});assert.equal(r.status,400)}})
+test('the browser cannot inject an owner or malformed calendar identity',async()=>{for(const field of ['calendarId','userId','owner']){const r=await handlePortalGhlCalendar(request({month:'2026-09',[field]:'invalid calendar'}),'token',{resolve:async()=>({workspace:{id:'w'}}),rpc:()=>{throw Error('must not call')}});assert.equal(r.status,400)}})
 test('legacy selected-calendar snapshots are hidden during rollout',async()=>{const r=await handlePortalGhlCalendar(new Request('https://portal.example/calendar'),'token',{resolve:async()=>({workspace:{id:'w'}}),rpc:async()=>({data:{snapshot:{calendarId:'legacy',events:[event]}},error:null})});assert.equal((await r.json()).snapshot,null)})
 test('multi-day busy time appears on each covered date, excluding its end midnight',()=>{const {groupCalendarEvents}=load('ghl-calendar') as typeof import('../lib/client-portal/ghl-calendar');const result=groupCalendarEvents([{id:'test',kind:'busy',title:'Busy',start:'2026-09-10T00:00:00-05:00',end:'2026-09-12T00:00:00-05:00',allDay:true,status:'busy'}],'America/Chicago',monthDays('2026-09'));assert.equal(result.get('2026-09-10')?.length,1);assert.equal(result.get('2026-09-11')?.length,1);assert.equal(result.has('2026-09-12'),false)})
 
@@ -50,7 +50,7 @@ test('title errors release their own lease without changing schedule data',async
 const {fetchGhlCalendars}=load('ghl-calendar-list-provider') as typeof import('../lib/client-portal/ghl-calendar-list-provider')
 test('calendar discovery projects only bounded location-owned choices',async()=>{
  const rows=[{id:'calendar123456789',name:'Sales visits',locationId:credentials.locationId,privateNotes:'secret'}]
- const choices=await fetchGhlCalendars(credentials,async(input)=>{const u=new URL(String(input));assert.equal(u.pathname,'/calendars/');assert.equal(u.searchParams.get('locationId'),credentials.locationId);return Response.json({calendars:rows})})
+ const choices=await fetchGhlCalendars(credentials,async(input)=>{const u=new URL(String(input));assert.equal(u.pathname,'/calendars/');assert.equal(u.searchParams.get('locationId'),credentials.locationId);assert.equal(u.searchParams.get('showDrafted'),'true');return Response.json({calendars:rows})})
  assert.deepEqual(choices,[{id:rows[0].id,name:rows[0].name}])
  for(const calendars of [[{...rows[0],locationId:'otherlocation123'}],[...rows,...rows],Array(201).fill(rows[0])]) await assert.rejects(fetchGhlCalendars(credentials,async()=>Response.json({calendars})),/response/)
  await assert.rejects(fetchGhlCalendars(credentials,async()=>new Response('private',{status:403})),/permissions/)
@@ -64,4 +64,24 @@ test('selected calendar includes different assignees but rejects other calendars
  for(const u of f.calls.filter(u=>u.pathname.startsWith('/calendars/'))){assert.equal(u.searchParams.get('calendarId'),selected.calendarId);assert.equal(u.searchParams.has('userId'),false)}
  const wrong=fixture((p,v)=>p==='/calendars/events'?{events:[{...event,calendarId:'othercalendar123'}]}:v)
  await assert.rejects(fetchGhlCalendar(credentials,'2026-09',selected,wrong.fetcher),/location/)
+})
+
+test('calendar discovery retains inactive calendars and never treats missing activity metadata as active',async()=>{
+ const rows=[{id:'calendar123456789',name:'Estimate',locationId:credentials.locationId,isActive:false},{id:'calendar987654321',name:'Estimate',locationId:credentials.locationId,isActive:true},{id:'calendar555555555',name:'Other',locationId:credentials.locationId}]
+ const choices=await fetchGhlCalendars(credentials,async()=>Response.json({calendars:rows}))
+ assert.equal(choices.length,3);assert.equal(choices.find(x=>x.id===rows[0].id)?.isActive,false);assert.equal(choices.find(x=>x.id===rows[1].id)?.isActive,true);assert.equal(choices.find(x=>x.id===rows[2].id)?.isActive,undefined)
+ const {calendarChoiceLabel}=load('ghl-calendar') as typeof import('../lib/client-portal/ghl-calendar')
+ assert.equal(calendarChoiceLabel(choices.find(x=>x.id===rows[0].id)!,choices),'Estimate · Inactive / draft · 456789')
+ assert.equal(calendarChoiceLabel(choices.find(x=>x.id===rows[1].id)!,choices),'Estimate · 654321')
+ assert.equal(calendarChoiceLabel(choices.find(x=>x.id===rows[2].id)!,choices),'Other')
+})
+
+test('a syntactically valid calendar still requires the portal database allowlist before provider access',async()=>{
+ const actions:string[]=[]
+ const response=await handlePortalGhlCalendar(request({month:'2026-09',calendarId:'othercalendar123'}),'token',{resolve:async()=>({workspace:{id:'w'}}),rpc:async p=>{actions.push(String(p.p_action));if(p.p_action==='begin'){assert.equal(p.p_calendar_id,'othercalendar123');return{data:{failure:'access'},error:null}}return{data:{},error:null}},fetchCalendar:async()=>{throw Error('Must not call provider')}})
+ assert.equal(response.status,404);assert.deepEqual(actions,['begin','fail'])
+})
+test('calendar choices expose only display fields even if a database adapter returns extra data',()=>{
+ const value=projectCalendar({calendars:[{id:'calendar123456789',name:'Visits',isActive:false,privateToken:'secret',credentials:{x:'secret'}}]})
+ assert.deepEqual(value.calendars,[{id:'calendar123456789',name:'Visits',isActive:false}]);assert.equal(JSON.stringify(value).includes('secret'),false)
 })

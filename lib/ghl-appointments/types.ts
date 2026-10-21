@@ -28,3 +28,10 @@ export type ProviderProfile = {
     timezone?: string
     includeNotes?: boolean
 }
+
+export function profileCalendars(profile: { calendarId: string; calendarName: string; calendars?: { id: string; name: string }[] }) {
+    return profile.calendars?.length ? profile.calendars : [{ id: profile.calendarId, name: profile.calendarName }]
+}
+export function profileIncludesCalendar(profile: Parameters<typeof profileCalendars>[0], calendarId: string) {
+    return profileCalendars(profile).some(calendar => calendar.id === calendarId)
+}

@@ -20,18 +20,21 @@ try {
     if(target.hostname==='marketplace.gohighlevel.com') return route.fulfill({status:200,contentType:'text/html',body:'<script>location.replace('+JSON.stringify(url+'oauth-fixture-callback?state='+state+'&code=synthetic-code')+')</script>'})
     return target.hostname==='127.0.0.1'?route.continue():route.abort()
    })
-   let phase='ready',lostAck=false,enabled=false,reads=0,resumeStart=false
+   let phase='ready',lostAck=false,enabled=false,reads=0,resumeStart=false,lostSelectionAck=false,savedIds=['calendar123456789'],savedRequest=null
+   const calendars=[{id:'calendar123456789',name:'Visits'},{id:'secondcalendar123',name:'Estimates',isActive:false}]
    const notifications=()=>({ready:true,sendingEnabled:enabled,consentReady:true,reminderMinutes:60})
    await page.route('**/client-connections/oauth*',async route=>{
     const body=route.request().postDataJSON();let result
     if(!body) {
      reads++
-     result=route.request().url().includes('notification_status') ? notifications() : {relationshipId:'relationship',phase,locations:[{id:'location123456789',name:'Pilot sub-account'},{id:'otherlocation123',name:'Another sub-account'}],limited:false,locationId:'location123456789',calendars:[{id:'calendar123456789',name:'Visits'},{id:'secondcalendar123',name:'Estimates'}]}
+     result=route.request().url().includes('action=calendars') ? {calendars,selectedCalendarIds:savedIds,revision:'00000000-0000-4000-8000-000000000002'} : route.request().url().includes('notification_status') ? notifications() : {relationshipId:'relationship',phase,locations:[{id:'location123456789',name:'Pilot sub-account'},{id:'otherlocation123',name:'Another sub-account'}],limited:false,locationId:'location123456789',calendars}
     } else {
      actions.push(body.action)
      if(body.action==='start') {assert.equal(body.relationshipId,'relationship');assert.equal(body.expectedRevision,'00000000-0000-4000-8000-000000000001');result=resumeStart?{resume:true}:{authorizationUrl:'https://marketplace.gohighlevel.com/oauth/chooselocation?state='+state,channel}}
-     else if(body.action==='select') {assert.equal(body.locationId,'location123456789');phase='selected';result={locationId:body.locationId,calendars:[{id:'calendar123456789',name:'Visits'},{id:'secondcalendar123',name:'Estimates'}]}}
-     else if(body.action==='connect') {phase='done';result={connected:true,revision:'00000000-0000-4000-8000-000000000002',notifications:notifications()};if(lostAck){lostAck=false;return route.fulfill({status:503,json:{error:'Synthetic lost acknowledgement; resume to recover.'}})}}
+     else if(body.action==='select') {assert.equal(body.locationId,'location123456789');phase='selected';result={locationId:body.locationId,calendars}}
+     else if(body.action==='connect') {if(phase!=='done'){assert.ok(body.calendarIds.length);assert.ok(body.calendarIds.every(id=>calendars.some(c=>c.id===id)));savedIds=body.calendarIds;}phase='done';result={connected:true,revision:'00000000-0000-4000-8000-000000000002',notifications:notifications()};if(lostAck){lostAck=false;return route.fulfill({status:503,json:{error:'Synthetic lost acknowledgement; resume to recover.'}})}}
+     else if(body.action==='save_calendars') {assert.equal(body.expectedRevision,'00000000-0000-4000-8000-000000000002');if(savedRequest)assert.equal(body.requestId,savedRequest);savedRequest=body.requestId;savedIds=body.calendarIds;enabled=false;result={connected:true,revision:'00000000-0000-4000-8000-000000000003',calendars:calendars.filter(c=>savedIds.includes(c.id)),notifications:notifications()};if(lostSelectionAck){lostSelectionAck=false;return route.fulfill({status:503,json:{error:'Synthetic selection acknowledgement lost'}})}}
+     else if(body.action==='prepare_notifications') {result=notifications()}
      else if(body.action==='enable_notifications'||body.action==='disable_notifications') {enabled=body.action==='enable_notifications';result=notifications()}
      else throw Error(`Unexpected operation ${body.action}`)
     }
@@ -84,26 +87,61 @@ try {
    await page.getByRole('button',{name:'HighLevel sub-account',exact:true}).click()
    await page.getByRole('option',{name:'Pilot sub-account',exact:true}).click()
    await page.getByRole('button',{name:'Choose calendar',exact:true}).click()
-   await page.getByRole('button',{name:'HighLevel calendar',exact:true}).click()
-   await page.getByRole('option',{name:'Estimates',exact:true}).click()
+   await page.getByRole('button',{name:'HighLevel calendars',exact:true}).click()
+   await page.getByRole('option',{name:'Estimates · Inactive / draft',exact:true}).click()
+   await page.getByRole('option',{name:'Visits',exact:true}).click()
+   await page.getByRole('button',{name:'Done choosing calendars',exact:true}).click()
    await page.getByRole('button',{name:'Save calendar connection',exact:true}).click()
    await page.getByText('Notifications off',{exact:true}).waitFor()
    assert.deepEqual(actions,['select','connect'],'Connecting must not enable notifications or send a test')
+   await page.getByRole('button',{name:'Check notification setup',exact:true}).click()
+   await page.getByText('Notifications off',{exact:true}).waitFor()
    await page.getByRole('button',{name:'Enable WhatsApp notifications',exact:true}).click()
    await page.getByText('Notifications enabled',{exact:true}).waitFor()
    await page.getByRole('button',{name:'Turn off WhatsApp notifications',exact:true}).click()
    await page.getByText('Notifications off',{exact:true}).waitFor()
    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true)
    await page.screenshot({path:`browser-results/ghl-app/${name}-${width}.png`,fullPage:true})
+   // Saved installations edit in place, including a committed save with a lost response.
+   const startsBefore=actions.filter(a=>a==='start').length
+   await page.getByRole('button',{name:'Edit calendars',exact:true}).click()
+   await page.getByRole('button',{name:'HighLevel calendars',exact:true}).click()
+   assert.equal(await page.getByRole('option',{name:'Visits',exact:true}).getAttribute('aria-selected'),'true')
+   assert.equal(await page.getByRole('option',{name:'Estimates · Inactive / draft',exact:true}).getAttribute('aria-selected'),'true')
+   await page.getByRole('option',{name:'Visits',exact:true}).click()
+   await page.getByRole('button',{name:'Done choosing calendars',exact:true}).click()
+   lostSelectionAck=true
+   await page.getByRole('button',{name:'Save calendar connection',exact:true}).click()
+   await page.getByText('Synthetic selection acknowledgement lost',{exact:true}).waitFor()
+   assert.equal(await page.getByRole('button',{name:'HighLevel calendars',exact:true}).isDisabled(),true)
+   await page.getByRole('button',{name:'Check and retry save',exact:true}).click()
+   await page.getByText('Notifications off',{exact:true}).waitFor()
+   assert.deepEqual(savedIds,['secondcalendar123'])
+   assert.equal(actions.filter(a=>a==='start').length,startsBefore)
+   assert.equal(page.context().pages().length,1)
    phase='selected';lostAck=true
    await page.goto(url+'?ghl=selected')
-   await page.getByRole('button',{name:'HighLevel calendar',exact:true}).click()
+   await page.getByRole('button',{name:'HighLevel calendars',exact:true}).click()
    await page.getByRole('option',{name:'Visits',exact:true}).click()
+   await page.getByRole('button',{name:'Done choosing calendars',exact:true}).click()
    await page.getByRole('button',{name:'Save calendar connection',exact:true}).click()
    await page.getByText('Synthetic lost acknowledgement; resume to recover.',{exact:true}).waitFor()
    await page.getByRole('button',{name:'Resume connection',exact:true}).click()
    await page.getByText('Notifications off',{exact:true}).waitFor()
    assert.equal(actions.filter(action=>action==='select').length,1,'Lost save acknowledgement cannot redeem another location token')
+   if(width===390) {
+    calendars.push(...Array.from({length:198},(_,index)=>({id:`growthcalendar${String(index).padStart(4,'0')}`,name:`Growth calendar ${index}`})))
+    phase='selected';await page.goto(url+'?ghl=selected')
+    await page.getByRole('button',{name:'HighLevel calendars',exact:true}).click()
+    const options=page.getByRole('option');assert.equal(await options.count(),200)
+    for(let index=0;index<10;index++)await options.nth(index).click()
+    assert.equal(await options.nth(10).isDisabled(),true,'Selection is bounded at ten')
+    await page.getByRole('textbox',{name:'Search highlevel calendars',exact:true}).fill('Growth calendar 197')
+    assert.equal(await options.count(),1);assert.equal(await options.first().isDisabled(),true)
+    await page.getByRole('button',{name:'Done choosing calendars',exact:true}).click()
+    assert.match(await page.getByRole('button',{name:'HighLevel calendars',exact:true}).innerText(),/10 calendars selected/)
+    await page.getByRole('dialog').getByRole('button',{name:'Close',exact:true}).click()
+   }
    assert.deepEqual(errors,[])
    console.log(`${name} ${width}: app return, sub-account/calendar selection, explicit enable/disable and lost-save recovery passed`)
    await page.close()

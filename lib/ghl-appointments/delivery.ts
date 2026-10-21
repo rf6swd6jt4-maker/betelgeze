@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import type { AppointmentSnapshot, ProviderProfile } from "./types"
+import { profileIncludesCalendar, type AppointmentSnapshot, type ProviderProfile } from "./types"
 import { appointmentSnapshotsEqual } from "./lifecycle"
 import { appointmentTemplateComponents, appointmentTemplateContracts, validateAppointmentTemplate, type AppointmentTemplateKind } from "./templates"
 
@@ -10,6 +10,7 @@ export type AutomationProfile = {
     locationId: string
     calendarId: string
     calendarName: string
+    calendars?: { id: string; name: string }[]
     connectionRevision: string
     detectionEnabled: boolean
     sendingEnabled: boolean
@@ -97,8 +98,8 @@ function externalMessageId(value: unknown) {
 }
 
 function sameVisibleState(job: NotificationJob, live: AppointmentSnapshot | null) {
-    if (job.kind === "removed") return live === null || live.deleted || live.calendarId !== job.profile.calendarId
-    return live !== null && live.calendarId === job.profile.calendarId && appointmentSnapshotsEqual(job.snapshot, live)
+    if (job.kind === "removed") return live === null || live.deleted || !profileIncludesCalendar(job.profile, live.calendarId)
+    return live !== null && profileIncludesCalendar(job.profile, live.calendarId) && appointmentSnapshotsEqual(job.snapshot, live)
 }
 
 /** Each async preflight happens before the durable send boundary. Unknown sends never retry. */

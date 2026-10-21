@@ -18,9 +18,10 @@ export function isReminderEligible(snapshot: AppointmentSnapshot) {
 // A single primary notice describes the most consequential change. The summary
 // carries the complete latest state when schedule, details and status change together.
 export function classifyAppointmentChange(previous: AppointmentSnapshot | null, next: AppointmentSnapshot, options: { baseline?: boolean; eventType?: string; calendarId?: string } = {}): { kinds: AppointmentKind[]; changedDetails: string } {
-    const changedDetails = previous ? Object.entries(detailFields)
+    let changedDetails = previous ? Object.entries(detailFields)
         .filter(([key]) => previous[key as keyof typeof detailFields] !== next[key as keyof typeof detailFields])
         .map(([key, label]) => `${label}: ${next[key as keyof typeof detailFields]}`).join("; ") : ""
+    if (previous && previous.calendarId !== next.calendarId && previous.calendarName === next.calendarName) changedDetails = [changedDetails, `Calendar changed: ${next.calendarName}`].filter(Boolean).join("; ")
     if ((options.baseline && !previous) || (previous && appointmentSnapshotsEqual(previous, next))) return { kinds: [], changedDetails }
     const removed = next.deleted || (!!options.calendarId && next.calendarId !== options.calendarId)
     if (removed) return { kinds: previous && !previous.deleted ? ["removed"] : [], changedDetails }

@@ -156,7 +156,48 @@ export async function selectGhlLocation(workspaceSlug: string, locationId: unkno
         throw selectionFailure(step, error)
     }
 }
-export async function finishGhlConnection(workspaceSlug: string, calendarId: unknown) {
+function selectedIds(value: unknown): string[] {
+    const ids = typeof value === "string" ? [value] : value
+    if (!Array.isArray(ids) || ids.length < 1 || ids.length > 10 || ids.some(id => typeof id !== "string" || !/^[a-zA-Z0-9_-]{10,80}$/.test(id)) || new Set(ids).size !== ids.length) throw new GhlConnectionError("Choose between one and ten calendars.")
+    return ids
+}
+function resolveChoices(ids: string[], available: GhlCalendarChoice[]) {
+    return ids.map(id => { const calendar = available.find(item => item.id === id); if (!calendar) throw new GhlConnectionError("A selected calendar is no longer available. Reload the calendar list."); return calendar })
+}
+async function verifyCalendars(credentials: { locationId: string; privateToken: string }, calendars: GhlCalendarChoice[]) {
+    // Only the explicit save/enable action verifies the selected calendars.
+    // Portal reads still load just one. Limit provider concurrency to two calendars.
+    for (let index = 0; index < calendars.length; index += 2) await Promise.all(calendars.slice(index, index + 2).map(calendar => fetchGhlCalendar(credentials, new Date().toISOString().slice(0, 7), { calendarId: calendar.id, calendarName: calendar.name })))
+}
+async function selectionRpc(action: string, input: Record<string, unknown>) {
+    const { data, error } = await supabaseAdmin.rpc("ghl_calendar_selection", { p_action: action, p_input: input })
+    if (error || !data) throw unavailable()
+    if (data.failure) throw new GhlConnectionError(safeMessages[String(data.failure)] ?? unavailable().message)
+    return data as { locationId: string; privateToken: string; revision: string; calendars: GhlCalendarChoice[]; connected?: boolean }
+}
+export async function manageGhlCalendars(workspaceSlug: string, input: Record<string, unknown>) {
+    if (typeof input.relationshipId !== "string" || !uuid.test(input.relationshipId) || typeof input.expectedRevision !== "string" || !uuid.test(input.expectedRevision)) throw unavailable()
+    if (!["calendars", "save_calendars"].includes(String(input.action)) || (input.action === "save_calendars" && (typeof input.requestId !== "string" || !uuid.test(input.requestId)))) throw unavailable()
+    const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "client-connections")
+    const keys = { workspaceId: workspace.id, userId: user.id, relationshipId: input.relationshipId, expectedRevision: input.expectedRevision }
+    // Read is current-access/revision fenced; no new OAuth attempt is needed.
+    const ids = input.action === "save_calendars" ? selectedIds(input.calendarIds) : undefined
+    const current = await selectionRpc("read", { ...keys, ...(ids ? { requestId: input.requestId, calendarIds: ids } : {}) })
+    const available = current.connected ? current.calendars : await fetchGhlCalendars(current)
+    if (input.action === "calendars") return { calendars: available, selectedCalendarIds: current.calendars.map(item => item.id), revision: current.revision }
+    if (input.action !== "save_calendars" || typeof input.requestId !== "string" || !uuid.test(input.requestId)) throw unavailable()
+    const selected = resolveChoices(selectedIds(input.calendarIds), available)
+    if (!current.connected) await verifyCalendars(current, selected)
+    const saved = current.connected ? current : await selectionRpc("save", { ...keys, requestId: input.requestId, calendars: selected })
+    let notifications: ReturnType<typeof publicNotificationSetup> | { ready: false; sendingEnabled: false; error: string }
+    try {
+        const config = ghlOAuthConfig()
+        notifications = publicNotificationSetup(await notificationRpc("ensure", { ...keys, expectedRevision: saved.revision, appId: config.appId }))
+    } catch (error) { notifications = { ready: false, sendingEnabled: false, error: error instanceof GhlConnectionError ? error.message : "Notification setup could not be completed. Check setup again." } }
+    return { connected: true, revision: saved.revision, calendars: saved.calendars, notifications }
+}
+
+export async function finishGhlConnection(workspaceSlug: string, calendarIds: unknown) {
     const { config, keys, attempt } = await context(workspaceSlug)
     const finish = async (input: Record<string, unknown>) => {
         const result = await rpc("connect", { ...keys, ...input })
@@ -170,19 +211,20 @@ export async function finishGhlConnection(workspaceSlug: string, calendarId: unk
         }
     }
     if (attempt.phase === "done") return finish({})
-    if (attempt.phase !== "selected" || typeof calendarId !== "string") throw new GhlConnectionError(safeMessages.phase)
+    if (attempt.phase !== "selected") throw new GhlConnectionError(safeMessages.phase)
+    const ids = selectedIds(calendarIds)
     const grant = decrypt(attempt.credential_encrypted), locationId = attempt.selected_location
-    if (!locationId || grant.token.locationId !== locationId || !grant.calendars?.some(calendar => calendar.id === calendarId)) throw unavailable()
+    if (!locationId || grant.token.locationId !== locationId || ids.some(id => !grant.calendars?.some(calendar => calendar.id === id))) throw unavailable()
     const credentials = { locationId, privateToken: grant.token.accessToken }
     const [metrics, calendars] = await Promise.all([fetchGhlMetrics(credentials), fetchGhlCalendars(credentials)])
-    const calendar = calendars.find(item => item.id === calendarId)
-    if (!calendar || (grant.token.companyId && metrics.companyId !== grant.token.companyId)) throw unavailable()
-    await fetchGhlCalendar(credentials, new Date().toISOString().slice(0, 7), { calendarId: calendar.id, calendarName: calendar.name })
+    const selected = resolveChoices(ids, calendars), calendar = selected[0]
+    if (grant.token.companyId && metrics.companyId !== grant.token.companyId) throw unavailable()
+    await verifyCalendars(credentials, selected)
     await rpc("transition", { ...keys, from: "selected", to: "connecting" })
-    return finish({ appId: config.appId, companyId: grant.token.companyId ?? metrics.companyId, locationId, accessToken: grant.token.accessToken, credential: encrypt({ token: grant.token }), expiresAt: grant.token.expiresAt, accountType: "client_account", locationName: metrics.locationName, metrics: metrics.metrics, calendarId: calendar.id, calendarName: calendar.name })
+    return finish({ appId: config.appId, companyId: grant.token.companyId ?? metrics.companyId, locationId, accessToken: grant.token.accessToken, credential: encrypt({ token: grant.token }), expiresAt: grant.token.expiresAt, accountType: "client_account", locationName: metrics.locationName, metrics: metrics.metrics, calendarId: calendar.id, calendarName: calendar.name, calendars: selected })
 }
 
-type NotificationSetup = { profile?: { locationId: string; calendarId: string; calendarName: string; sendingEnabled: boolean; detectionEnabled: boolean; reminderMinutes: number }; revision: string; consentReady?: boolean; privateToken?: string }
+type NotificationSetup = { profile?: { locationId: string; calendarId: string; calendarName: string; calendars?: GhlCalendarChoice[]; sendingEnabled: boolean; detectionEnabled: boolean; reminderMinutes: number }; revision: string; consentReady?: boolean; privateToken?: string }
 async function notificationRpc(action: string, input: Record<string, unknown>): Promise<NotificationSetup> {
     const { data, error } = await supabaseAdmin.rpc("ghl_appointment_setup", { p_action: action, p_input: input })
     if (error || !data) throw unavailable()
@@ -190,14 +232,15 @@ async function notificationRpc(action: string, input: Record<string, unknown>): 
     return data as NotificationSetup
 }
 function publicNotificationSetup(setup: NotificationSetup) {
-    return { ready: setup.profile?.detectionEnabled === true, sendingEnabled: setup.profile?.sendingEnabled === true, consentReady: setup.consentReady === true, reminderMinutes: setup.profile?.reminderMinutes ?? 60 }
+    return { ready: setup.profile?.detectionEnabled === true, sendingEnabled: setup.profile?.sendingEnabled === true, consentReady: setup.consentReady === true, reminderMinutes: setup.profile?.reminderMinutes ?? 60, calendars: setup.profile?.calendars ?? (setup.profile ? [{ id: setup.profile.calendarId, name: setup.profile.calendarName }] : []) }
 }
 export async function manageGhlNotifications(workspaceSlug: string, input: Record<string, unknown>) {
     const config = ghlOAuthConfig()
-    if (typeof input.relationshipId !== "string" || !uuid.test(input.relationshipId) || typeof input.expectedRevision !== "string" || !uuid.test(input.expectedRevision) || !["notification_status", "enable_notifications", "disable_notifications"].includes(String(input.action))) throw unavailable()
+    if (typeof input.relationshipId !== "string" || !uuid.test(input.relationshipId) || typeof input.expectedRevision !== "string" || !uuid.test(input.expectedRevision) || !["notification_status", "prepare_notifications", "enable_notifications", "disable_notifications"].includes(String(input.action))) throw unavailable()
     const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "client-connections")
     const keys = { workspaceId: workspace.id, userId: user.id, relationshipId: input.relationshipId, expectedRevision: input.expectedRevision, appId: config.appId }
     if (input.action === "disable_notifications") { await notificationRpc("disable", keys); return { sendingEnabled: false } }
+    if (input.action === "prepare_notifications") return publicNotificationSetup(await notificationRpc("ensure", keys))
     const setup = await notificationRpc("read", keys)
     if (input.action === "notification_status") return publicNotificationSetup(setup)
     if (process.env.GHL_APPOINTMENT_DETECTION_ENABLED !== "true" || process.env.GHL_APPOINTMENT_SENDING_ENABLED !== "true") throw new GhlConnectionError("Appointment notification sending is not enabled for this deployment yet.")
@@ -207,7 +250,7 @@ export async function manageGhlNotifications(workspaceSlug: string, input: Recor
     const { validateAppointmentTemplate } = await import("@/lib/ghl-appointments/templates")
     const kinds = ["added", "rescheduled", "cancelled", "removed", "details_updated", "status_updated", "reminder"] as const
     try {
-        await fetchGhlCalendar({ locationId: setup.profile.locationId, privateToken: setup.privateToken }, new Date().toISOString().slice(0, 7), { calendarId: setup.profile.calendarId, calendarName: setup.profile.calendarName })
+        await verifyCalendars({ locationId: setup.profile.locationId, privateToken: setup.privateToken }, setup.profile.calendars ?? [{ id: setup.profile.calendarId, name: setup.profile.calendarName }])
         // Bounded pairs avoid a seven-request burst against Meta.
         for (let index = 0; index < kinds.length; index += 2) await Promise.all(kinds.slice(index, index + 2).map(async kind => validateAppointmentTemplate(await readLiveAppointmentTemplate(workspace.id, kind), kind)))
     } catch { throw new GhlConnectionError("The calendar or one of the seven approved WhatsApp templates could not be verified. Notifications remain off.") }

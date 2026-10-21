@@ -64,6 +64,10 @@ jobs:
           BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-ghl-oauth-sql.mjs
       - name: Shared service queue authorization and lifecycle
         run: BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-shared-service-queue.mjs
+      - name: Portal upload team access and private downloads
+        run: |
+          BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-portal-upload-team-access.mjs
+          BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-portal-upload-download.mjs
       - name: Full test suite
         run: npm test
       - name: Production webpack build with local placeholders

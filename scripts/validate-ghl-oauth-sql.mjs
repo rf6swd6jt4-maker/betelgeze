@@ -75,6 +75,11 @@ try {
  await db.exec(await sql('20261020150000_ghl_notification_setup.sql'))
  await db.exec(await sql('20261021100000_ghl_multiple_calendars.sql'))
 
+ await db.exec(`create table public.client_sales(id uuid primary key,workspace_id uuid,relationship_id uuid,client_phone text,consent_confirmed_at timestamptz,deleted_at timestamptz,raw_payload jsonb);
+ create index relationship_sale_confirmation_lookup on public.client_sales(workspace_id,relationship_id,consent_confirmed_at desc) where consent_confirmed_at is not null;
+ create table public.workspace_integrations(workspace_id uuid,provider text,enabled boolean,connection_status text,primary key(workspace_id,provider));`)
+ await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20261021190000_ghl_template_consent.sql`,'utf8'))
+
  const rpc=async(action,input={})=>(await one('select public.ghl_oauth_connection($1,$2::jsonb) result',[action,JSON.stringify(input)])).result
  const state='a'.repeat(64), browser='b'.repeat(64), config='c'.repeat(64)
  const keys={stateHash:state,browserHash:browser,configHash:config,userId:owner}

@@ -40,6 +40,42 @@ try {
  select set_config('request.jwt.claims','{"role":"service_role"}',false);`)
  await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20261011180000_ghl_appointment_automation.sql`,'utf8'))
  for(const file of ['20261020120000_ghl_oauth_connections.sql','20261020130000_ghl_event_processing.sql','20261020140000_ghl_app_events.sql','20261020150000_ghl_notification_setup.sql','20261021100000_ghl_multiple_calendars.sql']) await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/${file}`,'utf8'))
+ await db.exec(`create table public.client_sales(id uuid primary key,workspace_id uuid,relationship_id uuid,client_phone text,consent_confirmed_at timestamptz,deleted_at timestamptz,raw_payload jsonb);
+ create index relationship_sale_confirmation_lookup on public.client_sales(workspace_id,relationship_id,consent_confirmed_at desc) where consent_confirmed_at is not null;
+ create table public.workspace_integrations(workspace_id uuid,provider text,enabled boolean,connection_status text,primary key(workspace_id,provider));`)
+ await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20261021190000_ghl_template_consent.sql`,'utf8'))
+
+
+ // Legacy permission is scoped to the same relationship and current number.
+ await db.exec('begin')
+ await db.exec(`update fixture_consent set active=false;
+ insert into workspace_integrations values('${w}','meta_whatsapp',true,'connected');
+ insert into client_sales values('${ps}','${w}','${r}','${phone}',now()-interval '60 days',null,'{"confirmation_source":"relationship_channels","delivery_choices":[{"provider":"meta_whatsapp","address":"${phone}"}]}');`)
+ const choice=async(workspace=w,relationship=r)=>(await scalar('select public.relationship_template_messaging_choices($1,$2)->0 c',[workspace,relationship])).c
+ assert.equal((await choice()).state,'active');assert((await choice()).confirmedAt);assert.equal((await choice()).canSend,false)
+ assert.equal((await scalar('select public.relationship_messaging_choices($1,$2)->0 c',[w,r])).c.confirmedAt,null,'Free-form owner remains unchanged')
+ assert.equal((await choice(ps,r)).confirmedAt,null);assert.equal((await choice(w,ps)).confirmedAt,null)
+ for(const [change,restore] of [
+  ["update relationships set whatsapp_opted_out_at=now()","update relationships set whatsapp_opted_out_at=null"],
+  ["update relationships set status='archived'","update relationships set status='active'"],
+  ["update relationships set whatsapp_phone='+12025550999'",`update relationships set whatsapp_phone='${phone}'`],
+  ["update client_sales set deleted_at=now()","update client_sales set deleted_at=null"],
+  ["update client_sales set client_phone='+12025550999'",`update client_sales set client_phone='${phone}'`],
+  ["update client_sales set raw_payload=jsonb_set(raw_payload,'{confirmation_source}','\"unknown\"')","update client_sales set raw_payload=jsonb_set(raw_payload,'{confirmation_source}','\"relationship_channels\"')"],
+  ["update client_sales set raw_payload=jsonb_set(raw_payload,'{delivery_choices}','[]')",`update client_sales set raw_payload=jsonb_set(raw_payload,'{delivery_choices}','[{"provider":"meta_whatsapp","address":"${phone}"}]')`]
+ ]) {await db.exec(change);assert.equal((await choice()).confirmedAt,null,change);await db.exec(restore)}
+ await db.exec(`insert into client_sales select gen_random_uuid(),'${ps}','${ps}','${phone}',now(),null,'{}' from generate_series(1,25000); analyze client_sales;`)
+ const consentPlan=await scalar(`explain (analyze,format json) select id,deleted_at,raw_payload,client_phone,consent_confirmed_at from client_sales where workspace_id='${w}' and relationship_id='${r}' and consent_confirmed_at is not null order by consent_confirmed_at desc limit 1`)
+ assert(JSON.stringify(consentPlan).includes('relationship_sale_confirmation_lookup'),'Consent lookup must retain its scoped index as unrelated history grows')
+ console.log('PASS consent growth: latest confirmed sale uses existing scoped index with 25,000 unrelated rows')
+ await db.exec("update workspace_integrations set connection_status='degraded'");assert.equal((await choice()).state,'broken')
+ await db.exec("update workspace_integrations set connection_status='connected',enabled=false");assert.equal((await choice()).state,'broken')
+ await db.exec(`create or replace function public.relationship_messaging_choices(w uuid,r uuid) returns jsonb language sql as $$select jsonb_build_array(jsonb_build_object('provider','meta_whatsapp','address','${phone}','confirmedAt',null,'confirmationStatus','revoked','state','inactive'))$$`)
+ assert.equal((await choice()).confirmedAt,null,'Revocation cannot reuse older permission')
+ assert.equal((await scalar("select has_function_privilege('authenticated','public.relationship_template_messaging_choices(uuid,uuid)','execute') allowed")).allowed,false)
+ await db.exec('rollback')
+ console.log('PASS legacy template consent: expired window, exact identity, STOP, revoked/deleted evidence, disabled integration and free-form isolation')
+
  let configured=await rpc('configure',{workspaceId:w,relationshipId:r,portalOrigin:'https://portal.example.com'})
  assert.equal(configured.profile.detectionEnabled,false);assert.equal(configured.profile.sendingEnabled,false);assert.equal(configured.profile.includeNotes,false)
  assert.equal((await ingest()).queued,0)
@@ -151,7 +187,11 @@ try {
  await ingest({eventType:'AppointmentUpdate'});
  assert.equal((await rpc('begin_dispatch',dispatchInput(job))).failure,'pending_events')
  e=await claim(); await apply(e,second,2,[])
- const start=await rpc('begin_dispatch',dispatchInput(job));assert(start.messageId&&start.deliveryId)
+ await db.exec(`update fixture_consent set active=false;
+ insert into workspace_integrations values('${w}','meta_whatsapp',true,'connected');
+ insert into client_sales values('${ps}','${w}','${r}','${phone}',now()-interval '60 days',null,'{"confirmation_source":"relationship_channels","delivery_choices":[{"provider":"meta_whatsapp","address":"${phone}"}]}');`)
+ const start=await rpc('begin_dispatch',dispatchInput(job));assert(start.messageId&&start.deliveryId,'Legacy permission passes actual atomic dispatch outside reply window')
+ await db.exec('update fixture_consent set active=true; delete from client_sales; delete from workspace_integrations')
  assert.equal((await rpc('begin_dispatch',dispatchInput(job))).failure,'lease')
  await db.exec("update client_portal_secure.ghl_appointment_outbox set lease_until=now()-interval '1 second' where status='sending'")
  await rpc('claim_notifications')

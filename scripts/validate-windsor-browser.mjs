@@ -15,7 +15,7 @@ await mkdir(output,{recursive:true});await mkdir(join(fixture,'app'),{recursive:
 await symlink(join(root,'node_modules'),join(fixture,'node_modules'))
 await writeFile(join(fixture,'package.json'),JSON.stringify({private:true,dependencies:{next:'16.2.11',react:'19.2.4','react-dom':'19.2.4'}}))
 await writeFile(join(fixture,'tsconfig.json'),JSON.stringify({compilerOptions:{target:'ES2022',lib:['dom','esnext'],module:'esnext',moduleResolution:'bundler',jsx:'react-jsx',allowJs:true,skipLibCheck:true,esModuleInterop:true,paths:{'@/*':[root+'/*']}},include:['**/*.tsx']}))
-await writeFile(join(fixture,'next.config.js'),`module.exports={webpack(config){config.resolve.alias['@']=${JSON.stringify(root)};return config}}`)
+await writeFile(join(fixture,'next.config.js'),`module.exports={onDemandEntries:{pagesBufferLength:3},webpack(config){config.resolve.alias['@']=${JSON.stringify(root)};return config}}`)
 await writeFile(join(fixture,'postcss.config.mjs'),`export default {plugins:{${JSON.stringify(require.resolve('@tailwindcss/postcss'))}:{}}}`)
 await writeFile(join(fixture,'app','globals.css'),(await readFile(join(root,'app','globals.css'),'utf8'))+`\n@source "${root}/components";\n@source "${fixture}/app";`)
 await writeFile(join(fixture,'app','layout.tsx'),`import './globals.css'; export default function Layout({children}){return <html><body>{children}</body></html>}`)
@@ -32,6 +32,13 @@ const accounts=[{id:'one',name:'Test Ads',datasource:'facebook_ads'},{id:'two',n
 const report={accountId:'one',accountName:'Test Ads',period:'last_30d',dateFrom:'2026-09-22',dateTo:'2026-10-21',currency:'USD',fetchedAt:'2026-10-21T20:00:00Z',totals:{spend:12,impressions:100,clicks:4,leads:0,ctr:4,cpc:3,costPerLead:null},daily:[]}
 try{
  let ready=false;for(let n=0;n<100;n++){try{if((await fetch(origin)).ok){ready=true;break}}catch{};await new Promise(r=>setTimeout(r,500))}assert.ok(ready,logs.slice(-3000))
+ // Compile and retain all three fixture routes before a browser subscribes to HMR.
+ // First-route compilation can otherwise force a reload of the onboarding page
+ // while WebKit is navigating to maintenance. Drain each HTML response to finish
+ // its compilation/render boundary; keep navigation failures visible below.
+ for(const path of ['/maintenance','/report','/']){
+  const response=await fetch(origin+path);await response.text();assert.ok(response.ok,`Fixture route ${path} failed to compile: ${response.status}`)
+ }
  const results=[]
  for(const [engine,type] of [['chromium',chromium],['webkit',webkit]].filter(([name])=>!requestedEngine||name===requestedEngine)){
  const browser=await type.launch({headless:true,executablePath:engine==='chromium'?process.env.CHROMIUM_EXECUTABLE:process.env.WEBKIT_EXECUTABLE})

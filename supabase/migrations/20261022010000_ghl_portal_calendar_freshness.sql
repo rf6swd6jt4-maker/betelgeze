@@ -5,7 +5,7 @@ set local lock_timeout='5s';
 set local statement_timeout='60s';
 
 alter table client_portal_secure.ghl_appointment_profiles add column portal_sync_enabled boolean not null default false;
-create index ghl_appointment_portal_due on client_portal_secure.ghl_appointment_profiles(reconcile_due_at) where portal_sync_enabled;
+create index ghl_appointment_portal_due on client_portal_secure.ghl_appointment_profiles(reconcile_due_at) where portal_sync_enabled and not detection_enabled;
 
 create table client_portal_secure.ghl_calendar_ranges (
  relationship_id uuid not null references public.relationships(id),
@@ -201,6 +201,21 @@ begin
  -- Detection-only portal work must never relax notification dispatch eligibility.
  d:=replace(d,'not p.sending_enabled or not (p.detection_enabled or p.portal_sync_enabled)','not p.sending_enabled or not p.detection_enabled');
  d:=replace(d,'pr.sending_enabled and (pr.detection_enabled or pr.portal_sync_enabled)','pr.sending_enabled and pr.detection_enabled');
+ -- Older workers keep processing their existing detection-enabled profiles,
+ -- but must not lease portal-only work they cannot interpret during rollout.
+ needle:=$n$and (p_input->>'appointmentId' is null or i.appointment_id=p_input->>'appointmentId') order by$n$;
+ if position(needle in d)=0 then raise exception 'Unexpected event claim capability boundary';end if;
+ d:=replace(d,needle,$n$and (p_input->>'appointmentId' is null or i.appointment_id=p_input->>'appointmentId')
+  and (p_input->>'portalSyncVersion'='1' or not exists(select 1 from client_portal_secure.ghl_appointment_profiles legacy where legacy.id=i.profile_id and legacy.portal_sync_enabled and not legacy.detection_enabled)) order by$n$);
+ needle:=$n$for p in select pr.* from client_portal_secure.ghl_appointment_profiles pr where (pr.detection_enabled or pr.portal_sync_enabled) and$n$;
+ if position(needle in d)=0 then raise exception 'Unexpected reconciliation claim capability boundary';end if;
+ d:=replace(d,needle,$n$for p in select pr.* from client_portal_secure.ghl_appointment_profiles pr where (pr.detection_enabled or (pr.portal_sync_enabled and not pr.detection_enabled and p_input->>'portalSyncVersion'='1')) and$n$);
+ -- A compatible older caller cannot erase enrichment it does not understand.
+ -- An explicit new details object remains authoritative, including null fields.
+ needle:=$n$  stamp:=nullif(p_input->>'sourceUpdatedAt','')::timestamptz;$n$;
+ if position(needle in d)=0 then raise exception 'Unexpected snapshot enrichment boundary';end if;
+ d:=replace(d,needle,$n$  if not(next_snapshot ? 'details') and s.snapshot ? 'details' then next_snapshot:=next_snapshot||jsonb_build_object('details',s.snapshot->'details');end if;
+$n$||needle);
  needle:=$n$s.snapshot-'observedAt'-'sourceUpdatedAt'-'sourceCreatedAt'=next_snapshot-'observedAt'-'sourceUpdatedAt'-'sourceCreatedAt'$n$;
  if position(needle in d)=0 then raise exception 'Unexpected snapshot equality';end if;
  d:=replace(d,needle,$n$s.snapshot-'observedAt'-'sourceUpdatedAt'-'sourceCreatedAt'-'details'=next_snapshot-'observedAt'-'sourceUpdatedAt'-'sourceCreatedAt'-'details'$n$);

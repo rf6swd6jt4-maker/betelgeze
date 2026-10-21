@@ -1,6 +1,6 @@
 # Client portal reliability review
 
-Status: local implementation under review. No production migration, deployment, provider send, account correction or client-data backfill has been performed. The candidate is on `codex/client-portal-reliability`, based on `e196186707ec7ddc8acf0e241d64df4e222f1656`, in the managed `client-portal-reliability` worktree. The original checkout and its unrelated work are preserved.
+Status: implementation reviewed and deployment authorized. This document records the implementation and pre-release validation; production installation, exact deployment and live-client verification are separate release evidence. The candidate is on `codex/client-portal-reliability`, based on `e196186707ec7ddc8acf0e241d64df4e222f1656`, in the managed `client-portal-reliability` worktree. The original checkout and its unrelated work are preserved.
 
 ## Calendar freshness
 
@@ -13,6 +13,8 @@ The provider range controls the calendar rows, including title, time, status and
 These are the user's explicit performance choices. The proposed two snapshot expression indexes were removed after an isolated write benchmark showed extra maintenance cost. The later existing-index overlay was also removed after the 1,000-row test showed 15–23 ms of extra database work per calendar read. Final calendar reads do not scan or join appointment history. A failed provider read preserves the last successful range and timestamp; stale empty data is not presented as proof that no appointments exist. Leases and completion are fenced by connection revision. Access loss clears incompatible browser state. Only transient range caches are evicted; appointment versions and message history are retained.
 
 Automatic synchronization requires the existing deployment detection flag and functioning scheduled worker. The connection dialog calls out a disabled runtime. Saving credentials or selecting calendars does not claim fresh data or proven message delivery. Retained detail synchronization currently requires the existing verified custom portal domain contract; a default-host-only portal gets an explicit setup warning and does not accumulate an endlessly retrying detail hydration job.
+
+The existing scheduler also recognizes due portal-only reconciliation, calendar ranges and optional note jobs, so a quiet client's refresh does not depend on another client's notification traffic. Scheduler enablement and notification flags remain unchanged. Older workers cannot claim portal-only jobs without the new capability marker; supported detection-enabled work remains available during rollout. An older snapshot that does not understand richer details retains the already-saved enrichment instead of erasing it.
 
 ## Shared appointment details and GHL retention
 
@@ -81,4 +83,4 @@ The candidate adds four migrations in dependency order:
 
 Existing immutable migrations remain unchanged. Apply additive schema before the new app in a future approved release. Existing functions remain for older callers. A rollback must retain new data/history, successful account selections and accepted jobs; revert application use rather than deleting retained tables or rewinding client configuration. Do not retry an uncertain external send.
 
-Before release, verify worker availability and flags, migration installation/ACLs, real GHL payloads and notes scopes, Windsor account/metric/date behavior, the versioned URL with the live approved WhatsApp template, the correct client-scoped account selection, and mobile navigation on physical devices. Use a controlled test only with explicit authorization to send. Hosted CI is pending because this review candidate has not been pushed or deployed.
+Before release, verify worker availability and flags, migration installation/ACLs, real GHL payloads and notes scopes, Windsor account/metric/date behavior, the versioned URL with the live approved WhatsApp template, the correct client-scoped account selection, and mobile navigation on physical devices. Use a controlled test only with explicit authorization to send. Exact-candidate hosted CI and production verification are recorded separately from the local results above.

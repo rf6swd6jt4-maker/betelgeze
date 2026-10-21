@@ -238,7 +238,7 @@ export async function processGhlAppointmentAutomation(wake?: AppointmentWake) {
         import("@/lib/supabase/admin"), import("./provider"), import("@/lib/client-messages/meta-whatsapp"),
     ])
     const rpc: AutomationRpc = async (action, input) => {
-        const result = await supabaseAdmin.rpc("ghl_appointment_automation", { p_action: action, p_input: { ...input, processorVersion: 2 } })
+        const result = await supabaseAdmin.rpc("ghl_appointment_automation", { p_action: action, p_input: { ...input, processorVersion: 2, portalSyncVersion: 1 } })
         if (result.error) throw new Error(`GHL automation ${action} could not be committed.`)
         const failure = record(result.data).failure
         if (typeof failure === "string") throw new GhlAutomationRejected(action, failure)

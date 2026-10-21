@@ -7,7 +7,7 @@ const db = await createGhlFixture()
 const w='00000000-0000-4000-8000-000000000001',r='00000000-0000-4000-8000-000000000002',ps='00000000-0000-4000-8000-000000000003',rev='00000000-0000-4000-8000-000000000004',secret='00000000-0000-4000-8000-000000000005'
 const location='location123456789',calendar='calendar123456789',appt='appointment123456789',phone='+12025550123'
 let key=0
-const rpc=async(action,input={})=>(await db.query('select public.ghl_appointment_automation($1,$2::jsonb) result',[action,JSON.stringify({processorVersion:2,...input})])).rows[0].result
+const rpc=async(action,input={})=>(await db.query('select public.ghl_appointment_automation($1,$2::jsonb) result',[action,JSON.stringify({processorVersion:2,portalSyncVersion:1,...input})])).rows[0].result
 const sql=async(text,params=[])=>(await db.query(text,params)).rows
 const scalar=async(text,params=[])=>(await sql(text,params))[0]
 const summary=async(token,slug='fixture',host='portal.example.com')=>(await sql('select public.read_ghl_appointment_summary($1,$2,$3) result',[token,slug,host]))[0].result
@@ -40,6 +40,7 @@ try {
  select set_config('request.jwt.claims','{"role":"service_role"}',false);`)
  await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20261011180000_ghl_appointment_automation.sql`,'utf8'))
  for(const file of ['20261020120000_ghl_oauth_connections.sql','20261020130000_ghl_event_processing.sql','20261020140000_ghl_app_events.sql','20261020150000_ghl_notification_setup.sql','20261021100000_ghl_multiple_calendars.sql']) await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/${file}`,'utf8'))
+ await (await import('./validate-ghl-scheduler-compatibility-sql.mjs')).installGhlSchedulerFixture(db)
  await db.exec(`create table public.client_sales(id uuid primary key,workspace_id uuid,relationship_id uuid,client_phone text,consent_confirmed_at timestamptz,deleted_at timestamptz,raw_payload jsonb);
  create index relationship_sale_confirmation_lookup on public.client_sales(workspace_id,relationship_id,consent_confirmed_at desc) where consent_confirmed_at is not null;
  create table public.workspace_integrations(workspace_id uuid,provider text,enabled boolean,connection_status text,primary key(workspace_id,provider));`)
@@ -111,6 +112,7 @@ try {
  await db.exec('rollback')
  console.log('Multiple-calendar SQL: selected intake, one history, moves, reminder deduplication and outside-calendar fencing passed')
  const profile=configured.profile
+ await (await import('./validate-ghl-scheduler-compatibility-sql.mjs')).validateGhlSchedulerCompatibility({db,rpc,profile,r,calendar,location})
  await (await import('./validate-ghl-calendar-freshness.mjs')).validateGhlCalendarFreshness({db,w,r,calendar,location,rpc})
  await (await import('./validate-ghl-appointment-details-sql.mjs')).validateAppointmentDetails({db,rpc,profile,w,r,calendar,location})
  await (await import('./validate-ghl-recovery-flow.mjs')).validateGhlRecoveryFlow({db,rpc,profile,w,r,calendar,location})
@@ -342,14 +344,7 @@ try {
  assert.equal((await scalar('select status from client_portal_secure.ghl_oauth_credentials')).status,'revoked')
  assert.equal((await scalar('select count(*)::int n from client_portal_secure.ghl_appointment_profiles where detection_enabled or sending_enabled')).n,0)
  assert.equal((await setupRpc('enable',preflight)).failure,'oauth')
- // Scheduler installation is inert; its only outbound adapter is synthetic.
- await db.exec(`create schema cron; create schema net;
- create table cron.fixture_jobs(name text,schedule text,command text);
- create function cron.schedule(name text,schedule text,command text) returns bigint language sql as $$ insert into cron.fixture_jobs values(name,schedule,command); select 1::bigint $$;
- create table net.fixture_requests(id bigint generated always as identity,url text,headers jsonb);
- create function net.http_post(url text,headers jsonb,body jsonb,timeout_milliseconds integer) returns bigint language sql as $$ insert into net.fixture_requests(url,headers) values(url,headers) returning id $$;
- alter table vault.decrypted_secrets add column name text;`)
- await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20261020160000_ghl_scheduler.sql`,'utf8'))
+ // Scheduler installed above remains inert; its outbound adapter is synthetic.
  const dispatch=async(kind)=>(await scalar('select public.dispatch_ghl_work($1) id',[kind])).id
  assert.equal(await dispatch('appointments'),null)
  await assert.rejects(db.query('select public.set_ghl_scheduler(true)'),/credential/)

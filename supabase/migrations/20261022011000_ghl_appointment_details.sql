@@ -157,5 +157,33 @@ do $migration$ declare definition text;needle text;begin
  execute definition;
 end $migration$;
 
+-- The existing scheduler owns optional work too. A quiet portal-only client
+-- must not depend on another client's notification traffic to wake its queues.
+-- Reuse due indexes; no appointment/message/history scan or flag activation.
+do $migration$ declare definition text;needle text;begin
+ definition:=pg_get_functiondef('public.dispatch_ghl_work(text)'::regprocedure);
+ needle:=$n$   and not exists(select 1 from client_portal_secure.ghl_appointment_inbox where$n$;
+ if position(needle in definition)=0 then raise exception 'Unexpected scheduler work admission';end if;
+ definition:=replace(definition,needle,$n$   and not exists(select 1 from client_portal_secure.ghl_appointment_profiles p
+    join client_portal_secure.ghl_connections c on c.relationship_id=p.relationship_id and c.workspace_id=p.workspace_id and c.calendar_revision=p.connection_revision and c.location_id=p.location_id and c.selected_calendar_id=p.calendar_id and c.vault_secret_id is not null
+    join public.relationships r on r.id=p.relationship_id and r.workspace_id=p.workspace_id and r.status<>'archived'
+    join public.workspaces w on w.id=p.workspace_id and w.status='active'
+    where p.portal_sync_enabled and not p.detection_enabled and p.reconcile_due_at<=now() and (p.reconcile_lease_until is null or p.reconcile_lease_until<=now()))
+   and not exists(select 1 from client_portal_secure.ghl_calendar_ranges q
+    join client_portal_secure.ghl_connections c on c.relationship_id=q.relationship_id and c.calendar_revision=q.revision and c.vault_secret_id is not null
+    join public.relationships r on r.id=q.relationship_id and r.workspace_id=c.workspace_id and r.status<>'archived'
+    join public.workspaces w on w.id=c.workspace_id and w.status='active'
+    where q.available_at<=now() and (q.lease_until is null or q.lease_until<=now()) and (q.checked_at is null or q.requested_at>q.checked_at or q.hydration_pending))
+   and not exists(select 1 from client_portal_secure.ghl_appointment_note_jobs j
+    join client_portal_secure.ghl_appointment_profiles p on p.id=j.profile_id and p.connection_revision=j.connection_revision and p.include_notes and (p.detection_enabled or p.portal_sync_enabled)
+    join client_portal_secure.ghl_appointment_snapshots a on a.profile_id=j.profile_id and a.appointment_id=j.appointment_id and a.removed_at is null
+    join client_portal_secure.ghl_connections c on c.relationship_id=p.relationship_id and c.workspace_id=p.workspace_id and c.calendar_revision=p.connection_revision and c.location_id=p.location_id and c.vault_secret_id is not null
+    join public.relationships r on r.id=p.relationship_id and r.workspace_id=p.workspace_id and r.status<>'archived'
+    join public.workspaces w on w.id=p.workspace_id and w.status='active'
+    where j.status in('pending','leased') and j.due_at<=now() and (j.lease_until is null or j.lease_until<=now()))
+$n$||needle);
+ execute definition;
+end $migration$;
+
 notify pgrst,'reload schema';
 commit;

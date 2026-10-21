@@ -18,6 +18,17 @@ export async function validateAppointmentDetails({db,rpc,profile,w,r,calendar,lo
   const retained=await read()
   assert.equal(retained.snapshot.title,'Shared detail');assert.equal(retained.snapshot.details.contact.phone,'+12025550123')
   assert.equal(retained.snapshot.bookingDetails,'Allowed legacy booking text')
+  const enrich=async(next,key)=>{
+   await rpc('ingest',{locationId:location,calendarId:calendar,appointmentId:id,eventType:'AppointmentUpdate',eventKey:key,payloadHash:'f'.repeat(64),payload:{baseline:true}})
+   const job=(await rpc('claim_events',{appointmentId:id,locationId:location,limit:1})).items[0]
+   return rpc('apply_event',{id:job.id,leaseToken:job.leaseToken,expectedVersion:outcome.version,snapshot:next,sourceUpdatedAt:next.sourceUpdatedAt,kinds:[]})
+  }
+  const legacySnapshot={...snapshot};delete legacySnapshot.details
+  assert.equal((await enrich(legacySnapshot,'legacy-detail-caller')).version,outcome.version)
+  assert.deepEqual((await read()).snapshot.details,snapshot.details,'An old caller without details cannot erase retained enrichment')
+  const updatedDetails={...snapshot.details,contact:{phone:null,email:'new@example.com'}}
+  assert.equal((await enrich({...snapshot,details:updatedDetails},'new-detail-caller')).version,outcome.version)
+  assert.deepEqual((await read()).snapshot.details,updatedDetails,'An explicit new details object remains authoritative, including nulls')
   assert.equal((await one('select count(*)::int count from client_portal_secure.ghl_appointment_outbox where profile_id=$1 and appointment_id=$2',[profile.id,id])).count,0,'Baseline detail hydration never sends')
   for(const params of [[id,'other-calendar'],['other-appointment',calendar],[id,calendar,'b'.repeat(64)],[id,calendar,token,r]]) assert((await read(...params)).failure)
   await db.exec('update client_portal_sessions set token_revoked_at=now()')

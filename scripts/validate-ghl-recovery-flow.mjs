@@ -41,6 +41,12 @@ export async function validateGhlRecoveryFlow({db,rpc,profile,w,r,calendar,locat
  assert.equal(sends.length,1)
  assert.equal((await accept('AppointmentCreate','fixture-created')).status,202)
  await worker.runGhlAppointmentAutomation(deps,{locationId:location,appointmentId:id});assert.equal(sends.length,1)
+ // Adding creation metadata to a retained pre-release snapshot must not create
+ // a new version and supersede an already queued business notification.
+ await db.query("update client_portal_secure.ghl_appointment_snapshots set snapshot=snapshot-'sourceCreatedAt' where appointment_id=$1",[id])
+ const priorVersion=(await db.query('select version from client_portal_secure.ghl_appointment_snapshots where appointment_id=$1',[id])).rows[0].version
+ await accept('AppointmentUpdate','creation-metadata');await worker.runGhlAppointmentAutomation(deps,{locationId:location,appointmentId:id})
+ assert.equal((await db.query('select version from client_portal_secure.ghl_appointment_snapshots where appointment_id=$1',[id])).rows[0].version,priorVersion)
  appointment={...appointment,appointmentStatus:'cancelled',dateUpdated:new Date(+clock+1000).toISOString()}
  await accept('AppointmentUpdate','fixture-cancelled');assert.equal((await worker.runGhlAppointmentAutomation(deps,{locationId:location,appointmentId:id})).accepted,1)
  assert.equal(sends.length,2)

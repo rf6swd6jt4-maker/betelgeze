@@ -36,6 +36,10 @@ $branch$||needle);
  needle:=$n$last_error=left(p_input->>'error',160) where id=p.id;$n$;
  if position(needle in d)=0 then raise exception 'Unexpected recovery diagnostics';end if;
  d:=replace(d,needle,$n$last_error=left(coalesce(p_input->>'error',p_input->>'warning'),160) where id=p.id;$n$);
+ -- Provider creation time is import metadata, not a visible appointment change.
+ needle:=$n$s.snapshot-'observedAt'-'sourceUpdatedAt'=next_snapshot-'observedAt'-'sourceUpdatedAt'$n$;
+ if position(needle in d)=0 then raise exception 'Unexpected snapshot equality';end if;
+ d:=replace(d,needle,$n$s.snapshot-'observedAt'-'sourceUpdatedAt'-'sourceCreatedAt'=next_snapshot-'observedAt'-'sourceUpdatedAt'-'sourceCreatedAt'$n$);
  execute d;
 end $migration$;
 notify pgrst,'reload schema';

@@ -112,6 +112,10 @@ try {
  await db.exec('rollback')
  console.log('Multiple-calendar SQL: selected intake, one history, moves, reminder deduplication and outside-calendar fencing passed')
  const profile=configured.profile
+ const {validateGhlCalendarBeginContract}=await import('./validate-ghl-calendar-begin-contract.mjs')
+ await validateGhlCalendarBeginContract({db,w,r,calendar,location,corrected:false})
+ await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20261022014000_ghl_portal_calendar_begin_contract.sql`,'utf8'))
+ await validateGhlCalendarBeginContract({db,w,r,calendar,location,corrected:true})
  await (await import('./validate-ghl-scheduler-compatibility-sql.mjs')).validateGhlSchedulerCompatibility({db,rpc,profile,r,calendar,location})
  await (await import('./validate-ghl-calendar-freshness.mjs')).validateGhlCalendarFreshness({db,w,r,calendar,location,rpc})
  await (await import('./validate-ghl-appointment-details-sql.mjs')).validateAppointmentDetails({db,rpc,profile,w,r,calendar,location})

@@ -7,9 +7,10 @@ import type { PortalMetaAdsReport } from "../lib/client-portal/meta-ads-report"
 
 const now = new Date()
 const report: PortalMetaAdsReport = { accountId: "account", accountName: "Business", connectionRevision: "revision", fetchedAt: now.toISOString(), period: "last_30d", dateFrom: "2026-09-22", dateTo: now.toISOString().slice(0, 10), currency: "USD", totals: { spend: 12, impressions: 100, clicks: 4, leads: 0, ctr: 4, cpc: 3, costPerLead: null }, daily: [{ date: now.toISOString().slice(0, 10), spend: 12, impressions: 100, clicks: 4, leads: 0 }] }
-function fixture({ retained = report as PortalMetaAdsReport | null, allowed = true, providerFails = false, saved = true, integrationEnabled = true, providerWait = Promise.resolve() } = {}) {
+function fixture({ retained = report as PortalMetaAdsReport | null, allowed = true, providerFails = false, providerError = new Error("provider failed") as unknown, credentialError = null as unknown, apiKey = "key", saved = true, integrationEnabled = true, providerWait = Promise.resolve() } = {}) {
     let reads = 0, providerCalls = 0
     const writes: Record<string, unknown>[] = []
+    const logs: unknown[][] = []
     const fingerprint = createHash("sha256").update("integration").digest("hex")
     const parser = { exports: {} as Record<string, unknown> }
     const compile = (file: string) => ts.transpileModule(readFileSync(file, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText
@@ -18,8 +19,8 @@ function fixture({ retained = report as PortalMetaAdsReport | null, allowed = tr
         "server-only": {}, "node:crypto": { createHash },
         "@/lib/client-portal/session": { resolveClientPortalAccessByToken: async () => allowed ? { workspace: { id: "workspace" }, relationship: { id: "relationship" } } : null },
         "@/lib/client-portal/meta-ads-report": parser.exports,
-        "@/lib/workspace-integrations": { decryptWorkspaceIntegration: () => ({ api_key: "key" }) },
-        "@/lib/windsor": { loadWindsorMetaAdsReport: async () => { providerCalls++; await providerWait; if (providerFails) throw new Error("provider failed"); return { ...report, totals: { ...report.totals, spend: 25 } } } },
+        "@/lib/workspace-integrations": { decryptWorkspaceIntegration: () => { if (credentialError) throw credentialError; return { api_key: apiKey } } },
+        "@/lib/windsor": { loadWindsorMetaAdsReport: async () => { providerCalls++; await providerWait; if (providerFails) throw providerError; return { ...report, totals: { ...report.totals, spend: 25 } } } },
         "@/lib/supabase/admin": { supabaseAdmin: {
             from(table: string) {
                 reads++
@@ -30,8 +31,8 @@ function fixture({ retained = report as PortalMetaAdsReport | null, allowed = tr
         } },
     }
     const compiled = { exports: {} as { loadPortalMetaAdsReport: (token: string, refresh?: boolean) => Promise<PortalMetaAdsReport | null> } }
-    new Function("require", "module", "exports", compile("lib/client-portal/meta-ads-server.ts"))((name: string) => { assert.ok(name in deps, name); return deps[name] }, compiled, compiled.exports)
-    return { load: compiled.exports.loadPortalMetaAdsReport, reads: () => reads, providerCalls: () => providerCalls, writes }
+    new Function("require", "module", "exports", "console", compile("lib/client-portal/meta-ads-server.ts"))((name: string) => { assert.ok(name in deps, name); return deps[name] }, compiled, compiled.exports, { error: (...args: unknown[]) => { logs.push(args) } })
+    return { load: compiled.exports.loadPortalMetaAdsReport, reads: () => reads, providerCalls: () => providerCalls, writes, logs }
 }
 
 test("portal authorization precedes all report reads", async () => {
@@ -78,7 +79,7 @@ test("retained data from another account or revision is not reused", async () =>
 test("a connection change during provider work rejects the late result", async () => {
     const f = fixture({ saved: false })
     await assert.rejects(f.load("token", true), /changed/)
-    assert.equal(f.writes.length, 1)
+    assert.equal(f.writes.length, 1); assert.deepEqual(f.logs, [])
 })
 test("concurrent authorized refreshes share one provider read and one CAS save", async () => {
     let release!: () => void
@@ -100,4 +101,74 @@ test("an explicit refresh cannot piggyback a read-only first load and skip its s
     const [one, two] = await Promise.all([read, refresh])
     assert.equal(one?.totals.spend, 25); assert.equal(two?.totals.spend, 25)
     assert.equal(f.writes.length, 1); assert.ok(f.writes[0].p_report)
+})
+
+test("report diagnostics classify controlled failures without changing the public fallback or request counts", async () => {
+    const cases = [
+        ["The agency’s Windsor.ai connection needs attention. Contact your agency to continue.", "provider_auth"],
+        ["Windsor.ai is receiving too many requests. Wait a moment, then check again.", "provider_rate_limited"],
+        ["Windsor.ai could not be reached. Check your internet connection and try again.", "provider_unreachable"],
+        ["Windsor.ai could not complete this request (400). Try again.", "provider_http_4xx"],
+        ["Windsor.ai could not complete this request (502). Try again.", "provider_http_5xx"],
+        ["Windsor returned too much data.", "response_too_large"],
+        ["Windsor returned an empty response.", "empty_response"],
+        ["Windsor returned an invalid reporting response.", "invalid_response"],
+        ["Windsor returned an unexpected reporting response.", "unexpected_response"],
+        ["Windsor could not load this Meta Ads report.", "provider_report_error"],
+        ["Windsor returned too many reporting rows.", "too_many_rows"],
+        ["Windsor returned an invalid reporting row.", "invalid_row"],
+        ["Windsor returned an incomplete reporting value.", "incomplete_value"],
+        ["Windsor returned an invalid reporting value.", "invalid_value"],
+        ["Windsor returned an invalid reporting date.", "invalid_date"],
+        ["Windsor returned a date outside the requested report.", "date_out_of_range"],
+        ["Windsor returned a report for a different account.", "account_mismatch"],
+        ["Windsor returned an invalid or mixed reporting currency.", "currency_invalid"],
+        ["This Meta Ads account is invalid.", "account_invalid"],
+    ]
+    for (const [message, code] of cases) {
+        const f = fixture({ retained: null, providerFails: true, providerError: new Error(message) })
+        await assert.rejects(f.load("private-portal-token"), { message: "Meta Ads reporting is temporarily unavailable." })
+        assert.deepEqual(f.logs, [["Client portal Meta Ads diagnostic", code]])
+        assert.equal(f.reads(), 2); assert.equal(f.providerCalls(), 1); assert.equal(f.writes.length, 0)
+    }
+})
+
+test("unknown and credential errors cannot leak provider bodies, identifiers, URLs or secret material", async () => {
+    const privateText = "https://provider.test/?api_key=secret-value account_id=123456789 portal-token-private"
+    const getterError = new Error()
+    Object.defineProperty(getterError, "message", { get() { throw new Error(privateText) } })
+    const descriptorTrap = new Proxy(new Error(), { getOwnPropertyDescriptor() { throw new Error(privateText) } })
+    const prototypeTrap = new Proxy({}, { getPrototypeOf() { throw new Error(privateText) } })
+    for (const providerError of [descriptorTrap, prototypeTrap, new Error(privateText), new Error("Windsor returned an incomplete reporting value. " + privateText), new Error("x".repeat(1_000_000)), { message: privateText, payload: { token: privateText } }, privateText, getterError]) {
+        const f = fixture({ retained: null, providerFails: true, providerError })
+        await assert.rejects(f.load("private-portal-token"), { message: "Meta Ads reporting is temporarily unavailable." })
+        assert.deepEqual(f.logs, [["Client portal Meta Ads diagnostic", "unexpected_error"]])
+        assert.equal(f.providerCalls(), 1); assert.equal(f.writes.length, 0)
+    }
+    for (const options of [{ credentialError: new Error(privateText) }, { apiKey: "" }]) {
+        const f = fixture({ retained: null, ...options })
+        await assert.rejects(f.load("private-portal-token"), { message: "Meta Ads reporting is temporarily unavailable." })
+        assert.deepEqual(f.logs, [["Client portal Meta Ads diagnostic", "credentialError" in options ? "credential_decrypt" : "credential_missing"]])
+        assert.equal(f.reads(), 2); assert.equal(f.providerCalls(), 0); assert.equal(f.writes.length, 0)
+    }
+})
+
+test("diagnostics preserve stale refresh figures and stay silent for healthy and cached reads", async () => {
+    const f = fixture({ providerFails: true, providerError: new Error("Windsor returned an incomplete reporting value.") })
+    const result = await f.load("token", true)
+    assert.equal(result?.freshness, "stale"); assert.equal(result?.fetchedAt, report.fetchedAt)
+    assert.deepEqual(result?.totals, report.totals)
+    assert.deepEqual(f.logs, [["Client portal Meta Ads diagnostic", "incomplete_value"]])
+    assert.equal(f.providerCalls(), 1); assert.equal(f.writes.length, 1)
+    assert.equal(f.writes[0].p_report, null); assert.equal(f.writes[0].p_error, "unavailable")
+    for (const retained of [report, null]) {
+        const healthy = fixture({ retained })
+        await healthy.load("token")
+        assert.deepEqual(healthy.logs, []); assert.equal(healthy.reads(), 2)
+        assert.equal(healthy.providerCalls(), retained ? 0 : 1); assert.equal(healthy.writes.length, 0)
+    }
+    const disabled = fixture({ retained: null, integrationEnabled: false })
+    await assert.rejects(disabled.load("token"), /unavailable/)
+    assert.deepEqual(disabled.logs, [["Client portal Meta Ads diagnostic", "integration_unavailable"]])
+    assert.equal(disabled.providerCalls(), 0); assert.equal(disabled.writes.length, 0)
 })

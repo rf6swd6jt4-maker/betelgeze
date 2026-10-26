@@ -12,6 +12,7 @@ import { ClientBrandLogo } from "@/components/client-branding/ClientBrandLogo"
 import { DetailField, DetailFields } from "@/components/detail"
 import { appointmentDateLabels, type PortalAppointment } from "@/lib/client-portal/appointments"
 import type { ClientPortalOverview } from "@/lib/client-portal/overview"
+import type { GhlAppointmentEntry } from "@/lib/client-portal/appointment-summary"
 import { FilterRailButton } from "@/components/panel/FilterRail"
 import styles from "./ClientPortalLayout.module.css"
 
@@ -88,15 +89,28 @@ function AppointmentDetail({ appointment }: { appointment: PortalAppointment }) 
     </>
 }
 
-export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPersonName, overview, metaAdsReporting, hasGoogleAds = false, privacyPolicyUrl, termsOfServiceUrl }: { token: string; workspaceName: string; logoSrc?: string | null; primaryPersonName: string; overview: ClientPortalOverview; metaAdsReporting?: ClientPortalMetaAdsReporting | null; hasGoogleAds?: boolean; privacyPolicyUrl?: string | null; termsOfServiceUrl?: string | null }) {
+export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPersonName, overview, metaAdsReporting, hasGoogleAds = false, privacyPolicyUrl, termsOfServiceUrl, initialAppointment }: { token: string; workspaceName: string; logoSrc?: string | null; primaryPersonName: string; overview: ClientPortalOverview; metaAdsReporting?: ClientPortalMetaAdsReporting | null; hasGoogleAds?: boolean; privacyPolicyUrl?: string | null; termsOfServiceUrl?: string | null; initialAppointment?: GhlAppointmentEntry }) {
     const [panel, setPanel] = useState<"chat" | PortalAppointment | null>(null)
     const [greeting, setGreeting] = useState("Welcome")
-    const [activePage, setActivePage] = useState(overview.hasFulfilment ? "fulfilment" : "leads")
+    const [activePage, setActivePage] = useState(initialAppointment ? "leads" : overview.hasFulfilment ? "fulfilment" : "leads")
+    const [appointmentOpen, setAppointmentOpen] = useState(Boolean(initialAppointment))
+    const [portalExplored, setPortalExplored] = useState(!initialAppointment)
     const [adsOpened, setAdsOpened] = useState(false)
     const scrollRef = useRef<HTMLDivElement>(null)
     const scrollPositions = useRef<Record<string, number>>({})
+    const appointmentOpenRef = useRef(Boolean(initialAppointment))
     const closePanel = useCallback(() => setPanel(null), [])
+    const backToCalendar = useCallback(() => setPortalExplored(true), [])
+    const appointmentVisibility = useCallback((open: boolean) => {
+        if (open === appointmentOpenRef.current) return
+        appointmentOpenRef.current = open
+        const scroller = scrollRef.current
+        if (open && scroller) scrollPositions.current["leads:calendar"] = scroller.scrollTop
+        setAppointmentOpen(open)
+        if (scroller?.querySelector("#leads")?.getClientRects().length) window.requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: open ? 0 : scrollPositions.current["leads:calendar"] ?? 0, behavior: "auto" }))
+    }, [])
     const selectPage = useCallback((page: string) => {
+        setPortalExplored(true)
         if (page === activePage) return
         const scroller = scrollRef.current
         if (scroller) scrollPositions.current[activePage] = scroller.scrollTop
@@ -135,13 +149,13 @@ export function ClientPortalShell({ token, workspaceName, logoSrc, primaryPerson
             </header>
             <div ref={scrollRef} data-client-portal-scroll className="flex min-h-0 flex-1 touch-pan-y flex-col overflow-x-hidden overflow-y-auto overscroll-y-contain">
                 <main data-client-portal-main className="mx-auto flex w-full max-w-6xl flex-1 flex-col px-4 pt-4 sm:px-6 lg:px-8 lg:pt-6">
-                    <section data-portal-greeting aria-labelledby="portal-greeting" className="mb-3 shrink-0 lg:mb-6"><p className="hidden text-sm font-medium text-[var(--onboarding-muted,#475569)] lg:block">Your client portal</p><h1 id="portal-greeting" className="truncate text-2xl font-semibold leading-tight tracking-tight lg:mt-2 lg:text-[2rem]">{greeting}, {primaryPersonName.trim().split(/\s+/)[0] || "there"}</h1><p className="mt-2 hidden text-sm leading-6 text-[var(--onboarding-muted,#475569)] lg:block">Keep up with fulfilment, leads and files from your team.</p></section>
+                    <section data-portal-greeting hidden={activePage === "leads" && appointmentOpen} aria-labelledby="portal-greeting" className="mb-3 shrink-0 lg:mb-6"><p className="hidden text-sm font-medium text-[var(--onboarding-muted,#475569)] lg:block">Your client portal</p><h1 id="portal-greeting" className="truncate text-2xl font-semibold leading-tight tracking-tight lg:mt-2 lg:text-[2rem]">{greeting}, {primaryPersonName.trim().split(/\s+/)[0] || "there"}</h1><p className="mt-2 hidden text-sm leading-6 text-[var(--onboarding-muted,#475569)] lg:block">Keep up with fulfilment, leads and files from your team.</p></section>
                     <div className="grid flex-1 grid-cols-1 gap-4">
                         <div id="fulfilment" className={`min-w-0 ${activePage === "fulfilment" ? "block" : "hidden"}`}><ClientPortalFulfilment overview={overview} /></div>
-                        <div id="leads" className={`min-w-0 ${activePage === "leads" ? "block" : "hidden"}`}><ClientPortalLeads token={token} active={activePage === "leads" && panel === null} mode={overview.leadMode} onOpen={setPanel} /></div>
+                        <div id="leads" className={`min-w-0 ${activePage === "leads" ? "block" : "hidden"}`}><ClientPortalLeads token={token} active={activePage === "leads" && panel === null} mode={overview.leadMode} onOpen={setPanel} initialAppointment={initialAppointment} displayName={workspaceName} detailsOpen={appointmentOpen} deferProviderStatus={!portalExplored} onDetailsOpenChange={appointmentVisibility} onBackToCalendar={backToCalendar} /></div>
                         <div id="ads" className={`min-w-0 pb-4 ${activePage === "ads" ? "block" : "hidden"}`}><div className="grid gap-4 lg:gap-6">{adsOpened && metaAdsReporting ? <ClientPortalMetaAds token={token} reporting={metaAdsReporting} active={activePage === "ads" && panel === null} /> : null}{adsOpened && hasGoogleAds ? <ClientPortalGoogleAds token={token} active={activePage === "ads" && panel === null} /> : null}{!metaAdsReporting && !hasGoogleAds ? <PortalSection id="ads-metrics" title="Ads metrics" description="A clear view of advertising performance." icon="progress"><div className="flex min-h-0 flex-1 items-center justify-center px-4 py-10 text-center"><div><PortalIcon name="progress" className="mx-auto h-8 w-8 text-[var(--onboarding-muted,#475569)]" /><h3 className="mt-4 text-base font-semibold">Nothing here yet</h3><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[var(--onboarding-muted,#475569)]">Advertising results will appear here when reporting is ready.</p></div></div></PortalSection> : null}</div></div>
                         {/* Keep the uploader mounted when changing panels so active transfers continue. */}
-                        <div id="resources" className={`min-w-0 ${activePage === "resources" ? "block" : "hidden"}`}><ClientPortalResources token={token} /></div>
+                        <div id="resources" className={`min-w-0 ${activePage === "resources" ? "block" : "hidden"}`}>{portalExplored ? <ClientPortalResources token={token} /> : null}</div>
                     </div>
                 </main>
                 <footer className="mx-auto flex w-full max-w-6xl shrink-0 items-center justify-between gap-4 px-4 pb-[env(safe-area-inset-bottom)] text-xs text-[var(--onboarding-muted,#475569)] sm:px-6 lg:px-8"><span className="min-w-0 truncate">{workspaceName}</span><div className="flex shrink-0 gap-5">{privacyPolicyUrl ? <a href={privacyPolicyUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center underline underline-offset-4">Privacy</a> : null}{termsOfServiceUrl ? <a href={termsOfServiceUrl} target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center underline underline-offset-4">Terms</a> : null}</div></footer>

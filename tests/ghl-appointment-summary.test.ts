@@ -168,3 +168,16 @@ test("Proxy routes capabilities only on the verified client portal domain and re
     domain = { ...domain, domain_status: "verified", surface: "onboarding" }
     assert.equal((await mod.proxy(request(`/appointment/${token}`))).status, 404)
 })
+
+test('public lead projection retains only bounded approved fields and observation provenance', () => {
+    const lead = { source: 'Facebook', type: 'lead', capturedAt: '2026-10-26T09:00:00Z', fields: [{ fieldId: 'interest', label: 'Product interest', value: '<script>plain text</script>', internal: 'SECRET' }], contactToken: 'SECRET' }
+    const parsed = appointmentSummary({ ...result, snapshot: { ...snapshot, details: { schemaVersion: 1, lead } } })!
+    assert.deepEqual(parsed.details?.lead, { source: 'Facebook', type: 'lead', capturedAt: '2026-10-26T09:00:00.000Z', fields: [{ fieldId: 'interest', label: 'Product interest', value: '<script>plain text</script>' }] })
+    assert.equal(JSON.stringify(parsed).includes('SECRET'), false)
+    assert.equal(parsed.details?.formSubmissionState, 'unavailable')
+    for (const fields of [[{ fieldId: '../bad', label: 'Question', value: 'Value' }], [{ fieldId: 'valid', label: 'x'.repeat(201), value: 'Value' }], [{ fieldId: 'valid', label: 'Question', value: 'x'.repeat(1001) }], Array(9).fill(lead.fields[0])]) {
+        assert.deepEqual(appointmentSummary({ ...result, snapshot: { ...snapshot, details: { schemaVersion: 1, lead: { ...lead, fields } } } })?.details?.lead?.fields, [])
+    }
+    assert.equal(appointmentSummary({ ...result, snapshot: { ...snapshot, details: { schemaVersion: 1, lead: null } } })?.details?.lead, null)
+    assert.equal(appointmentSummary({ ...result, snapshot: { ...snapshot, details: { schemaVersion: 1 } } })?.details?.lead, undefined)
+})

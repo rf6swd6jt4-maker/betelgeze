@@ -1,5 +1,6 @@
 import type { Metadata } from "next"
-import { ClientPortalAppointmentSummary, ClientPortalAppointmentUnavailable } from "@/components/client-portal/ClientPortalAppointmentSummary"
+import { ClientPortalAppointmentUnavailable } from "@/components/client-portal/ClientPortalAppointmentSummary"
+import { ClientPortalEntry } from "@/components/client-portal/ClientPortalEntry"
 import { loadAppointmentSummary } from "@/lib/client-portal/appointment-summary-server"
 import { notificationVersion } from "@/lib/client-portal/appointment-summary"
 
@@ -19,7 +20,7 @@ export const metadata: Metadata = {
 export default async function AppointmentSummaryPage({ params, searchParams }: { params: Promise<{ token: string }>; searchParams: Promise<{ v?: string | string[] }> }) {
     const { token } = await params
     const result = await loadAppointmentSummary(token)
-    if (result.status !== "ready") return <ClientPortalAppointmentUnavailable retryable={result.status === "error"} />
+    if (result.status !== "ready" || !result.portalSessionToken || !result.initialAppointment) return <ClientPortalAppointmentUnavailable retryable={result.status === "error"} />
     const notifiedVersion = notificationVersion((await searchParams).v)
-    return <ClientPortalAppointmentSummary summary={result.summary} displayName={result.displayName} notifiedVersion={notifiedVersion} />
+    return <ClientPortalEntry token={result.portalSessionToken} initialAppointment={{ ...result.initialAppointment, notifiedVersion }} />
 }

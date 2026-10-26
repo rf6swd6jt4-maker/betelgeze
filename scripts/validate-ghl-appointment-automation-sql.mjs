@@ -116,6 +116,10 @@ try {
  await validateGhlCalendarBeginContract({db,w,r,calendar,location,corrected:false})
  await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20261022014000_ghl_portal_calendar_begin_contract.sql`,'utf8'))
  await validateGhlCalendarBeginContract({db,w,r,calendar,location,corrected:true})
+ const leadBaselineDefinition=(await scalar("select pg_get_functiondef('public.ghl_appointment_automation(text,jsonb)'::regprocedure) value")).value
+ await db.exec(await readFile(`${repositoryRoot}/supabase/migrations/20261026010000_ghl_appointment_lead_fields.sql`,'utf8'))
+ await (await import('./validate-ghl-appointment-lead-fields-sql.mjs')).validateAppointmentLeadFields({db,rpc,profile,w,r,calendar,location})
+ if(process.env.BE_GHL_LEAD_MEASURE==='1') await (await import('./measure-ghl-lead-fields-sql.mjs')).measureGhlLeadFields({db,profile,baselineDefinition:leadBaselineDefinition})
  await (await import('./validate-ghl-scheduler-compatibility-sql.mjs')).validateGhlSchedulerCompatibility({db,rpc,profile,r,calendar,location})
  await (await import('./validate-ghl-calendar-freshness.mjs')).validateGhlCalendarFreshness({db,w,r,calendar,location,rpc})
  await (await import('./validate-ghl-appointment-details-sql.mjs')).validateAppointmentDetails({db,rpc,profile,w,r,calendar,location})

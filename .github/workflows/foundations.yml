@@ -246,6 +246,8 @@ jobs:
         run: node scripts/browser/run-asset-library.mjs "${{ matrix.engine }}"
       - name: Exercise appointment summary links and retained lifecycle states
         run: node scripts/browser/run-ghl-appointment-summary.mjs "${{ matrix.engine }}"
+      - name: Exercise unified notification and calendar appointment navigation
+        run: node scripts/browser/run-portal-appointment-navigation.mjs "${{ matrix.engine }}"
       - name: Exercise retained WhatsApp template buttons
         run: node scripts/browser/run-whatsapp-template-evidence.mjs "${{ matrix.engine }}"
       - name: Exercise client connection menus and calendar selection

@@ -1,3 +1,5 @@
+> Update, 26 October 2026: the subsequent [lead information and unified portal entry release](client-portal-lead-information-release.md) replaces the standalone appointment-only experience described below. It adds reviewed current-contact fields and user-authorized full portal access from notification links. The earlier validation remains historical evidence for its own candidate.
+
 # Client portal reliability review
 
 Status: implementation reviewed and deployment authorized. This document records the implementation and pre-release validation; production installation, exact deployment and live-client verification are separate release evidence. The candidate is on `codex/client-portal-reliability`, based on `e196186707ec7ddc8acf0e241d64df4e222f1656`, in the managed `client-portal-reliability` worktree. The original checkout and its unrelated work are preserved.

@@ -12,12 +12,17 @@ type StartupAppearance = {
     logoSrc: string | null
 }
 
-export function ClientPortalStartupScreen() {
+export function ClientPortalStartupScreen({ publicWorkspaceSlug }: { publicWorkspaceSlug?: string | null } = {}) {
     const pathname = usePathname()
-    const token = pathname.match(TOKEN_PATTERN)?.[1] ?? null
+    // Appointment links carry a different credential. Only their verified
+    // public agency slug may be used before the full portal entry resolves.
+    const appointmentEntry = /^\/(?:client-portal\/)?appointment(?:\/|$)/i.test(pathname)
+    const token = appointmentEntry ? null : pathname.match(TOKEN_PATTERN)?.[1] ?? null
+    const publicSlug = typeof publicWorkspaceSlug === "string" && /^[a-z0-9][a-z0-9-]{1,48}[a-z0-9]$/i.test(publicWorkspaceSlug)
+        ? publicWorkspaceSlug.toLowerCase() : null
     const immediateLogoSrc = token
         ? `/api/client-branding/logo/client-portal/${encodeURIComponent(token)}`
-        : null
+        : publicSlug ? `/api/client-branding/logo/sms-opt-in/${encodeURIComponent(publicSlug)}` : null
     const [appearance, setAppearance] = useState<StartupAppearance>({
         backgroundColor: FALLBACK_PORTAL_BACKGROUND,
         logoSrc: null,

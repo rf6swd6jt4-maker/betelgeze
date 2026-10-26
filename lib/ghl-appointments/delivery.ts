@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { profileIncludesCalendar, type AppointmentSnapshot, type ProviderProfile } from "./types"
+import { profileIncludesCalendar, type AppointmentSnapshot, type LeadFieldMapping, type ProviderProfile } from "./types"
 import { appointmentSnapshotsEqual } from "./lifecycle"
 import { appointmentTemplateComponents, appointmentTemplateContracts, validateAppointmentTemplate, type AppointmentTemplateKind } from "./templates"
 
@@ -21,6 +21,7 @@ export type AutomationProfile = {
     reminderMinutes: number
     timezone?: string
     includeNotes?: boolean
+    leadFieldMapping?: LeadFieldMapping[]
 }
 export type NotificationJob = {
     id: string

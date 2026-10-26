@@ -7,11 +7,12 @@ import ts from "typescript"
 
 // Results navigation is now available for every authorized relationship.
 test("portal navigation is independent of historical TEST metadata", async () => {
-    const path = resolve("app/client-portal/session/[token]/page.tsx")
+    const path = resolve("components/client-portal/ClientPortalEntry.tsx")
     const localRequire = createRequire(path)
     let isTest: unknown
     const Shell = () => null
     const dependencies: Record<string, unknown> = {
+        "server-only": {},
         "@/components/client-portal/ClientPortalShell": { ClientPortalShell: Shell },
         "@/components/onboarding/OnboardingThemeProvider": { OnboardingThemeProvider: () => null },
         "@/lib/client-portal/session": { loadClientPortalSessionByToken: async () => ({ workspace: { id: "w", name: "Agency" }, relationship: { primary_person_name: "Client", is_test: isTest }, theme: {} }) },
@@ -24,7 +25,7 @@ test("portal navigation is independent of historical TEST metadata", async () =>
     compiled._compile(ts.transpileModule(readFileSync(path, "utf8"), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText, path)
     for (const value of [undefined, null, false, "true", "false", 1, {}, true]) {
         isTest = value
-        const result = await compiled.exports.default({ params: Promise.resolve({ token: "a".repeat(64) }), searchParams: Promise.resolve({ testNavigation: "true" }) })
+        const result = await compiled.exports.ClientPortalEntry({ token: "a".repeat(64) })
         assert.equal(result.props.children.type, Shell)
         assert.equal(result.props.children.props.testNavigation, undefined)
         assert.equal(result.props.children.props.token, "a".repeat(64))

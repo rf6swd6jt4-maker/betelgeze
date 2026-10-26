@@ -1,5 +1,5 @@
 import { GhlError, ghlHttpError, readGhlJson } from "../client-portal/ghl-provider"
-import type { AppointmentSnapshot, ProviderProfile } from "./types"
+import type { AppointmentSnapshot, AppointmentLeadInformation, LeadFieldMapping, ProviderProfile } from "./types"
 
 const API = "https://services.leadconnectorhq.com"
 export const isGhlIdentifier = (value: unknown): value is string => typeof value === "string" && /^[a-zA-Z0-9_-]{1,160}$/.test(value)
@@ -32,8 +32,34 @@ function concise(value: string | null, fallback: string): string {
 }
 function meetingUrl(value: string | null): string | null {
     if (!value || value.length > 2048) return null
-    try { const url = new URL(value); return url.protocol === "https:" && !url.username && !url.password ? url.href : null } catch { return null }
+    try { const url = new URL(value); return url.protocol === "https:" && !url.username && !url.password && url.href.length <= 2048 ? url.href : null } catch { return null }
 }
+// Capture only approved contact fields, never arbitrary CRM/private objects.
+// Limits keep optional enrichment inside the existing snapshot/request budget.
+function contactLeadInformation(contact: Record<string, unknown> | null, mapping: LeadFieldMapping[] | undefined, capturedAt: string): AppointmentLeadInformation {
+    const approved = Array.isArray(mapping) && mapping.length <= 8 && mapping.every(item => item && isGhlIdentifier(item.fieldId)
+        && typeof item.label === "string" && item.label.length > 0 && item.label.length <= 200 && item.label === item.label.trim()
+        && !/[\u0000-\u001f\u007f]/.test(item.label)) && new Set(mapping.map(item => item.fieldId)).size === mapping.length ? mapping : []
+    const rawFields = contact?.customFields
+    const values = Array.isArray(rawFields) && rawFields.length <= 256 ? rawFields : []
+    const scalar = (value: unknown): string | null => typeof value === "string" ? optionalText(value, 1000)
+        : typeof value === "boolean" ? value ? "Yes" : "No" : typeof value === "number" && Number.isFinite(value) ? String(value) : null
+    const fields: AppointmentLeadInformation["fields"] = []
+    for (const field of approved) {
+        const matches = values.filter(value => value && typeof value === "object" && !Array.isArray(value) && value.id === field.fieldId)
+        if (matches.length !== 1) continue
+        const item = matches[0] as Record<string, unknown>
+        const raw = Object.hasOwn(item, "value") ? item.value : item.fieldValue
+        let value: string | null = null
+        if (Array.isArray(raw) && raw.length > 0 && raw.length <= 20) {
+            const parts = raw.map(scalar)
+            if (parts.every(part => part !== null)) value = optionalText(parts.join(", "), 1000)
+        } else value = scalar(raw)
+        if (value) fields.push({ fieldId: field.fieldId, label: field.label, value })
+    }
+    return { source: optionalText(contact?.source, 200), type: optionalText(contact?.type, 60), capturedAt, fields }
+}
+
 async function withProvider<T>(profile: ProviderProfile, fetcher: typeof fetch, work: (request: (path: string, check: "location" | "calendars" | "contacts" | "events", allowMissing?: boolean) => Promise<Record<string, unknown> | null>, location: Record<string, unknown>) => Promise<T>) {
     if (!isGhlIdentifier(profile.locationId) || !isGhlIdentifier(profile.calendarId) || !/^[\x21-\x7e]{20,4096}$/.test(profile.privateToken)) throw new GhlError("credentials")
     const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 20_000)
@@ -73,6 +99,7 @@ export async function fetchAppointment(profile: ProviderProfile, id: string, fet
         if (Date.parse(endTime) <= Date.parse(startTime)) throw new GhlError("response")
         if (event.contactId != null && event.contactId !== "" && !isGhlIdentifier(event.contactId)) throw new GhlError("response")
         const contactId = typeof event.contactId === "string" ? event.contactId : ""
+        const contactReadStartedAt = new Date().toISOString()
         const [calendarResponse, contactResponse] = await Promise.all([
             request(`/calendars/${encodeURIComponent(event.calendarId)}`, "calendars"),
             contactId ? request(`/contacts/${encodeURIComponent(contactId)}`, "contacts") : Promise.resolve(null),
@@ -108,6 +135,7 @@ export async function fetchAppointment(profile: ProviderProfile, id: string, fet
                 assignedUserId: isGhlIdentifier(event.assignedUserId) ? event.assignedUserId : null,
                 source: { createdAt: sourceCreatedAt, updatedAt: sourceUpdatedAt },
                 booking: { text: booking, state: !profile.includeNotes ? "not_enabled" : booking ? "available" : typeof event.notes === "string" && event.notes.length > 500 ? "too_large" : "not_provided" },
+                lead: contactLeadInformation(contact, profile.leadFieldMapping, contactReadStartedAt),
                 formSubmissionState: "unavailable",
             },
         }

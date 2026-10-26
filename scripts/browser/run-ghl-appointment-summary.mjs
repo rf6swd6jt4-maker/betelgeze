@@ -33,12 +33,24 @@ const { appointmentSummary } = load(resolve(root, "lib/client-portal/appointment
 const { appStartupBootstrap, appStartupStyles } = load(resolve(root, "lib/app-startup.ts"))
 const fixture = { snapshot: { id: "example-12345678", title: "Window consultation with a long appointment title", calendarName: "Consultations", contactName: "Alex Morgan", startTime: "2026-10-14T18:30:00Z", endTime: "2026-10-14T19:00:00Z", timezone: "America/New_York", status: "confirmed", contactDetails: "+1 202 555 0123; alex@example.com", meetingDetails: "Phone consultation\nCall +1 202 555 0123", bookingDetails: "Six windows.\n" + "Long booking note ".repeat(25), deleted: false,
     details: { schemaVersion: 1, contact: { phone: "+1 202 555 0123", email: "alex@example.com", company: "Example company", address: "1 Street, Dallas, TX" }, meeting: { location: "Meeting instructions ".repeat(150), joinUrl: "https://meeting.example/consultation" }, booking: { state: "available", text: "Six windows" }, source: { createdAt: "2026-10-01T09:00:00Z" } } }, observedAt: "2026-10-11T09:00:00Z", version: 3 }
+const longQuestion = "Which rooms and installation requirements should the team prepare for? " + "AdditionalQuestionContext".repeat(5)
+const longAnswer = "Please include the living room and upstairs windows.\n" + "SavedAnswerWithoutWordBreaks".repeat(30)
+const htmlQuestion = '<img src=x onerror="window.__leadHtmlExecuted=true"> Preferred appointment notes?'
+const htmlAnswer = '<script>window.__leadHtmlExecuted=true</script>\n<iframe src="https://hostile.invalid"></iframe> Keep this as plain text.'
+const missingFields = [{ fieldId: "missing", label: "Missing answer", value: "" }, { fieldId: "null", label: "Null answer", value: null }, { fieldId: "absent", label: "Absent answer" }]
+const leadFixtures = {
+    "lead-rich": { source: "facebook_lead_ads", type: "new-lead", capturedAt: "2026-10-10T12:00:00Z", fields: [{ fieldId: "rooms", label: longQuestion, value: longAnswer }, { fieldId: "notes", label: htmlQuestion, value: htmlAnswer }, ...missingFields] },
+    "lead-source": { source: "facebookLeadAds", type: null, capturedAt: null, fields: [] },
+    "lead-missing": { source: null, type: null, capturedAt: "2026-10-10T12:00:00Z", fields: missingFields },
+    "lead-empty": { source: null, type: null, capturedAt: "2026-10-10T12:00:00Z", fields: [] },
+}
+const scenarios = ["confirmed", "updated", "cancelled", "removed", "unavailable", "error", "lead-rich", "lead-source", "lead-missing", "lead-empty", "legacy"]
 const css = (await postcss([tailwind({ base: root, optimize: false })]).process(readFileSync("app/globals.css", "utf8"), { from: resolve("app/globals.css") })).css
 const server = createServer((request, response) => {
     const url = new URL(request.url, "http://127.0.0.1")
     if (url.pathname === "/style.css") { response.writeHead(200, { "Content-Type": "text/css" }); response.end(css); return }
     const scenario = url.searchParams.get("scenario")
-    const summary = appointmentSummary({ ...fixture, snapshot: { ...fixture.snapshot, status: scenario === "cancelled" ? "cancelled" : "confirmed", deleted: scenario === "removed" } })
+    const summary = appointmentSummary({ ...fixture, snapshot: { ...fixture.snapshot, status: scenario === "cancelled" ? "cancelled" : "confirmed", deleted: scenario === "removed", details: scenario === "legacy" ? undefined : { ...fixture.snapshot.details, lead: leadFixtures[scenario] } } })
     const content = ["unavailable", "error"].includes(scenario)
         ? React.createElement(ClientPortalAppointmentUnavailable, { retryable: scenario === "error" })
         : React.createElement(ClientPortalAppointmentSummary, { summary, displayName: "Example Agency", notifiedVersion: scenario === "updated" ? 2 : null })
@@ -58,22 +70,36 @@ try {
                 const page = await context.newPage(), errors = [], requests = []
                 page.on("pageerror", error => errors.push(error.message))
                 page.on("request", request => requests.push(request.url()))
-                for (const scenario of ["confirmed", "updated", "cancelled", "removed", "unavailable", "error"]) {
+                for (const scenario of scenarios) {
                     await page.goto(`${origin}/appointment/${"a".repeat(64)}?scenario=${scenario}`)
                     await page.locator("main").waitFor()
                     assert.equal(await page.evaluate(() => document.documentElement.dataset.appStartup), "client")
                     assert.equal(await page.locator("[data-app-startup-screen]").count(), 0)
                     const geometry = await page.evaluate(() => ({ width: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth }))
                     assert.ok(geometry.scroll <= geometry.width, JSON.stringify({ engine, width, scenario, geometry }))
-                    if (["confirmed", "updated", "cancelled", "removed"].includes(scenario)) {
+                    if (!["unavailable", "error"].includes(scenario)) {
                         assert.ok(await page.getByText("Alex Morgan", { exact: true }).isVisible())
                         assert.ok(await page.getByText("Oct 14, 2026, 2:30 PM EDT", { exact: true }).isVisible())
                         assert.ok(await page.getByText("Example Agency", { exact: false }).isVisible())
                         assert.equal(await page.locator("h1").evaluate(node => getComputedStyle(node).color), "rgb(15, 23, 42)")
                         assert.ok(await page.getByText(scenario === "removed" ? "Removed from calendar" : scenario === "cancelled" ? "Cancelled" : "Confirmed", { exact: true }).isVisible())
-                        assert.equal(await page.getByRole("link", { name: "+1 202 555 0123", exact: true }).getAttribute("href"), "tel:+12025550123")
-                        assert.equal(await page.getByRole("link", { name: "alex@example.com", exact: true }).getAttribute("href"), "mailto:alex@example.com")
-                        assert.equal(await page.getByRole("link", { name: "Open meeting link", exact: true }).getAttribute("rel"), "noopener noreferrer")
+                        if (scenario !== "legacy") {
+                            assert.equal(await page.getByRole("link", { name: "+1 202 555 0123", exact: true }).getAttribute("href"), "tel:+12025550123")
+                            assert.equal(await page.getByRole("link", { name: "alex@example.com", exact: true }).getAttribute("href"), "mailto:alex@example.com")
+                            assert.equal(await page.getByRole("link", { name: "Open meeting link", exact: true }).getAttribute("rel"), "noopener noreferrer")
+                        } else assert.ok(await page.getByText(fixture.snapshot.contactDetails, { exact: true }).isVisible())
+                        const lead = page.getByRole("region", { name: "Lead information", exact: true })
+                        if (["lead-rich", "lead-source"].includes(scenario)) {
+                            assert.ok(await lead.isVisible())
+                            assert.ok(await lead.getByText("Saved contact information from GHL. These are not verified original booking answers.", { exact: true }).isVisible())
+                            assert.ok(await lead.getByText(scenario === "lead-rich" ? "Facebook lead ads" : "Facebook Lead Ads", { exact: true }).isVisible())
+                            assert.equal(await lead.locator("script, img, iframe, a").count(), 0, "Saved lead information must remain plain text")
+                            if (scenario === "lead-rich") {
+                                for (const text of [longQuestion, longAnswer, htmlQuestion, htmlAnswer, "New lead", "Last saved", "Oct 10, 2026, 8:00 AM EDT"]) assert.ok(await lead.getByText(text, { exact: true }).isVisible(), text)
+                                for (const label of ["Missing answer", "Null answer", "Absent answer"]) assert.equal(await lead.getByText(label, { exact: true }).count(), 0)
+                                assert.equal(await page.evaluate(() => window.__leadHtmlExecuted), undefined)
+                            } else assert.equal(await lead.getByText("Last saved", { exact: true }).count(), 0)
+                        } else assert.equal(await lead.count(), 0, `${scenario} must not show an empty lead section`)
                         if (scenario === "updated") assert.match(await page.locator("main").innerText(), /changed since the notification/)
                         if (["cancelled", "removed"].includes(scenario)) assert.match(await page.locator("main").innerText(), /retained here/)
                     } else {
@@ -88,7 +114,7 @@ try {
                 await context.close()
             }
         } finally { await browser.close() }
-        console.log(`${engine}: 18 summary scenarios passed`)
+        console.log(`${engine}: ${scenarios.length * 3} summary scenarios passed`)
     }
 } finally {
     await new Promise(resolve => server.close(resolve))

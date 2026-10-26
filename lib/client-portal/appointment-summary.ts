@@ -1,4 +1,4 @@
-import type { AppointmentDetails } from "../ghl-appointments/types"
+import type { AppointmentDetails, AppointmentLeadInformation } from "../ghl-appointments/types"
 
 /** Only public, appointment-specific fields may leave the summary reader. */
 export type AppointmentSummary = {
@@ -18,6 +18,14 @@ export type AppointmentSummary = {
     observedAt: string | null
     version: number
     details: AppointmentDetails | null
+}
+
+/** Authorized appointment seed shared by both portal entry paths. */
+export type GhlAppointmentEntry = {
+    id: string
+    calendarId: string
+    summary: AppointmentSummary
+    notifiedVersion?: number | null
 }
 
 export function appointmentSummaryToken(value: unknown) {
@@ -42,6 +50,21 @@ function date(value: unknown) {
 function object(value: unknown): Record<string, unknown> {
     return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {}
 }
+function leadInformation(value: unknown): AppointmentLeadInformation | null {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null
+    const input = object(value)
+    const bounded = (value: unknown, limit: number) => typeof value === "string" && value.length <= limit ? value.trim() || null : null
+    const rawFields = Array.isArray(input.fields) && input.fields.length <= 8 ? input.fields : []
+    const fields: AppointmentLeadInformation["fields"] = []
+    for (const raw of rawFields) {
+        const item = object(raw), fieldId = bounded(item.fieldId, 160), label = bounded(item.label, 200), answer = bounded(item.value, 1000)
+        if (!fieldId || !/^[a-zA-Z0-9_-]+$/.test(fieldId) || !label || !answer || /[\u0000-\u001f\u007f]/.test(label)
+            || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(answer) || fields.some(field => field.fieldId === fieldId)) continue
+        fields.push({ fieldId, label, value: answer })
+    }
+    return { source: bounded(input.source, 200), type: bounded(input.type, 60), capturedAt: date(input.capturedAt), fields }
+}
+
 /** Never pass provider objects through to a public capability or portal response. */
 export function appointmentDetails(value: unknown): AppointmentDetails | null {
     const input = object(value)
@@ -58,6 +81,7 @@ export function appointmentDetails(value: unknown): AppointmentDetails | null {
         assignedUserId: nullable(input.assignedUserId, 160),
         source: { createdAt: date(source.createdAt), updatedAt: date(source.updatedAt) },
         booking: { text: nullable(booking.text, 500), state: ["available", "not_provided", "not_enabled", "too_large"].includes(String(booking.state)) ? booking.state as AppointmentDetails["booking"]["state"] : "not_provided" },
+        ...(Object.hasOwn(input, "lead") ? { lead: leadInformation(input.lead) } : {}),
         formSubmissionState: "unavailable",
     }
 }

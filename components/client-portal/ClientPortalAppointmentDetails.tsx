@@ -14,8 +14,13 @@ function RetainedText({ value, label }: { value: string; label: string }) {
     </div>
 }
 
-/** The calendar and restricted WhatsApp capability share this presentation.
- * Authorization remains with their separate readers; no portal token is inferred. */
+function readableLeadValue(value: string) {
+    const label = value.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/[_-]+/g, " ").trim()
+    return label.charAt(0).toUpperCase() + label.slice(1)
+}
+
+/** Both authorized portal entry paths share this presentation.
+ * Authorization and capability resolution remain with their server readers. */
 export function ClientPortalAppointmentDetails({ summary, notifiedVersion }: {
     summary: AppointmentSummary; notifiedVersion?: number | null
 }) {
@@ -24,6 +29,9 @@ export function ClientPortalAppointmentDetails({ summary, notifiedVersion }: {
     const phoneHref = phone && /^[+()\d .-]{3,80}$/.test(phone) ? `tel:${phone.replace(/[^+\d]/g, "")}` : null
     const email = details?.contact.email
     const emailHref = email && /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(email) && !/[?#%\r\n]/.test(email) ? `mailto:${email}` : null
+    const lead = details?.lead
+    const leadSource = lead?.source?.trim(), leadType = lead?.type?.trim()
+    const leadFields = lead?.fields.filter(field => field.label.trim() && field.value.trim()) ?? []
     return <section data-appointment-details={summary.reference}>
         <DetailPageHeader surface="light" category="Appointment" reference={summary.reference} title={summary.title} subtitle={summary.calendarName} updated={summaryDateTime(summary.observedAt, summary.timezone)} />
         {notifiedVersion && summary.version > notifiedVersion ? <p role="status" className="mt-4 text-sm text-slate-700">This appointment has changed since the notification. The latest saved details are shown below.</p> : null}
@@ -41,6 +49,16 @@ export function ClientPortalAppointmentDetails({ summary, notifiedVersion }: {
             <DetailField label="Meeting details" icon="location" stackOnMobile multiline><div className="min-w-0"><RetainedText value={details?.meeting.location || summary.meetingDetails || "Not provided"} label="meeting details" />{details?.meeting.joinUrl ? <a href={details.meeting.joinUrl} target="_blank" rel="noopener noreferrer" className="mt-2 inline-block underline underline-offset-4">Open meeting link</a> : null}</div></DetailField>
             <DetailField label="Booking details" icon="description" stackOnMobile multiline><p className="whitespace-pre-wrap break-words">{details?.booking.text || (details?.booking.state === "too_large" ? "The booking text exceeds the retained preview limit. Contact your agency for the complete original." : summary.bookingDetails) || "Not provided"}</p></DetailField>
         </DetailFields>
+        {leadSource || leadType || leadFields.length ? <section aria-label="Lead information" className="mt-6">
+            <h2 className="text-base font-semibold">Lead information</h2>
+            <DetailFields surface="light" columns={1} className="[overflow-wrap:anywhere]">
+                {leadSource ? <DetailField label="Source" icon="source" stackOnMobile multiline><p className="whitespace-pre-wrap">{readableLeadValue(leadSource)}</p></DetailField> : null}
+                {leadType ? <DetailField label="Type" icon="identity" stackOnMobile multiline><p className="whitespace-pre-wrap">{readableLeadValue(leadType)}</p></DetailField> : null}
+                {leadFields.map(field => <DetailField key={field.fieldId} label={field.label} icon="description" stackOnMobile multiline><p className="whitespace-pre-wrap">{field.value}</p></DetailField>)}
+                {lead?.capturedAt ? <DetailField label="Last saved" icon="time" stackOnMobile multiline>{summaryDateTime(lead.capturedAt, summary.timezone)}</DetailField> : null}
+            </DetailFields>
+            <p className="mt-3 text-sm leading-relaxed text-slate-600">Saved contact information from GHL. These are not verified original booking answers.</p>
+        </section> : null}
         {status.explanation ? <p className="mt-5 text-sm text-slate-700">{status.explanation}</p> : null}
         <details className="mt-6 text-sm text-slate-600">
             <summary className="cursor-pointer text-slate-800">Source and saved update</summary>

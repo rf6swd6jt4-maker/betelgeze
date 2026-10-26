@@ -146,3 +146,54 @@ test('live v3 appointment envelope works; documented legacy event remains suppor
   await assert.rejects(fetchAppointment(profile,snapshot.id,providerFixture((p,v)=>p.includes('/appointments/')?replacement:v).fetcher))
  }
 })
+
+test('approved qualification fields reuse the contact read and never change notification text', async () => {
+    const leadFieldMapping = [{ fieldId: 'owner_field', label: 'Do you own the property?' }, { fieldId: 'interest_field', label: 'What are you interested in?' }]
+    const f = providerFixture((path, value) => path.startsWith('/contacts/') ? { contact: { ...(value.contact as object), source: 'Facebook', type: 'lead', customFields: [
+        { id: 'owner_field', value: "Yes, I'm the homeowner" }, { id: 'interest_field', value: 'Motorized Roller Shades' }, { id: 'internal_field', value: 'PRIVATE CRM VALUE' },
+    ] } } : value)
+    const baseline = await fetchAppointment(profile, snapshot.id, providerFixture().fetcher)
+    const current = await fetchAppointment({ ...profile, leadFieldMapping }, snapshot.id, f.fetcher)
+    assert.equal(f.calls.length, 4, 'No metadata/contact/provider fanout is added')
+    assert.deepEqual(current?.details?.lead?.fields, leadFieldMapping.map((field, i) => ({ ...field, value: i ? 'Motorized Roller Shades' : "Yes, I'm the homeowner" })))
+    assert.equal(current?.details?.lead?.source, 'Facebook'); assert.equal(current?.details?.lead?.type, 'lead')
+    assert.ok(Date.parse(current!.details!.lead!.capturedAt!) <= Date.parse(current!.observedAt))
+    assert.equal(JSON.stringify(current).includes('PRIVATE CRM VALUE'), false)
+    assert.equal(current?.bookingDetails, baseline?.bookingDetails)
+    assert.equal(current?.contactDetails, baseline?.contactDetails)
+    assert.equal(appointmentSnapshotsEqual(baseline!, current!), true)
+    assert.deepEqual(classifyAppointmentChange(baseline!, current!).kinds, [])
+})
+
+test('lead mapping is explicit and bounded; unknown, duplicate and malformed values cannot escape', async () => {
+    const fields = [{ id: 'one', value: false }, { id: 'two', fieldValue: ['Shutters', 'Shades'] }, { id: 'three', value: 0 }, { id: 'private', value: { secret: 'PRIVATE OBJECT' } }]
+    const fixture = (raw: unknown) => providerFixture((path, value) => path.startsWith('/contacts/') ? { contact: { ...(value.contact as object), customFields: raw } } : value)
+    const mapping = ['one', 'two', 'three', 'private'].map(fieldId => ({ fieldId, label: fieldId }))
+    const result = await fetchAppointment({ ...profile, leadFieldMapping: mapping }, snapshot.id, fixture(fields).fetcher)
+    assert.deepEqual(result?.details?.lead?.fields.map(x => x.value), ['No', 'Shutters, Shades', '0'])
+    assert.equal(JSON.stringify(result).includes('PRIVATE OBJECT'), false)
+    for (const leadFieldMapping of [undefined, [], Array.from({ length: 9 }, (_, i) => ({ fieldId: String(i), label: 'Question' })), [{ fieldId: 'one', label: 'Question' }, { fieldId: 'one', label: 'Other' }], [{ fieldId: 'one', label: ' Private ' }]]) {
+        assert.deepEqual((await fetchAppointment({ ...profile, leadFieldMapping }, snapshot.id, fixture(fields).fetcher))?.details?.lead?.fields, [])
+    }
+    for (const raw of [null, {}, [{ id: 'one', value: 'x'.repeat(1001) }], [{ id: 'one', value: 'First' }, { id: 'one', value: 'Conflicting' }], [{ id: 'one', value: Array(21).fill('choice') }], Array(257).fill({ id: 'one', value: 'Too many' })]) {
+        assert.deepEqual((await fetchAppointment({ ...profile, leadFieldMapping: mapping }, snapshot.id, fixture(raw).fetcher))?.details?.lead?.fields, [])
+    }
+})
+
+
+test('maximum UTF-8 lead fields and encoded meeting URLs stay within the retained snapshot budget', async () => {
+    const leadFieldMapping = Array.from({ length: 8 }, (_, i) => ({ fieldId: `field_${i}` + 'x'.repeat(150), label: '界'.repeat(100) }))
+    assert.ok(Buffer.byteLength(JSON.stringify(leadFieldMapping)) <= 4096)
+    const meeting = 'https://example.test/' + '界'.repeat(2000)
+    const fixture = providerFixture((path, value) => path.startsWith('/contacts/') ? { contact: {
+        ...(value.contact as object), firstName: '界'.repeat(99), lastName: '界'.repeat(100), phone: '界'.repeat(80), email: '界'.repeat(254),
+        companyName: '界'.repeat(200), address1: '界'.repeat(250), city: '界'.repeat(250), state: '界'.repeat(250), postalCode: '界'.repeat(250), country: '界'.repeat(250),
+        source: '界'.repeat(200), type: '界'.repeat(60), customFields: leadFieldMapping.map(field => ({ id: field.fieldId, value: '界'.repeat(1000) })),
+    } } : path.includes('/appointments/') ? { event: { ...(value.event as object), address: meeting, notes: '界'.repeat(500), title: '界'.repeat(200) } } : value)
+    const result = await fetchAppointment({ ...profile, includeNotes: true, leadFieldMapping }, snapshot.id, fixture.fetcher)
+    assert.equal(fixture.calls.length, 4)
+    assert.equal(result?.details?.lead?.fields.length, 8)
+    assert.equal(result?.details?.meeting.joinUrl, null, 'Encoded link is bounded too')
+    assert.equal(result?.details?.meeting.location, meeting, 'Full plain meeting text remains retained')
+    assert.ok(Buffer.byteLength(JSON.stringify(result)) < 65536)
+})

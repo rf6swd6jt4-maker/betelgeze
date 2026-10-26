@@ -9,6 +9,7 @@ const settingsActions = readFileSync("app/[workspaceSlug]/settings/branding-acti
 const publicBranding = readFileSync("lib/client-branding/public-branding.ts", "utf8")
 const smsPage = readFileSync("app/onboarding/smsoptin/page.tsx", "utf8")
 const onboardingPage = readFileSync("app/onboarding/session/[token]/page.tsx", "utf8")
+const portalEntry = readFileSync("components/client-portal/ClientPortalEntry.tsx", "utf8")
 const portalPage = readFileSync("app/client-portal/session/[token]/page.tsx", "utf8")
 const onboardingLayout = readFileSync("components/onboarding/OnboardingLayout.tsx", "utf8")
 const mobileStepBar = readFileSync("components/onboarding/MobileStepBar.tsx", "utf8")
@@ -53,7 +54,7 @@ test("agency pages emit agency-owned titles, descriptions, and direct policy anc
 test("the public display name replaces workspace and platform names across client-facing messaging", () => {
     assert.match(publicBranding, /displayName: optionalText\(row\?\.agency_display_name\) \?\? workspaceName/u)
     assert.match(onboardingPage, /workspaceName=\{publicBranding\.displayName\}/u)
-    assert.match(portalPage, /workspaceName=\{publicBranding\.displayName\}/u)
+    assert.match(portalEntry, /workspaceName=\{publicBranding\.displayName\}/u)
     assert.match(smsConsent, /disclosureFor\(workspace\.branding\.displayName\)/u)
     assert.match(smsConsent, /`\$\{branding\.displayName\}: You're opted in/u)
     assert.match(outbox, /workspaceName: publicBranding\.displayName/u)

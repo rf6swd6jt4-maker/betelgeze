@@ -7,25 +7,26 @@ import {PortalSection} from "./ClientPortalUI"
 import {dateKey,monthDays,shiftMonth,validMonth,groupCalendarEvents,type GhlCalendarState} from "@/lib/client-portal/ghl-calendar"
 import {calendarNeedsRefresh,CALENDAR_READ_INTERVAL_MS} from "@/lib/client-portal/ghl-calendar-freshness"
 import dynamic from "next/dynamic"
-import type { AppointmentSummary } from "@/lib/client-portal/appointment-summary"
+import type { AppointmentSummary, GhlAppointmentEntry } from "@/lib/client-portal/appointment-summary"
 import styles from "./ClientPortalCalendar.module.css"
-const AppointmentDetails=dynamic(()=>import("./ClientPortalAppointmentDetails").then(module=>module.ClientPortalAppointmentDetails))
+const AppointmentSummaryView=dynamic(()=>import("./ClientPortalAppointmentSummary").then(module=>module.ClientPortalAppointmentSummary))
 const control="inline-flex min-h-11 items-center justify-center rounded-lg px-3 text-sm font-medium text-[var(--onboarding-primary,#1E3A5F)] hover:bg-black/5 focus-visible:outline-2 disabled:opacity-40"
-export function ClientPortalCalendar({token,active}:{token:string;active:boolean}) {
- const [state,setState]=useState<GhlCalendarState|null>(null),[month,setMonth]=useState(()=>dateKey(new Date(),"UTC").slice(0,7)),[day,setDay]=useState<string|null>(null)
- const [calendarId,setCalendarId]=useState("")
- const [appointment,setAppointment]=useState<{id:string;title:string;summary:AppointmentSummary|null;error:string|null}|null>(null)
+export function ClientPortalCalendar({token,active,initialAppointment,displayName="Your client portal",onDetailsOpenChange,onBackToCalendar}:{token:string;active:boolean;initialAppointment?:GhlAppointmentEntry;displayName?:string;onDetailsOpenChange?:(open:boolean)=>void;onBackToCalendar?:()=>void}) {
+ const [initialDay]=useState(()=>initialAppointment?dateKey(new Date(initialAppointment.summary.startTime??Date.now()),initialAppointment.summary.timezone):null)
+ const [state,setState]=useState<GhlCalendarState|null>(null),[month,setMonth]=useState(()=>initialDay?.slice(0,7)??dateKey(new Date(),"UTC").slice(0,7)),[day,setDay]=useState<string|null>(initialDay)
+ const [calendarId,setCalendarId]=useState(initialAppointment?.calendarId??"")
+ const [appointment,setAppointment]=useState<{id:string;title:string;summary:AppointmentSummary|null;error:string|null;notifiedVersion?:number|null}|null>(()=>initialAppointment?{id:initialAppointment.id,title:initialAppointment.summary.title,summary:initialAppointment.summary,error:null,notifiedVersion:initialAppointment.notifiedVersion}:null)
  const detailsOpen=Boolean(appointment)
  const detailController=useRef<AbortController|null>(null)
  const monthRef=useRef(month)
  const refreshController=useRef<AbortController|null>(null),lastQueued=useRef(new Map<string,number>())
- const selectedCalendar=useRef("")
+ const selectedCalendar=useRef(initialAppointment?.calendarId??"")
  const cacheKey=(id:string|undefined,value:string)=>`${id??"owner"}:${value}`
  const [busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null)
  const lastProviderAttempt=useRef(0)
  const controller=useRef<AbortController|null>(null),generation=useRef(0),lastRead=useRef(0),mounted=useRef(true)
  const [cache,setCache]=useState(new Map<string,GhlCalendarState>())
- const connectionRevision=useRef<string|null>(null),initialized=useRef(false)
+ const connectionRevision=useRef<string|null>(null),initialized=useRef(false),seededRange=useRef(Boolean(initialAppointment))
  const namesController=useRef<AbortController|null>(null),[namesBusy,setNamesBusy]=useState<string|null>(null),[namesError,setNamesError]=useState<string|null>(null)
  const api=`/api/client-portal/session/${token}/connections/ghl/calendar`
  // Optional name enrichment has its own request; it never holds calendar navigation busy.
@@ -64,9 +65,17 @@ export function ClientPortalCalendar({token,active}:{token:string;active:boolean
     if(request.signal.aborted)return
    }
    const query=new URLSearchParams({month:nextMonth??monthRef.current,...(nextCalendar?{calendarId:nextCalendar}:{})})
-   const response=await fetch(api+(refresh?"":`?${query}`),{method:refresh?"POST":"GET",cache:"no-store",signal:request.signal,...(refresh?{headers:{"Content-Type":"application/json"},body:JSON.stringify({month:nextMonth??monthRef.current,...(nextCalendar?{calendarId:nextCalendar}:{})})}:{})})
+   let response=await fetch(api+(refresh?"":`?${query}`),{method:refresh?"POST":"GET",cache:"no-store",signal:request.signal,...(refresh?{headers:{"Content-Type":"application/json"},body:JSON.stringify({month:nextMonth??monthRef.current,...(nextCalendar?{calendarId:nextCalendar}:{})})}:{})})
    if(refresh)lastProviderAttempt.current=Date.now()
-   const value=await response.json();if(!response.ok){if([401,403,404].includes(response.status)&&mounted.current&&version===generation.current){setState(null);setCache(new Map());setAppointment(null);detailController.current?.abort();connectionRevision.current=null;selectedCalendar.current="";setCalendarId("")}throw new Error(value.error||"The calendar could not be loaded.")}
+   let value=await response.json()
+   // A retained notification can outlive its selected calendar. Discover the
+   // current default once, through the same independently authorized GET and deadline.
+   if(!refresh&&seededRange.current&&connectionRevision.current===null&&nextCalendar&&[403,404].includes(response.status)){
+    selectedCalendar.current="";setCalendarId("")
+    response=await fetch(`${api}?${new URLSearchParams({month:nextMonth??monthRef.current})}`,{cache:"no-store",signal:request.signal})
+    value=await response.json()
+   }
+   if(!response.ok){if([401,403,404].includes(response.status)&&mounted.current&&version===generation.current){setState(null);setCache(new Map());setAppointment(null);detailController.current?.abort();connectionRevision.current=null;selectedCalendar.current="";setCalendarId("")}throw new Error(value.error||"The calendar could not be loaded.")}
    if(!mounted.current||version!==generation.current)return
    const saved=value as GhlCalendarState;setState(saved)
    const choices=saved.calendars??[]
@@ -77,7 +86,8 @@ export function ClientPortalCalendar({token,active}:{token:string;active:boolean
    if(saved.snapshot){
     const s=saved.snapshot;setCache(previous=>{const next=new Map(previous);next.set(cacheKey(s.calendarId,s.month),saved);while(next.size>6)next.delete(next.keys().next().value!);return next})
     if(refresh){monthRef.current=s.month;setMonth(s.month)}
-    else if(!initialized.current||changed){const current=dateKey(new Date(),s.timezone).slice(0,7);monthRef.current=current;setMonth(current)}
+    else if((!initialized.current||changed)&&!seededRange.current){const current=dateKey(new Date(),s.timezone).slice(0,7);monthRef.current=current;setMonth(current)}
+    seededRange.current=false
     initialized.current=true
     if(refresh)void loadNames(saved,version)
    }
@@ -85,6 +95,7 @@ export function ClientPortalCalendar({token,active}:{token:string;active:boolean
   finally{window.clearTimeout(timeout);if(controller.current===request)controller.current=null;if(mounted.current&&version===generation.current)setBusy(false)}
  },[api,loadNames])
  useEffect(()=>{mounted.current=true;const requestGeneration=generation;return()=>{mounted.current=false;requestGeneration.current++;controller.current?.abort();controller.current=null;namesController.current?.abort();refreshController.current?.abort();detailController.current?.abort()}},[])
+ useEffect(()=>{onDetailsOpenChange?.(detailsOpen)},[detailsOpen,onDetailsOpenChange])
  useEffect(()=>{const refresh=()=>{if(active&&!detailsOpen&&document.visibilityState==="visible"&&(lastRead.current===0||Date.now()-lastRead.current>=CALENDAR_READ_INTERVAL_MS))void load()};refresh();window.addEventListener("focus",refresh);document.addEventListener("visibilitychange",refresh);const timer=active&&!detailsOpen?window.setInterval(refresh,CALENDAR_READ_INTERVAL_MS):null;return()=>{if(timer!==null)window.clearInterval(timer);window.removeEventListener("focus",refresh);document.removeEventListener("visibilitychange",refresh)}},[active,detailsOpen,load])
  const [localTimezone]=useState(()=>Intl.DateTimeFormat().resolvedOptions().timeZone)
  const snapshot=state?.snapshot
@@ -92,9 +103,9 @@ export function ClientPortalCalendar({token,active}:{token:string;active:boolean
  const {displayed,timezone,events}=useMemo(()=>{
   const saved=state?.snapshot
   const displayed=cache.get(`${calendarId||"owner"}:${month}`)??(saved?.month===month&&(!calendarId||saved.calendarId===calendarId)?state:null)
-  const timezone=displayed?.snapshot?.timezone??saved?.timezone??localTimezone
+  const timezone=displayed?.snapshot?.timezone??saved?.timezone??initialAppointment?.summary.timezone??localTimezone
   return {displayed,timezone,events:groupCalendarEvents(displayed?.snapshot?.events??[],timezone,days)}
- },[cache,calendarId,month,state,localTimezone,days])
+ },[cache,calendarId,month,state,initialAppointment?.summary.timezone,localTimezone,days])
  const today=dateKey(new Date(),timezone)
  // Acceptance is durable before showing queued state; provider work stays off
  // initial navigation. One foreground range request, bounded to the six caches.
@@ -125,14 +136,17 @@ export function ClientPortalCalendar({token,active}:{token:string;active:boolean
  const selectCalendar=(id:string)=>{if(busy||id===selectedCalendar.current)return;selectedCalendar.current=id;setCalendarId(id);setDay(null);setAppointment(null);detailController.current?.abort();setError(null);namesController.current?.abort();namesController.current=null;setNamesBusy(null);setNamesError(null);generation.current++;if(calendarNeedsRefresh(cache.get(cacheKey(id,month))))void load(false,month,id)}
  const openAppointment=async(id:string,title:string)=>{
   detailController.current?.abort();const request=new AbortController();detailController.current=request
+  onDetailsOpenChange?.(true)
   setAppointment({id,title,summary:null,error:null});let timedOut=false;const timer=window.setTimeout(()=>{timedOut=true;request.abort()},30000)
   try{const response=await fetch(`${api.replace(/\/calendar$/,"")}/appointments/${encodeURIComponent(id)}?calendarId=${encodeURIComponent(calendarId)}`,{cache:"no-store",signal:request.signal});const value=await response.json();if(!response.ok){if([401,403,404].includes(response.status)&&value.code!=="not_retained"&&mounted.current&&detailController.current===request){setState(null);setCache(new Map());setAppointment(null);connectionRevision.current=null;selectedCalendar.current="";setCalendarId("");setError(value.error||"This portal is no longer available.");request.abort();return}throw new Error(value.code==="not_retained"?"Appointment details are still syncing. Please retry shortly.":value.error||"Appointment details could not be loaded.")}if(mounted.current&&!request.signal.aborted&&detailController.current===request)setAppointment({id,title,summary:value.summary,error:null})}
   catch(problem){if(mounted.current&&detailController.current===request&&(!request.signal.aborted||timedOut))setAppointment({id,title,summary:null,error:problem instanceof Error&&problem.name!=="AbortError"?problem.message:"Appointment details took too long to load. Please retry."})}
   finally{window.clearTimeout(timer);if(detailController.current===request)detailController.current=null}
  }
- return <PortalSection id="appointments" title="Your calendar" description="Appointments from your connected calendars." icon="calendar">
-  {appointment?<div className="mt-4"><button className={control} onClick={()=>{detailController.current?.abort();setAppointment(null)}}>← Back to calendar</button>{appointment.summary?<AppointmentDetails summary={appointment.summary}/>:<div className="py-4"><h3 className="font-semibold">{appointment.title}</h3>{appointment.error?<><p role="alert" className="mt-2 text-sm text-red-700">{appointment.error}</p><button className={control} onClick={()=>void openAppointment(appointment.id,appointment.title)}>Retry details</button></>:<p role="status" className="mt-2 text-sm">Loading appointment details…</p>}</div>}</div>:null}
-  <div className="mt-4" aria-busy={busy} hidden={Boolean(appointment)}>
+ const backToCalendar=()=>{detailController.current?.abort();onDetailsOpenChange?.(false);setAppointment(null);onBackToCalendar?.()}
+ return <>
+  {appointment?.summary?<AppointmentSummaryView summary={appointment.summary} notifiedVersion={appointment.notifiedVersion} displayName={displayName} embedded onBackToCalendar={backToCalendar}/>:appointment?<div className="mx-auto w-full max-w-3xl pb-6"><button type="button" className={control} onClick={backToCalendar}>← Back to calendar</button><div className="py-4"><h3 className="font-semibold">{appointment.title}</h3>{appointment.error?<><p role="alert" className="mt-2 text-sm text-red-700">{appointment.error}</p><button className={control} onClick={()=>void openAppointment(appointment.id,appointment.title)}>Retry details</button></>:<p role="status" className="mt-2 text-sm">Loading appointment details…</p>}</div></div>:null}
+  <div hidden={Boolean(appointment)}><PortalSection id="appointments" title="Your calendar" description="Appointments from your connected calendars." icon="calendar">
+  <div className="mt-4" aria-busy={busy}>
    {(state?.calendars?.length??0)>1?<div className="mb-3"><Selector surface="light" appearance="input" ariaLabel="Portal calendar" value={calendarId} disabled={busy} options={state!.calendars!.map(item=>({value:item.id,label:item.name}))} onChange={selectCalendar}/></div>:null}
    <div className="flex flex-wrap items-center justify-between gap-1 pb-2"><h3 aria-live="polite" className="text-base font-semibold">{monthLabel}</h3><div className="flex items-center"><button className={control} onClick={()=>selectMonth(today.slice(0,7))} disabled={busy}>Today</button><button data-icon-button className={`${control} h-11 w-11 px-0`} aria-label="Previous month" onClick={()=>selectMonth(shiftMonth(month,-1))} disabled={busy}><svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="m14 6-6 6 6 6"/></svg></button><button data-icon-button className={`${control} h-11 w-11 px-0`} aria-label="Next month" onClick={()=>selectMonth(shiftMonth(month,1))} disabled={busy}><svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.7"><path d="m10 6 6 6-6 6"/></svg></button></div></div>
    <div className={styles.weekdays} aria-hidden="true">{["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=><span key={d}>{d}</span>)}</div>
@@ -146,5 +160,6 @@ export function ClientPortalCalendar({token,active}:{token:string;active:boolean
    {namesBusy&&namesBusy===displayed?.snapshot?.snapshotId?<p role="status" className="mt-2 text-xs text-[var(--onboarding-muted,#475569)]">Adding contact details…</p>:namesError&&namesError===displayed?.snapshot?.snapshotId||displayed?.snapshot?.namesStatus==="unavailable"?<p className="mt-2 text-xs text-[var(--onboarding-muted,#475569)]">Contact details unavailable. Original GHL titles are shown; refresh to retry.</p>:displayed?.snapshot?.namesStatus==="pending"?<p className="mt-2 text-xs text-[var(--onboarding-muted,#475569)]">Refresh to add contact details.</p>:null}
    <div className="mt-3 flex flex-wrap items-center justify-between gap-x-2 border-t border-black/10 pt-1"><p className="text-xs text-[var(--onboarding-muted,#475569)]">{timezone.replaceAll("_"," ")}{displayed?.refreshedAt?` · Last checked with GHL ${new Intl.DateTimeFormat(undefined,{timeZone:timezone,month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}).format(new Date(displayed.refreshedAt))}`:""}</p><button className={control} disabled={busy} onClick={()=>void load(true,month)}>{busy?"Updating…":snapshot?"Refresh":"Load calendar"}</button></div>
   </div>
- </PortalSection>
+ </PortalSection></div>
+ </>
 }

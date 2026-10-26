@@ -28,5 +28,14 @@ export async function loadAppointmentSummary(token: string) {
     const displayName = typeof data.agencyDisplayName === "string" && data.agencyDisplayName.trim()
         ? data.agencyDisplayName.trim().slice(0, 200)
         : typeof data.workspaceName === "string" ? data.workspaceName.slice(0, 200) : "Client portal"
-    return { status: "ready" as const, summary, displayName }
+    // Full portal entry was explicitly authorized. Keep the mapped session token
+    // server-side until it reaches the same shell used by ordinary portal links.
+    // Older RPCs still supply readable summaries but cannot authorize this entry.
+    const portalSessionToken = appointmentSummaryToken(data.portalSessionToken) ?? undefined
+    const snapshot = data.snapshot as Record<string, unknown>
+    const identifier = (value: unknown): value is string => typeof value === "string" && /^[a-zA-Z0-9_-]{1,160}$/.test(value)
+    const initialAppointment = identifier(snapshot.id) && identifier(snapshot.calendarId)
+        ? { id: snapshot.id, calendarId: snapshot.calendarId, summary }
+        : undefined
+    return { status: "ready" as const, summary, displayName, portalSessionToken, initialAppointment }
 }

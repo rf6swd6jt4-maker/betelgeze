@@ -8,38 +8,35 @@ import { useRouter, useSearchParams } from "@/components/workspace/WorkspaceNavi
 import { useMemo, useState, useTransition, useRef, useEffect, type FormEvent } from "react"
 import { saveClientAccount, removeClientAccount, refreshClientAccount } from "@/app/[workspaceSlug]/client-connections/actions"
 import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle, ListTrailing } from "@/components/list/List"
-import { ListPrimaryAction } from "@/components/list/ListPrimaryAction"
 import { PanelTabHeader } from "@/components/panel/PanelTabHeader"
 import { CenteredDialog, Selector, Status } from "@/components/ui"
-import type { ClientConnectionAccount, ConnectionHistoryCursor } from "@/lib/client-connections"
+import type { ClientConnectionAccount } from "@/lib/client-connections"
 import { AdvertisingConnectionRows } from "./AdvertisingConnectionRows"
 
 const field = "mt-2 h-11 w-full rounded-xl border border-neutral-700 bg-black px-3 text-sm text-white outline-none focus:border-neutral-400"
 const GhlAppConnectionDialog = dynamic(() => import("./GhlAppConnectionDialog").then(module => module.GhlAppConnectionDialog))
+const AddConnectionDialog = dynamic(() => import("./AddConnectionDialog").then(module => module.AddConnectionDialog))
+const GoogleAdsConnectionDialog = dynamic(() => import("./GoogleAdsConnectionDialog").then(module => module.GoogleAdsConnectionDialog))
 const MetaReportingDialog = dynamic(() => import("./MetaReportingDialog").then(module => module.MetaReportingDialog))
 
-export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAccounts, historyCursor = null, agency, canManageAgency }: {
+export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAccounts, agency, canManageAgency }: {
     workspaceSlug: string
     accounts: ClientConnectionAccount[]
-    historyCursor?: ConnectionHistoryCursor | null
     agency: { connected: boolean; name: string | null; id: string | null }
     canManageAgency: boolean
 }) {
     const [accounts, setAccounts] = useState(initialAccounts)
-    const [nextCursor, setNextCursor] = useState(historyCursor)
     const [loadedAccounts, setLoadedAccounts] = useState(initialAccounts)
     if (loadedAccounts !== initialAccounts) {
         setLoadedAccounts(initialAccounts)
         setAccounts(initialAccounts)
-        setNextCursor(historyCursor)
     }
+    const [adding, setAdding] = useState(false)
+    const [googleAds, setGoogleAds] = useState<Pick<ClientConnectionAccount, "relationshipId" | "clientName" | "businessName"> | null>(null)
     const [editing, setEditing] = useState<ClientConnectionAccount | null>(null)
     const [metaReporting, setMetaReporting] = useState<Pick<ClientConnectionAccount, "relationshipId" | "clientName" | "businessName"> | null>(null)
     const [advertisingRefresh, setAdvertisingRefresh] = useState<{ relationshipId: string } | null>(null)
     const [removing, setRemoving] = useState<ClientConnectionAccount | null>(null)
-    const [loadingHistory, setLoadingHistory] = useState(false)
-    const historyRequest = useRef<AbortController | null>(null)
-    useEffect(() => () => historyRequest.current?.abort(), [])
     const [locationId, setLocationId] = useState("")
     const [privateToken, setPrivateToken] = useState("")
     const [calendarId, setCalendarId] = useState("")
@@ -55,7 +52,7 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAcc
     if (returnedFromHighLevel && handledReturn !== returnedFromHighLevel) {
         setHandledReturn(returnedFromHighLevel); setAppDialog({ resume: true })
     }
-    const visibleAccounts = useMemo(() => selectedRelationship ? accounts.filter(account => account.relationshipId === selectedRelationship) : accounts, [accounts, selectedRelationship])
+    const visibleAccounts = useMemo(() => accounts.filter(account => account.connected && !account.archived && !account.historyId && (!selectedRelationship || account.relationshipId === selectedRelationship)), [accounts, selectedRelationship])
     const unconnected = useMemo(() => visibleAccounts.filter((account) => !account.connected && !account.historyId && !account.archived), [visibleAccounts])
     const [connectionChoices, setConnectionChoices] = useState<ClientConnectionAccount[]>([])
     const [open, setOpen] = useState(false)
@@ -72,22 +69,6 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAcc
             for (const row of updated) byKey.set(row.historyId ?? row.relationshipId, row)
             return [...byKey.values()]
         })
-    }
-    async function loadHistory() {
-        if (!nextCursor || loadingHistory) return
-        const controller = new AbortController(); historyRequest.current = controller
-        const timeout = setTimeout(() => controller.abort(), 30_000)
-        setLoadingHistory(true); setError(null)
-        try {
-            const query = new URLSearchParams(nextCursor)
-            if (selectedRelationship) query.set("relationship", selectedRelationship)
-            const response = await fetch(`/api/workspaces/${workspaceSlug}/client-connections/history?${query}`, { signal: controller.signal })
-            const result = await response.json()
-            if (!response.ok) throw new Error(result.error)
-            if (historyRequest.current !== controller || controller.signal.aborted) return
-            mergeAccounts(result.history); setNextCursor(result.nextCursor)
-        } catch { if (historyRequest.current === controller) setError("Connection history could not be loaded. Try again.") }
-        finally { clearTimeout(timeout); if (historyRequest.current === controller) { setLoadingHistory(false); historyRequest.current = null } }
     }
     function clearCalendars() {
         calendarRequest.current?.abort(); calendarRequest.current = null
@@ -147,7 +128,7 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAcc
     }
 
     return <div className="mx-auto max-w-7xl px-4 pb-8 pt-5 text-white sm:px-6">
-        <PanelTabHeader title="Client Connections" description="HighLevel, Google Ads, Meta Ads access and Windsor reporting connections." actions={<button type="button" disabled={!unconnected.length} onClick={() => setAppDialog({ choices: unconnected })} className="h-10 rounded-lg bg-white px-4 text-sm font-semibold text-black disabled:opacity-40">Connect HighLevel</button>} />
+        <PanelTabHeader title="Client Connections" description="Manage GHL, Meta Ads and Google Ads connections for active relationships." actions={<button type="button" onClick={() => setAdding(true)} className="h-10 rounded-lg bg-white px-4 text-sm font-semibold text-black disabled:opacity-40">Add connection</button>} />
 
         <section className="mt-6 rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
             <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="font-semibold">Agency connection</h2><p className="mt-1 text-sm leading-6 text-neutral-400">Used to verify agency sub-accounts connected with a private token. App connections are authorised directly in HighLevel.</p></div><Status label={agency.connected ? "Connected" : "Not connected"} tone={agency.connected ? "green" : "grey"} /></div>
@@ -163,23 +144,29 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAcc
                 const title = account.businessName ? `${account.clientName} – ${account.businessName}` : account.clientName
                 const status = account.historyId ? { label: "Retired", tone: "red" as const } : account.connected ? { label: "Active", tone: account.error ? "yellow" as const : "green" as const } : { label: "Not configured", tone: "yellow" as const }
                 return <ListItem key={account.historyId ?? account.relationshipId}>
-                    <ListPrimaryRow><ListTitle className="flex-1">{title}</ListTitle><Status label={status.label} tone={status.tone} /></ListPrimaryRow>
+                    <ListPrimaryRow><ListTitle className="flex-1">GHL · {title}</ListTitle><Status label={status.label} tone={status.tone} /></ListPrimaryRow>
                     <ListSecondaryRow>
-                        <span className="min-w-0 truncate text-neutral-400">HighLevel · {account.locationName ?? "No account linked"}{account.archived ? " · Archived relationship" : ""}{account.retiredAt ? ` · Retired ${new Date(account.retiredAt).toLocaleDateString()}` : ""}</span>
+                        <span className="min-w-0 truncate text-neutral-400">{account.locationName ?? "HighLevel account"}{account.archived ? " · Archived relationship" : ""}{account.retiredAt ? ` · Retired ${new Date(account.retiredAt).toLocaleDateString()}` : ""}</span>
                         <ListTrailing>
-                            {!account.historyId && !account.archived ? <span className="-my-2 flex"><ListPrimaryAction label="Meta Ads" accessibleLabel={`Manage Meta Ads reporting for ${title}`} onClick={() => setMetaReporting(account)} /></span> : null}
                             <button type="button" aria-label={`Actions for ${title}${account.historyId ? " retired connection" : ""}`} disabled={pending} onClick={() => account.historyId || account.archived ? edit(account) : setAppDialog({ account })} className="-my-3 flex h-11 w-11 shrink-0 items-center justify-center text-neutral-300 hover:text-white disabled:opacity-40"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><circle cx="4" cy="10" r="1.5" /><circle cx="10" cy="10" r="1.5" /><circle cx="16" cy="10" r="1.5" /></svg></button>
                         </ListTrailing>
                     </ListSecondaryRow>
                 </ListItem>
-            }) : <div className="p-6"><p className="font-semibold">No available HighLevel connections.</p><p className="mt-2 text-sm text-neutral-400">{selectedRelationship ? "It may no longer be eligible or available to your account." : "Clients in onboarding or retention can connect HighLevel without purchasing Appointment Setting."}</p></div>}
-            <AdvertisingConnectionRows key={`${workspaceSlug}:${selectedRelationship ?? "all"}`} workspaceSlug={workspaceSlug} relationshipId={selectedRelationship ?? undefined} refresh={advertisingRefresh} onManageWindsor={setMetaReporting} />
+            }) : null}
+            <AdvertisingConnectionRows key={`${workspaceSlug}:${selectedRelationship ?? "all"}`} workspaceSlug={workspaceSlug} relationshipId={selectedRelationship ?? undefined} refresh={advertisingRefresh} onManageWindsor={setMetaReporting} onManageGoogle={setGoogleAds} hasGhlConnections={visibleAccounts.length > 0} />
         </List>
+
+        {adding ? <AddConnectionDialog workspaceSlug={workspaceSlug} onClose={() => setAdding(false)} onChoose={(provider, account) => {
+            setAdding(false)
+            if (provider === "ghl") setAppDialog({ account, choices: [account] })
+            else if (provider === "meta_ads") setMetaReporting(account)
+            else setGoogleAds(account)
+        }} /> : null}
+        {googleAds ? <GoogleAdsConnectionDialog key={`${workspaceSlug}:${googleAds.relationshipId}`} workspaceSlug={workspaceSlug} relationshipId={googleAds.relationshipId} clientName={googleAds.businessName ? `${googleAds.clientName} – ${googleAds.businessName}` : googleAds.clientName} onClose={() => setGoogleAds(null)} onSaved={() => setAdvertisingRefresh({ relationshipId: googleAds.relationshipId })} /> : null}
 
         {metaReporting ? <MetaReportingDialog key={`${workspaceSlug}:${metaReporting.relationshipId}`} workspaceSlug={workspaceSlug} relationshipId={metaReporting.relationshipId} clientName={metaReporting.businessName ? `${metaReporting.clientName} – ${metaReporting.businessName}` : metaReporting.clientName} onClose={() => setMetaReporting(null)} onSaved={() => setAdvertisingRefresh({ relationshipId: metaReporting.relationshipId })} /> : null}
 
-        {appDialog ? <GhlAppConnectionDialog key={appDialog.resume ? "resume" : appDialog.account?.relationshipId ?? "new"} workspaceSlug={workspaceSlug} accounts={accounts.filter(account => !account.historyId && !account.archived)} initialAccount={appDialog.account} initialChoices={appDialog.choices} resume={appDialog.resume} onClose={() => setAppDialog(null)} onManual={account => { setAppDialog(null); edit(account) }} onSaved={() => router.refresh()} /> : null}
-        {nextCursor ? <button type="button" disabled={loadingHistory} onClick={() => void loadHistory()} className="mt-4 min-h-11 px-3 text-sm underline underline-offset-4 disabled:opacity-40">{loadingHistory ? "Loading history…" : "Load older connections"}</button> : null}
+        {appDialog ? <GhlAppConnectionDialog key={appDialog.resume ? "resume" : appDialog.account?.relationshipId ?? "new"} workspaceSlug={workspaceSlug} accounts={[...new Map([...accounts.filter(account => !account.historyId && !account.archived), ...(appDialog.account ? [appDialog.account] : [])].map(account => [account.relationshipId, account])).values()]} initialAccount={appDialog.account} initialChoices={appDialog.choices} resume={appDialog.resume} onClose={() => setAppDialog(null)} onManual={account => { setAppDialog(null); edit(account) }} onSaved={() => router.refresh()} /> : null}
         {open && editing?.historyId ? <CenteredDialog title="Retired connection" onClose={closeEditor}><p className="text-sm leading-6 text-neutral-300">{editing.locationName ?? editing.locationId} · {editing.clientName}</p><p className="mt-3 text-sm text-neutral-400">Retired {editing.retiredAt ? new Date(editing.retiredAt).toLocaleString() : ""}. This connection no longer reserves the location or provides portal access.</p><p className="mt-3 text-sm text-neutral-400">Calendar: {editing.calendarName ?? "Not selected"}</p></CenteredDialog> : null}
         {open && !editing?.historyId ? <CenteredDialog title="Manual connection" busy={pending} onClose={closeEditor}><form onSubmit={submit}>{editing?.archived ? <p className="mb-4 text-sm text-neutral-400">This relationship is archived. Retire its connection to release the location for another relationship.</p> : null}<fieldset disabled={pending || editing?.archived} className="space-y-4">
             <label className="block text-sm text-neutral-300">Client<Selector name="relationshipId" required appearance="input" ariaLabel="Client account" value={relationshipId} onChange={(value) => { clearCalendars(); setRelationshipId(value) }} options={connectionChoices.map((account) => ({ value: account.relationshipId, label: account.businessName ? `${account.clientName} – ${account.businessName}` : account.clientName }))} /></label>

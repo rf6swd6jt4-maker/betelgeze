@@ -6,7 +6,7 @@ import { ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle, ListTrailing } f
 import { CenteredDialog, Status } from "@/components/ui"
 import type { AdvertisingConnectionCursor, AdvertisingConnectionsPage, ClientAdvertisingConnection } from "@/lib/client-advertising-connections"
 
-const providerNames = { google_ads: "Google Ads", meta_ads: "Meta Ads access", windsor: "Meta Ads reporting · Windsor" }
+const providerNames = { google_ads: "Google Ads", meta_ads: "Meta Ads", windsor: "Meta Ads" }
 const states = {
     connected: { label: "Connected", tone: "green" as const },
     pending: { label: "Pending", tone: "yellow" as const },
@@ -17,7 +17,7 @@ const key = (account: ClientAdvertisingConnection) => `${account.relationshipId}
 
 // Mounted separately from HighLevel so provider-summary reads cannot hold up
 // its existing list, editor or mutations. No provider calls or background poll.
-export function AdvertisingConnectionRows({ workspaceSlug, relationshipId, refresh, onManageWindsor }: { workspaceSlug: string; relationshipId?: string; refresh: { relationshipId: string } | null; onManageWindsor: (account: ClientAdvertisingConnection) => void }) {
+export function AdvertisingConnectionRows({ workspaceSlug, relationshipId, refresh, onManageWindsor, onManageGoogle, hasGhlConnections }: { workspaceSlug: string; relationshipId?: string; refresh: { relationshipId: string } | null; onManageWindsor: (account: ClientAdvertisingConnection) => void; onManageGoogle: (account: ClientAdvertisingConnection) => void; hasGhlConnections: boolean }) {
     const [accounts, setAccounts] = useState<ClientAdvertisingConnection[]>([])
     const [cursor, setCursor] = useState<AdvertisingConnectionCursor | null>(null)
     const [loading, setLoading] = useState(true)
@@ -47,7 +47,7 @@ export function AdvertisingConnectionRows({ workspaceSlug, relationshipId, refre
                 setError(null)
                 setAccounts(current => {
                     const retained = refreshRelationship ? current.filter(row => row.relationshipId !== refreshRelationship) : after ? current : []
-                    return [...new Map([...retained, ...result.accounts].map(row => [key(row), row])).values()]
+                    return [...new Map([...retained, ...result.accounts.filter(row => !row.archived)].map(row => [key(row), row])).values()]
                 })
                 if (!refreshRelationship) { setCursor(result.nextCursor); initialized.current = true }
             }).catch(cause => {
@@ -75,12 +75,13 @@ export function AdvertisingConnectionRows({ workspaceSlug, relationshipId, refre
             const title = account.businessName ? `${account.clientName} – ${account.businessName}` : account.clientName
             const provider = providerNames[account.provider], status = states[account.status]
             return <ListItem key={key(account)}>
-                <ListPrimaryRow><ListTitle className="flex-1">{title}</ListTitle><Status {...status} /></ListPrimaryRow>
-                <ListSecondaryRow><span className="min-w-0 truncate text-neutral-400">{provider}{account.accountName ? ` · ${account.accountName}` : ""}{account.archived ? " · Archived relationship" : ""}</span><ListTrailing>
-                    <button type="button" aria-label={`${provider} details for ${title}`} onClick={() => account.provider === "windsor" && !account.archived ? onManageWindsor(account) : setSelectedKey(key(account))} className="-my-3 flex h-11 w-11 shrink-0 items-center justify-center text-neutral-300 hover:text-white"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><circle cx="4" cy="10" r="1.5" /><circle cx="10" cy="10" r="1.5" /><circle cx="16" cy="10" r="1.5" /></svg></button>
+                <ListPrimaryRow><ListTitle className="flex-1">{provider} · {title}</ListTitle><Status {...status} /></ListPrimaryRow>
+                <ListSecondaryRow><span className="min-w-0 truncate text-neutral-400">{account.accountName ?? "Advertising account"}{account.provider === "windsor" ? " · Windsor reporting" : account.provider === "meta_ads" ? " · Account access" : ""}{account.archived ? " · Archived relationship" : ""}</span><ListTrailing>
+                    <button type="button" aria-label={`${provider}${account.provider === "windsor" ? " reporting" : account.provider === "meta_ads" ? " access" : ""} details for ${title}`} onClick={() => account.provider === "windsor" && !account.archived ? onManageWindsor(account) : setSelectedKey(key(account))} className="-my-3 flex h-11 w-11 shrink-0 items-center justify-center text-neutral-300 hover:text-white"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><circle cx="4" cy="10" r="1.5" /><circle cx="10" cy="10" r="1.5" /><circle cx="16" cy="10" r="1.5" /></svg></button>
                 </ListTrailing></ListSecondaryRow>
             </ListItem>
         })}
+        {!loading && !error && !accounts.length && !hasGhlConnections ? <p className="p-6 text-sm text-neutral-400">No connections yet. Add a connection to get started.</p> : null}
         {loading ? <p role="status" className="px-4 py-3 text-sm text-neutral-400">Loading advertising connections…</p> : null}
         {error ? <div className="px-4 py-3"><p role="alert" className="text-sm text-red-200">{error}</p><button type="button" disabled={loading} onClick={() => reload(retry.current.after, retry.current.relationshipId)} className="min-h-11 text-sm underline underline-offset-4 disabled:opacity-40">Retry advertising connections</button></div> : null}
         {cursor && !error ? <button type="button" disabled={loading} onClick={() => reload(cursor)} className="min-h-11 px-4 text-sm underline underline-offset-4 disabled:opacity-40">Load more advertising connections</button> : null}
@@ -93,7 +94,8 @@ export function AdvertisingConnectionRows({ workspaceSlug, relationshipId, refre
                 {selected.connectedAt ? <DetailField label="Connected" icon="time">{new Date(selected.connectedAt).toLocaleString()}</DetailField> : null}
                 {selected.verifiedAt ? <DetailField label="Last verified" icon="time">{new Date(selected.verifiedAt).toLocaleString()}</DetailField> : null}
             </DetailFields>
-            <p className="mt-4 text-sm leading-6 text-neutral-400">{selected.status === "pending" ? "Authorization has started. Finish the connection in client onboarding and return there to confirm it." : "This is the saved authorization status. It does not confirm that a report can be loaded now."}</p>
+            {selected.provider === "google_ads" ? <button type="button" onClick={() => { setSelectedKey(null); onManageGoogle(selected) }} className="mt-4 min-h-11 rounded-lg bg-white px-4 text-sm font-semibold text-black">Manage connection</button> : null}
+            <p className="mt-4 text-sm leading-6 text-neutral-400">{selected.status === "pending" ? "Authorization has started. Complete the provider’s approval and check the connection again." : "This is the saved authorization status. It does not confirm that a report can be loaded now."}</p>
             <button type="button" disabled={loading} onClick={() => reload(undefined, selected.relationshipId)} className="mt-3 min-h-11 text-sm underline underline-offset-4 disabled:opacity-40">{loading ? "Refreshing…" : "Refresh saved status"}</button>
             {error ? <p role="alert" className="mt-2 text-sm text-red-200">{error}</p> : null}
         </CenteredDialog> : null}

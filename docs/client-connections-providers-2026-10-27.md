@@ -1,5 +1,7 @@
 # Client Connections providers and Windsor return recovery
 
+Historical implementation report for the release preceding the provider-first Add connection revision. Statements below describe the state at that report’s preparation; its outstanding deployment checklist and validation results do not certify the later revision. See `client-connections-add-flow-2026-10-27.md` for the current work and release hold.
+
 Candidate base: `15aa5c1a4961bf04b090457aa1176c27edab3e45`. Work is isolated on `codex/client-connections-providers`. This report records implementation and local verification, not deployment or live account correction.
 
 ## Findings on 27 October 2026

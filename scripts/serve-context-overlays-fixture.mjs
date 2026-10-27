@@ -41,7 +41,9 @@ createRoot(document.getElementById("root")).render(<Fixture/>);`)
     const html = '<!doctype html><html data-workspace-viewport-locked="true"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style.css"></head><body class="bg-neutral-950 text-white"><div id="root"></div><script src="/bundle.js"></script></body></html>'
     const server = createServer((request, response) => {
         const path = new URL(request.url, "http://127.0.0.1").pathname
-        response.writeHead(200, { "Content-Type": path === "/bundle.js" ? "text/javascript" : path === "/style.css" ? "text/css" : "text/html", "Cache-Control": "no-store", "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'none'; img-src 'self' data:" })
+        if (path.endsWith("/client-connections/relationships")) { response.writeHead(200, { "Content-Type": "application/json" }); response.end(JSON.stringify({ accounts: [{relationshipId:"client-a",clientName:"Alex",businessName:"A",connected:false},{relationshipId:"client-b",clientName:"Blair",businessName:"B",connected:false}], nextCursor:null })); return }
+        if (path.endsWith("/client-connections/advertising")) { response.writeHead(200, { "Content-Type": "application/json" }); response.end('{"accounts":[],"nextCursor":null}'); return }
+        response.writeHead(200, { "Content-Type": path === "/bundle.js" ? "text/javascript" : path === "/style.css" ? "text/css" : "text/html", "Cache-Control": "no-store", "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:" })
         response.end(path === "/bundle.js" ? bundle : path === "/style.css" ? css : html)
     })
     server.listen(0, "127.0.0.1", () => console.log(`http://127.0.0.1:${server.address().port}/`))

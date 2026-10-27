@@ -35,9 +35,52 @@ test("panel denial and permission loss use 403 so the mounted list clears privat
     const denied = routeFixture({ denied: true }); assert.equal((await denied.get()).status, 403); assert.equal(denied.calls.length, 0)
     const revoked = routeFixture({ readFailure: true }); assert.equal((await revoked.get()).status, 403)
 })
-test("the summary server makes one bounded RPC and never selects credential columns", async () => {
-    const calls: unknown[] = []
-    const server = compile<{ readClientAdvertisingConnections(workspace: string, actor: string): Promise<unknown> }>("lib/client-advertising-connections.ts", { "server-only": {}, "@/lib/supabase/admin": { supabaseAdmin: { rpc: async (...args: unknown[]) => { calls.push(args); return { data: { accounts: [], nextCursor: null }, error: null } } } } })
-    await server.readClientAdvertisingConnections("workspace", "actor")
-    assert.deepEqual(calls, [["read_client_advertising_connections", { p_workspace_id: "workspace", p_user_id: "actor", p_relationship_id: null, p_after_relationship: null, p_after_provider: null }]])
+type SummaryServer = {
+    AdvertisingConnectionAccessError: new (...args: unknown[]) => Error
+    readClientAdvertisingConnections(workspace: string, actor: string, relationship?: string, cursor?: { relationshipId: string; provider: string }): Promise<{ accounts: { relationshipId: string; provider: string; archived: boolean; clientName: string; businessName: string | null }[]; nextCursor: { relationshipId: string; provider: string } | null }>
+}
+function summaryFixture(data: unknown, error: unknown = null) {
+    const calls: unknown[][] = []
+    const server = compile<SummaryServer>("lib/client-advertising-connections.ts", { "server-only": {}, "@/lib/supabase/admin": { supabaseAdmin: { rpc: async (...args: unknown[]) => { calls.push(args); return { data, error } } } } })
+    return { server, calls, read: (relationship?: string, cursor?: { relationshipId: string; provider: string }) => server.readClientAdvertisingConnections("workspace", "actor", relationship, cursor) }
+}
+const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`
+const tuple = (index = 0): unknown[] => [id(100 + Math.floor(index / 3)), ["google_ads", "meta_ads", "windsor"][index % 3], `O'Brien \"North\" İstanbul 😀`, null, "connected", "account", "Account", "2026-10-27T12:00:00+00:00", null]
+
+test("the summary server uses one private current RPC with the trusted actor and paired cursor", async () => {
+    const f = summaryFixture([]), cursor = { relationshipId: uuid, provider: "windsor" }
+    assert.deepEqual(await f.read(uuid, cursor), { accounts: [], nextCursor: null })
+    assert.deepEqual(f.calls, [["read_current_client_advertising_connections", { p_workspace_id: "workspace", p_user_id: "actor", p_relationship_id: uuid, p_after_relationship: uuid, p_after_provider: "windsor" }]])
+})
+test("compact metadata tuples decode to the public objects without private tuple or credential fields", async () => {
+    const f = summaryFixture([tuple()]), page = await f.read()
+    assert.deepEqual(page, { accounts: [{ relationshipId: id(100), provider: "google_ads", clientName: `O'Brien \"North\" İstanbul 😀`, businessName: null, archived: false, status: "connected", accountId: "account", accountName: "Account", connectedAt: "2026-10-27T12:00:00+00:00", verifiedAt: null }], nextCursor: null })
+})
+test("only a 51st row creates the cursor, using visible row 50 even within one relationship", async () => {
+    const rows = Array.from({ length: 51 }, (_, index) => tuple(index))
+    const page = await summaryFixture(rows).read()
+    assert.equal(page.accounts.length, 50)
+    assert.deepEqual(page.nextCursor, { relationshipId: id(116), provider: "meta_ads" })
+    assert.equal((await summaryFixture(rows.slice(0, 50)).read()).nextCursor, null)
+    const continued = await summaryFixture(rows.slice(50)).read(undefined, page.nextCursor!)
+    assert.deepEqual(continued.accounts.map(row => [row.relationshipId, row.provider]), [[id(116), "windsor"]])
+})
+test("access loss stays typed while transport, failure envelopes, and malformed metadata fail closed", async () => {
+    const denied = summaryFixture({ failure: "access" })
+    await assert.rejects(denied.read(), denied.server.AdvertisingConnectionAccessError)
+    for (const data of [null, {}, { accounts: [], nextCursor: null }, { failure: "cursor" }, Array.from({ length: 52 }, (_, index) => tuple(index)), [tuple().slice(0, 8)], [[...tuple(), "extra"]]]) {
+        await assert.rejects(summaryFixture(data).read(), /could not be loaded/)
+    }
+    for (const [index, value] of [[0, "invalid"], [1, "unknown"], [2, null], [3, 7], [4, "unknown"], [5, {}], [6, []], [7, "not-a-date"], [8, 1]] as const) {
+        const malformed = tuple(); malformed[index] = value
+        await assert.rejects(summaryFixture([malformed]).read(), /could not be loaded/)
+    }
+    const rows = Array.from({ length: 51 }, (_, index) => tuple(index)); rows[50][4] = "invalid"
+    await assert.rejects(summaryFixture(rows).read(), /could not be loaded/, "Lookahead is validated too")
+    await assert.rejects(summaryFixture([], { message: "transport" }).read(), /could not be loaded/)
+})
+test("duplicate, out-of-order, stale-cursor and wrong-scope rows cannot create an unsafe continuation", async () => {
+    for (const rows of [[tuple(1), tuple(0)], [tuple(0), tuple(0)]]) await assert.rejects(summaryFixture(rows).read(), /could not be loaded/)
+    await assert.rejects(summaryFixture([tuple(0)]).read(id(200)), /could not be loaded/)
+    await assert.rejects(summaryFixture([tuple(0)]).read(undefined, { relationshipId: id(100), provider: "google_ads" }), /could not be loaded/)
 })

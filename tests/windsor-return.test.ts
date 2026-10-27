@@ -3,11 +3,13 @@ import test from "node:test"
 import { createWindsorReturnMonitor } from "../lib/onboarding/windsor-return.ts"
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 10))
-test("close/focus signals coalesce and propagation retries stop at success", async () => {
+test("close/focus signals coalesce and propagation retries stop at success", { timeout: 2_000 }, async () => {
     let calls = 0, settled = 0
-    const monitor = createWindsorReturnMonitor({ visible: () => true, delays: [1, 1], settled: () => { settled++ }, verify: async () => { calls++; await tick(); return calls === 1 ? "retry" : "complete" } })
+    let complete!: () => void
+    const completed = new Promise<void>(resolve => { complete = resolve })
+    const monitor = createWindsorReturnMonitor({ visible: () => true, delays: [1, 1], settled: () => { settled++; complete() }, verify: async () => { calls++; await tick(); return calls === 1 ? "retry" : "complete" } })
     monitor.start(); monitor.returned(); monitor.returned(); monitor.returned()
-    await new Promise((resolve) => setTimeout(resolve, 60))
+    await completed
     assert.equal(calls, 2); assert.equal(settled, 1)
     monitor.returned(); await tick(); assert.equal(calls, 2)
     monitor.dispose()

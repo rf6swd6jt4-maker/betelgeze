@@ -50,6 +50,14 @@ export async function listClientConnections(workspaceId: string, userId: string,
     const data = await managementCall(workspaceId, userId, "list", relationshipId ? { p_relationship_id: relationshipId } : {})
     return parseAccounts(data)
 }
+export async function readCurrentClientConnections(workspaceId: string, userId: string, relationshipId?: string): Promise<ClientConnectionAccount[]> {
+    const { data, error } = await supabaseAdmin.rpc("read_current_client_ghl_connections", {
+        p_workspace_id: workspaceId, p_user_id: userId, p_relationship_id: relationshipId ?? null,
+    })
+    if (error || !data || typeof data !== "object") throw new Error("Client connections could not be loaded.")
+    if (data.failure) throw new Error(failureMessages[data.failure] ?? failureMessages.unavailable)
+    return parseAccounts(data.accounts)
+}
 export type ConnectionHistoryCursor = { before: string; id: string }
 export async function readClientConnections(workspaceId: string, userId: string, relationshipId?: string, cursor?: ConnectionHistoryCursor) {
     const { data, error } = await supabaseAdmin.rpc("read_client_ghl_connections", {

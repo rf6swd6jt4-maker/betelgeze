@@ -34,3 +34,5 @@ export { CollapsedPillLinks } from "./CollapsedPillLinks"
 export { AssetGallery, AssetGalleryCard, AddAssetGalleryCard } from "./AssetGallery"
 
 export { SideDrawer } from "./SideDrawer"
+
+export { ChoiceCards, ChoiceCard } from "./ChoiceCards"

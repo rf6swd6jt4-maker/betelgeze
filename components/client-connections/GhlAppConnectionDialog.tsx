@@ -35,17 +35,18 @@ export function GhlAppConnectionDialog({ workspaceSlug, accounts, initialAccount
     const recoveryRequest = useRef<Promise<void> | null>(null)
     const returnChannel = useRef<BroadcastChannel | null>(null)
     const authorizationWindow = useRef<Window | null>(null)
-    const account = accounts.find(item => item.relationshipId === relationshipId)
+    const [recoveredAccount, setRecoveredAccount] = useState<ClientConnectionAccount | null>(null)
+    const account = recoveredAccount?.relationshipId === relationshipId ? recoveredAccount : accounts.find(item => item.relationshipId === relationshipId)
     const endpoint = `/api/workspaces/${encodeURIComponent(workspaceSlug)}/client-connections/oauth`
 
-    async function request<T>(body?: Record<string, unknown>, query = ""): Promise<T> {
+    async function request<T>(body?: Record<string, unknown>, query = "", requestEndpoint = endpoint): Promise<T> {
         if (currentRequest.current) throw new Error("A connection step is already running.")
         const controller = new AbortController(); currentRequest.current = controller
         let timedOut = false
         const timeout = setTimeout(() => { timedOut = true; controller.abort() }, 100_000)
         setBusy(true); setError(null)
         try {
-            const response = await fetch(endpoint + query, { method: body ? "POST" : "GET", cache: "no-store", signal: controller.signal,
+            const response = await fetch(requestEndpoint + query, { method: body ? "POST" : "GET", cache: "no-store", signal: controller.signal,
                 ...(body ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}) })
             const result = await response.json()
             if (!response.ok) throw new Error(result.error ?? "This connection step could not be completed.")
@@ -72,7 +73,12 @@ export function GhlAppConnectionDialog({ workspaceSlug, accounts, initialAccount
         const pending = (async () => {
             try {
                 const session = await request<Session>()
-                const selected = accounts.find(item => item.relationshipId === session.relationshipId)
+                let selected = accounts.find(item => item.relationshipId === session.relationshipId)
+                if (!selected) {
+                    const choices = await request<{ accounts: ClientConnectionAccount[] }>(undefined, `?provider=ghl&relationship=${encodeURIComponent(session.relationshipId)}`, `/api/workspaces/${encodeURIComponent(workspaceSlug)}/client-connections/relationships`)
+                    selected = choices.accounts.find(item => item.relationshipId === session.relationshipId && !item.archived && !item.historyId)
+                    if (selected) setRecoveredAccount(selected)
+                }
                 if (!selected) throw new Error("This client is no longer available. Close this window and reload Client Connections.")
                 setRelationshipId(session.relationshipId); setRevision(selected.revision ?? null)
                 if (["authorizing", "exchanging"].includes(session.phase)) {

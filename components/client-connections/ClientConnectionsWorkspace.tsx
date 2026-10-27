@@ -12,6 +12,7 @@ import { ListPrimaryAction } from "@/components/list/ListPrimaryAction"
 import { PanelTabHeader } from "@/components/panel/PanelTabHeader"
 import { CenteredDialog, Selector, Status } from "@/components/ui"
 import type { ClientConnectionAccount, ConnectionHistoryCursor } from "@/lib/client-connections"
+import { AdvertisingConnectionRows } from "./AdvertisingConnectionRows"
 
 const field = "mt-2 h-11 w-full rounded-xl border border-neutral-700 bg-black px-3 text-sm text-white outline-none focus:border-neutral-400"
 const GhlAppConnectionDialog = dynamic(() => import("./GhlAppConnectionDialog").then(module => module.GhlAppConnectionDialog))
@@ -33,7 +34,8 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAcc
         setNextCursor(historyCursor)
     }
     const [editing, setEditing] = useState<ClientConnectionAccount | null>(null)
-    const [metaReporting, setMetaReporting] = useState<ClientConnectionAccount | null>(null)
+    const [metaReporting, setMetaReporting] = useState<Pick<ClientConnectionAccount, "relationshipId" | "clientName" | "businessName"> | null>(null)
+    const [advertisingRefresh, setAdvertisingRefresh] = useState<{ relationshipId: string } | null>(null)
     const [removing, setRemoving] = useState<ClientConnectionAccount | null>(null)
     const [loadingHistory, setLoadingHistory] = useState(false)
     const historyRequest = useRef<AbortController | null>(null)
@@ -145,7 +147,7 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAcc
     }
 
     return <div className="mx-auto max-w-7xl px-4 pb-8 pt-5 text-white sm:px-6">
-        <PanelTabHeader title="Client Connections" description="Manage HighLevel calendars, appointment notifications and Meta Ads reporting." actions={<button type="button" disabled={!unconnected.length} onClick={() => setAppDialog({ choices: unconnected })} className="h-10 rounded-lg bg-white px-4 text-sm font-semibold text-black disabled:opacity-40">Connect HighLevel</button>} />
+        <PanelTabHeader title="Client Connections" description="HighLevel, Google Ads, Meta Ads access and Windsor reporting connections." actions={<button type="button" disabled={!unconnected.length} onClick={() => setAppDialog({ choices: unconnected })} className="h-10 rounded-lg bg-white px-4 text-sm font-semibold text-black disabled:opacity-40">Connect HighLevel</button>} />
 
         <section className="mt-6 rounded-2xl border border-neutral-800 bg-neutral-900 p-5">
             <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="font-semibold">Agency connection</h2><p className="mt-1 text-sm leading-6 text-neutral-400">Used to verify agency sub-accounts connected with a private token. App connections are authorised directly in HighLevel.</p></div><Status label={agency.connected ? "Connected" : "Not connected"} tone={agency.connected ? "green" : "grey"} /></div>
@@ -156,24 +158,25 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAcc
 
         {error ? <p role="alert" className="mt-4 rounded-xl border border-red-900/70 bg-red-950/20 p-3 text-sm text-red-200">{error}</p> : null}
         {selectedRelationship ? <div className="mt-5 flex items-center justify-between gap-3 text-sm"><span className="text-neutral-400">Selected relationship</span><Link href={`/${workspaceSlug}/client-connections`} className="py-2 text-neutral-200 underline underline-offset-4">Show all clients</Link></div> : null}
-        <List ariaLabel="Client accounts">
+        <List ariaLabel="Client connections">
             {visibleAccounts.length ? visibleAccounts.map((account) => {
                 const title = account.businessName ? `${account.clientName} – ${account.businessName}` : account.clientName
                 const status = account.historyId ? { label: "Retired", tone: "red" as const } : account.connected ? { label: "Active", tone: account.error ? "yellow" as const : "green" as const } : { label: "Not configured", tone: "yellow" as const }
                 return <ListItem key={account.historyId ?? account.relationshipId}>
                     <ListPrimaryRow><ListTitle className="flex-1">{title}</ListTitle><Status label={status.label} tone={status.tone} /></ListPrimaryRow>
                     <ListSecondaryRow>
-                        <span className="min-w-0 truncate text-neutral-400">{account.locationName ?? "No HighLevel account linked"}{account.archived ? " · Archived relationship" : ""}{account.retiredAt ? ` · Retired ${new Date(account.retiredAt).toLocaleDateString()}` : ""}</span>
+                        <span className="min-w-0 truncate text-neutral-400">HighLevel · {account.locationName ?? "No account linked"}{account.archived ? " · Archived relationship" : ""}{account.retiredAt ? ` · Retired ${new Date(account.retiredAt).toLocaleDateString()}` : ""}</span>
                         <ListTrailing>
                             {!account.historyId && !account.archived ? <span className="-my-2 flex"><ListPrimaryAction label="Meta Ads" accessibleLabel={`Manage Meta Ads reporting for ${title}`} onClick={() => setMetaReporting(account)} /></span> : null}
                             <button type="button" aria-label={`Actions for ${title}${account.historyId ? " retired connection" : ""}`} disabled={pending} onClick={() => account.historyId || account.archived ? edit(account) : setAppDialog({ account })} className="-my-3 flex h-11 w-11 shrink-0 items-center justify-center text-neutral-300 hover:text-white disabled:opacity-40"><svg aria-hidden="true" width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><circle cx="4" cy="10" r="1.5" /><circle cx="10" cy="10" r="1.5" /><circle cx="16" cy="10" r="1.5" /></svg></button>
                         </ListTrailing>
                     </ListSecondaryRow>
                 </ListItem>
-            }) : <div className="p-6"><p className="font-semibold">{selectedRelationship ? "No available connection for this relationship." : "No eligible clients yet."}</p><p className="mt-2 text-sm text-neutral-400">{selectedRelationship ? "It may no longer be eligible or available to your account." : "Clients in onboarding or retention can connect HighLevel without purchasing Appointment Setting."}</p></div>}
+            }) : <div className="p-6"><p className="font-semibold">No available HighLevel connections.</p><p className="mt-2 text-sm text-neutral-400">{selectedRelationship ? "It may no longer be eligible or available to your account." : "Clients in onboarding or retention can connect HighLevel without purchasing Appointment Setting."}</p></div>}
+            <AdvertisingConnectionRows key={`${workspaceSlug}:${selectedRelationship ?? "all"}`} workspaceSlug={workspaceSlug} relationshipId={selectedRelationship ?? undefined} refresh={advertisingRefresh} onManageWindsor={setMetaReporting} />
         </List>
 
-        {metaReporting ? <MetaReportingDialog key={`${workspaceSlug}:${metaReporting.relationshipId}`} workspaceSlug={workspaceSlug} relationshipId={metaReporting.relationshipId} clientName={metaReporting.businessName ? `${metaReporting.clientName} – ${metaReporting.businessName}` : metaReporting.clientName} onClose={() => setMetaReporting(null)} /> : null}
+        {metaReporting ? <MetaReportingDialog key={`${workspaceSlug}:${metaReporting.relationshipId}`} workspaceSlug={workspaceSlug} relationshipId={metaReporting.relationshipId} clientName={metaReporting.businessName ? `${metaReporting.clientName} – ${metaReporting.businessName}` : metaReporting.clientName} onClose={() => setMetaReporting(null)} onSaved={() => setAdvertisingRefresh({ relationshipId: metaReporting.relationshipId })} /> : null}
 
         {appDialog ? <GhlAppConnectionDialog key={appDialog.resume ? "resume" : appDialog.account?.relationshipId ?? "new"} workspaceSlug={workspaceSlug} accounts={accounts.filter(account => !account.historyId && !account.archived)} initialAccount={appDialog.account} initialChoices={appDialog.choices} resume={appDialog.resume} onClose={() => setAppDialog(null)} onManual={account => { setAppDialog(null); edit(account) }} onSaved={() => router.refresh()} /> : null}
         {nextCursor ? <button type="button" disabled={loadingHistory} onClick={() => void loadHistory()} className="mt-4 min-h-11 px-3 text-sm underline underline-offset-4 disabled:opacity-40">{loadingHistory ? "Loading history…" : "Load older connections"}</button> : null}

@@ -63,6 +63,7 @@ jobs:
           BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-ghl-appointment-automation-sql.mjs
           BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-ghl-oauth-sql.mjs
           BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-meta-reporting-sql.mjs
+          BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-client-advertising-sql.mjs
       - name: Shared service queue authorization and lifecycle
         run: BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-shared-service-queue.mjs
       - name: Portal upload team access and private downloads
@@ -252,6 +253,8 @@ jobs:
         run: node scripts/browser/run-whatsapp-template-evidence.mjs "${{ matrix.engine }}"
       - name: Exercise client connection menus and calendar selection
         run: node scripts/browser/run-client-connections.mjs "${{ matrix.engine }}"
+      - name: Client advertising connections browser regression
+        run: node scripts/browser/run-client-advertising.mjs "${{ matrix.engine }}"
       - name: Exercise verified Meta onboarding, maintenance and retained reports
         run: BE_WINDSOR_BROWSER_OUTPUT="$RUNNER_TEMP/windsor-${{ matrix.engine }}" node scripts/validate-windsor-browser.mjs "${{ matrix.engine }}"
       - name: Exercise app connection and explicit WhatsApp activation

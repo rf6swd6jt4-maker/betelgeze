@@ -87,14 +87,14 @@ try{
  await context.route('**/client-connections/meta-ads*',async route=>{
   if(route.request().method()==='GET')return route.fulfill({json:maintenanceState()})
   maintenancePosts++;const body=route.request().postDataJSON()
-  if(body.action==='begin')return route.fulfill({json:{candidateId,authorizationUrl:null}})
+  if(body.action==='begin')return route.fulfill({json:{candidateId,authorizationUrl:body.reconnect?origin+'/windsor-meta-ads/start?staff=1':null}})
   if(body.action==='accounts')return route.fulfill({json:{accounts}})
   if(body.action==='preview')return route.fulfill({json:{account:accounts[1],report:{...report,accountId:'two',accountName:'Second'}}})
   if(body.action==='commit'){assert.equal(body.confirmed,true);assert.equal(body.expectedRevision,'00000000-0000-4000-8000-000000000040');maintenanceSaved=true;return route.abort('failed')}
   return route.fulfill({status:400,json:{error:'Unexpected action'}})
  })
  await page.goto(origin+'/maintenance');await page.getByRole('button',{name:'Open reporting settings',exact:true}).click();await page.getByText('Account verification needed',{exact:true}).waitFor();assert.equal(maintenancePosts,0)
- await page.getByRole('button',{name:'Review authorized accounts',exact:true}).click();await page.getByRole('button',{name:'Load authorized accounts',exact:true}).click()
+ const staffPopupPromise=page.waitForEvent('popup');await page.getByRole('button',{name:'Reconnect in Windsor ↗',exact:true}).click();const staffPopup=await staffPopupPromise;await staffPopup.getByRole('heading',{name:'Windsor fixture'}).waitFor();assert.equal(await staffPopup.evaluate(()=>window.opener===null),true);await staffPopup.close();await page.bringToFront();await page.getByRole('button',{name:'Advertising account',exact:true}).waitFor();assert.equal(maintenancePosts,2,'Returning from Windsor loads accounts automatically without saving');assert.equal(maintenanceSaved,false)
  await page.getByRole('button',{name:'Advertising account',exact:true}).click();await page.getByRole('option',{name:'Second · two'}).click();await page.getByRole('button',{name:'Preview report',exact:true}).click()
  await page.getByText('A valid report can contain no activity.',{exact:false}).waitFor();assert.equal(maintenanceSaved,false);assert.equal(await page.getByRole('button',{name:'Save reporting account',exact:true}).isDisabled(),true)
  await page.getByRole('checkbox').check();await page.getByRole('button',{name:'Save reporting account',exact:true}).click();await page.getByText('The reporting account was saved.',{exact:false}).waitFor();assert.equal(maintenancePosts,4)

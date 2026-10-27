@@ -38,3 +38,49 @@ export function createWindsorReturnMonitor(options: {
         dispose() { disposed = true; active = false; if (timer) clearTimeout(timer) },
     }
 }
+
+
+// Observe only the pending authorization window. Provider checks still belong
+// to createWindsorReturnMonitor, which coalesces focus/visibility/close signals.
+export function observeWindsorReturn(options: {
+    popup: () => Pick<Window, "closed"> | null
+    returned: () => void
+    host: Pick<Window, "addEventListener" | "removeEventListener">
+    page: Pick<Document, "visibilityState" | "hasFocus" | "addEventListener" | "removeEventListener">
+    durationMs?: number
+}) {
+    let disposed = false
+    let away = !options.page.hasFocus()
+    let closedReported = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const deadline = Date.now() + (options.durationMs ?? 30 * 60_000)
+    function stopTimer() { if (timer) clearTimeout(timer); timer = undefined }
+    function watchClose() {
+        stopTimer()
+        if (disposed || options.page.visibilityState === "hidden" || Date.now() >= deadline) return
+        const popup = options.popup()
+        if (!popup) return
+        if (popup.closed) {
+            if (!closedReported) { closedReported = true; options.returned() }
+        } else timer = setTimeout(watchClose, 500)
+    }
+    function returned() {
+        if (disposed) return
+        if (options.page.visibilityState === "hidden") { away = true; stopTimer(); return }
+        if (away && Date.now() < deadline) { away = false; options.returned() }
+        watchClose()
+    }
+    function left() { away = true }
+    options.host.addEventListener("blur", left)
+    options.host.addEventListener("focus", returned)
+    options.host.addEventListener("pageshow", returned)
+    options.page.addEventListener("visibilitychange", returned)
+    watchClose()
+    return () => {
+        disposed = true; stopTimer()
+        options.host.removeEventListener("blur", left)
+        options.host.removeEventListener("focus", returned)
+        options.host.removeEventListener("pageshow", returned)
+        options.page.removeEventListener("visibilitychange", returned)
+    }
+}

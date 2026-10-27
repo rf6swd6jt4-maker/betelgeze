@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react"
 import { CenteredDialog, Selector, Status } from "@/components/ui"
 import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle } from "@/components/list/List"
+import { createWindsorReturnMonitor, observeWindsorReturn } from "@/lib/onboarding/windsor-return"
 import type { PortalMetaAdsReport } from "@/lib/client-portal/meta-ads-report"
 
 type Account = { id: string; name: string; datasource: string }
@@ -12,7 +13,7 @@ type State = {
     history: { id: string; previous_account_id: string | null; previous_account_name: string | null; account_id: string; account_name: string; created_at: string }[]
 }
 
-export function MetaReportingDialog({ workspaceSlug, relationshipId, clientName, onClose }: { workspaceSlug: string; relationshipId: string; clientName: string; onClose: () => void }) {
+export function MetaReportingDialog({ workspaceSlug, relationshipId, clientName, onClose, onSaved }: { workspaceSlug: string; relationshipId: string; clientName: string; onClose: () => void; onSaved?: () => void }) {
     const [state, setState] = useState<State | null>(null)
     const [pending, setPending] = useState(true)
     const [error, setError] = useState<string | null>(null)
@@ -22,12 +23,16 @@ export function MetaReportingDialog({ workspaceSlug, relationshipId, clientName,
     const [preview, setPreview] = useState<{ account: Account; report: PortalMetaAdsReport } | null>(null)
     const [confirmed, setConfirmed] = useState(false)
     const [authorizationUrl, setAuthorizationUrl] = useState<string | null>(null)
+    const popup = useRef<Window | null>(null)
+    const loadAccounts = useRef<() => Promise<"complete" | "pause" | "retry">>(async () => "pause")
     const request = useRef<AbortController | null>(null)
+    const operationPending = useRef(false)
     const endpoint = `/api/workspaces/${encodeURIComponent(workspaceSlug)}/client-connections/meta-ads`
 
     async function read(signal: AbortSignal): Promise<State> {
         const response = await fetch(`${endpoint}?relationship=${encodeURIComponent(relationshipId)}`, { cache: "no-store", signal })
         const body = await response.json()
+        signal.throwIfAborted()
         if (!response.ok) throw new Error(body.error ?? "Reporting could not be loaded.")
         return body
     }
@@ -43,10 +48,11 @@ export function MetaReportingDialog({ workspaceSlug, relationshipId, clientName,
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [endpoint, relationshipId])
 
-    async function run(action: "begin" | "accounts" | "preview" | "commit", reconnect = false) {
-        if (!state || pending) return
+    async function run(action: "begin" | "accounts" | "preview" | "commit", reconnect = false): Promise<"complete" | "pause" | "retry"> {
+        if (!state || pending || operationPending.current) return "pause"
+        operationPending.current = true
         const child = action === "begin" && reconnect ? window.open("about:blank", "_blank", "popup=yes,width=680,height=780") : null
-        if (child) child.opener = null
+        if (child) { child.opener = null; popup.current = child }
         request.current?.abort()
         const controller = new AbortController(); request.current = controller
         const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)])
@@ -56,35 +62,52 @@ export function MetaReportingDialog({ workspaceSlug, relationshipId, clientName,
                 body: JSON.stringify({ action, relationshipId, candidateId: state.candidateId, expectedRevision: state.connection?.revision ?? null, accountId, confirmed, reconnect }) })
             const body = await response.json()
             if (!response.ok) throw new Error(body.error ?? "Reporting could not be updated.")
-            if (controller.signal.aborted) return
+            if (controller.signal.aborted || request.current !== controller) return "pause"
             if (action === "begin") {
                 setState({ ...state, candidateId: body.candidateId }); setAccounts([]); setAccountId(""); setPreview(null); setConfirmed(false); setAuthorizationUrl(body.authorizationUrl)
-                if (body.authorizationUrl) { if (child) child.location.replace(body.authorizationUrl); setNotice("Finish the client authorization in Windsor, then load the authorized accounts here. The current reporting account remains active.") }
+                if (body.authorizationUrl) { if (child) child.location.replace(body.authorizationUrl); setNotice("Finish the client authorization in Windsor, then close that window. Betelgeze will load the authorized accounts when you return. Preview and confirm the intended account to save it.") }
                 else { child?.close(); setNotice("Authorization is ready. Load the authorized accounts to choose the client's reporting account.") }
             } else if (action === "accounts") {
                 setAccounts(body.accounts); setAccountId(""); setPreview(null); setConfirmed(false)
-                if (!body.accounts.length) setNotice("No Meta accounts are available yet. Finish the Windsor authorization or reconnect.")
+                if (!body.accounts.length) { setNotice("Windsor has not returned an account yet. Finish authorization, then return here or load the accounts again."); return "retry" }
+                setAuthorizationUrl(null); popup.current = null
+                setNotice("Windsor authorization received. Choose the intended advertising account, preview its report and confirm it to update Betelgeze.")
+                return "complete"
             } else if (action === "preview") { setPreview(body); setConfirmed(false) }
             else {
                 setState(await read(signal)); setPreview(null); setAccounts([]); setAccountId(""); setAuthorizationUrl(null); setConfirmed(false)
-                setNotice("Reporting account saved. The completed onboarding record was preserved.")
+                setNotice("Reporting account saved. The completed onboarding record was preserved."); onSaved?.()
             }
         } catch (cause) {
             child?.close()
-            if (controller.signal.aborted) return
+            if (controller.signal.aborted || request.current !== controller) return "pause"
             if (action === "commit") {
                 // Reconcile a lost acknowledgement before offering another save.
                 try {
                     const latest = await read(AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]))
                     setState(latest)
                     if (latest.history.some(item => item.id === state.candidateId)) {
-                        setPreview(null); setAccounts([]); setAccountId(""); setAuthorizationUrl(null); setConfirmed(false); setNotice("The reporting account was saved. The current selection is shown above."); return
+                        setPreview(null); setAccounts([]); setAccountId(""); setAuthorizationUrl(null); setConfirmed(false); setNotice("The reporting account was saved. The current selection is shown above."); onSaved?.(); return "complete"
                     }
                 } catch { /* keep a clear unknown-outcome message */ }
                 setError("The save could not be confirmed. Close and reopen this dialog to check the current account before trying again.")
             } else setError(cause instanceof Error ? cause.message : "Reporting could not be loaded.")
-        } finally { if (!controller.signal.aborted) setPending(false) }
+        } finally { if (request.current === controller) { operationPending.current = false; if (!controller.signal.aborted) setPending(false) } }
+        return "pause"
     }
+
+    useEffect(() => { loadAccounts.current = () => run("accounts") })
+    useEffect(() => {
+        if (!authorizationUrl || !state?.candidateId) return
+        const monitor = createWindsorReturnMonitor({
+            visible: () => document.visibilityState !== "hidden",
+            verify: () => loadAccounts.current(),
+            settled: () => undefined,
+        })
+        monitor.start()
+        const stop = observeWindsorReturn({ popup: () => popup.current, returned: () => monitor.returned(), host: window, page: document })
+        return () => { stop(); monitor.dispose() }
+    }, [authorizationUrl, state?.candidateId])
 
     const connection = state?.connection
     return <CenteredDialog title="Meta Ads reporting" busy={pending} onClose={onClose}>

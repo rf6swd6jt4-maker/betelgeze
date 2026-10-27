@@ -34,3 +34,29 @@ test("provider failures pause retries but a later window close can recover", asy
     monitor.returned(); await tick(); assert.equal(calls, 2)
     monitor.dispose()
 })
+
+test("staff authorization return observes close and focus without hidden polling or leaked listeners", async () => {
+    const { observeWindsorReturn } = await import("../lib/onboarding/windsor-return.ts")
+    const host = new EventTarget()
+    const page = Object.assign(new EventTarget(), { visibilityState: "visible" as DocumentVisibilityState, hasFocus: () => false })
+    const popup = { closed: false }
+    let calls = 0
+    const stop = observeWindsorReturn({ popup: () => popup, returned: () => { calls++ }, host: host as unknown as Window, page: page as unknown as Document })
+    assert.equal(calls, 0, "opening a popup is not a completed authorization")
+    page.visibilityState = "hidden"; page.dispatchEvent(new Event("visibilitychange"))
+    popup.closed = true
+    host.dispatchEvent(new Event("focus")); assert.equal(calls, 0)
+    page.visibilityState = "visible"; page.dispatchEvent(new Event("visibilitychange"))
+    assert.ok(calls >= 1)
+    const afterReturn = calls
+    host.dispatchEvent(new Event("focus")); assert.equal(calls, afterReturn)
+    stop(); host.dispatchEvent(new Event("blur")); host.dispatchEvent(new Event("focus")); assert.equal(calls, afterReturn)
+})
+
+test("expired authorization observations stop before triggering another provider check", async () => {
+    const { observeWindsorReturn } = await import("../lib/onboarding/windsor-return.ts")
+    const host = new EventTarget(), page = Object.assign(new EventTarget(), { visibilityState: "visible", hasFocus: () => false })
+    let calls = 0
+    const stop = observeWindsorReturn({ popup: () => ({ closed: true }), returned: () => { calls++ }, host: host as unknown as Window, page: page as unknown as Document, durationMs: 0 })
+    host.dispatchEvent(new Event("focus")); assert.equal(calls, 0); stop()
+})

@@ -1,8 +1,14 @@
 // Synthetic metadata-only fixture. No network, provider, credential, or history reads.
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
-import ts from 'typescript'
+import { createRequire } from 'node:module'
+import path from 'node:path'
 import { createGhlFixture } from './ghl-sql-fixture.mjs'
+const require=createRequire(import.meta.url)
+const nativeCompilerRoot=process.env.BE_GHL_NATIVE_PG==='1'?process.env.BE_PG_ROOT:null
+if(process.env.BE_GHL_NATIVE_PG==='1')assert.ok(nativeCompilerRoot&&path.isAbsolute(nativeCompilerRoot),'Native validation requires BE_PG_ROOT with typescript installed')
+// Native CI installs its tools outside the checkout and has no app node_modules.
+const ts=nativeCompilerRoot?require(path.join(nativeCompilerRoot,'node_modules/typescript')):require('typescript')
 const db = await createGhlFixture(), uuid = n => `00000000-0000-4000-8000-${String(n).padStart(12,'0')}`
 const ws=uuid(1), other=uuid(2), owner=uuid(3), staff=uuid(4)
 const one=async(sql,args=[])=>(await db.query(sql,args)).rows[0]

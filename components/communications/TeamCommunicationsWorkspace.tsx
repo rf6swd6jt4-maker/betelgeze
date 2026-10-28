@@ -9,6 +9,7 @@ import { useOfflineChat } from "@/components/communications/useOfflineChat"
 import { ChatOutboxStatus } from "@/components/communications/ChatOutboxStatus"
 
 import { useRosterDialog } from "@/components/communications/useRosterDialog"
+import { TeamClientChatMembers } from "@/components/communications/TeamClientChatMembers"
 import { chatCheckboxBody } from "@/lib/chat-formatting"
 import { MessageQuoteSelection } from "@/components/communications/MessageQuoteSelection"
 import { messageQuoteFromValue, resolveMessageQuote, type MessageQuote } from "@/lib/communications/message-quotes"
@@ -133,6 +134,7 @@ function TeamEditor({ bootstrap, team, onClose }: { bootstrap: NativeCommunicati
             <header className="flex items-center gap-3"><h2 id="team-roster-title" className="min-w-0 flex-1 truncate text-lg font-semibold">{team.name}</h2><button type="button" onClick={onClose} aria-label="Close team members" className="h-9 w-9 text-xl text-neutral-500">×</button></header>
             <List ariaLabel="Conversation members" className="!mt-3">{team.memberIds.map((id) => { const person = bootstrap.people.find((p) => p.id === id); return <ListItem key={id} className="px-3 py-2"><Assignee userId={id} name={person?.name ?? "Former member"} avatarSrc={person?.avatarSrc} /></ListItem> })}</List>
             <p className="mt-3 text-xs leading-5 text-neutral-500">{team.kind === "relationship" ? "This team was assembled during POS. Membership follows the client’s delivery assignments." : team.kind === "custom" ? "This existing group is read-only. New client teams are assembled during POS." : "Group membership is managed through workspace settings."}</p>
+            {team.kind === "relationship" && !team.archivedAt ? <TeamClientChatMembers key={team.id} workspaceSlug={bootstrap.workspaceSlug} teamId={team.id} people={bootstrap.people} /> : null}
         </section>
     </div>
 }

@@ -12,6 +12,10 @@ The user approved integrating and testing the scoped repair for chats whose unre
 
 Newest-row visibility, active chat/tab, two painted frames, server-confirmed device badges, account receipts and push policy remain unchanged. No polling, history fetch, database or schema change is introduced. Validation and rollout status are recorded separately in [the focus recovery report](docs/comms-read-focus-recovery-2026-10-21.md). Rollback restores the prior two client modules without changing any stored cursor, message, notification job or device state.
 
+### Client chat additions from Team chat (27 October 2026)
+
+The user requested adding members of a client's Team chat to its Client chat and explicitly retained assigned-manager access. The optional roster action adds selected current workspace/Team members through the existing client-chat membership table. Existing participants and attribution remain intact; repeated additions do not duplicate memberships or audit events. New participants can read existing history and receive future messages under the existing client participant rules. No messages or past alerts are replayed, and reading, unread counts, receipts, subscriptions and delivery recovery retain their existing owners. Validation and rollout status are recorded in `docs/client-chat-team-members.md`. Roll back application code first and retain memberships, audit history and the compatible participant setter; never remove accepted access or messages as a rollback side effect.
+
 ### Shared service assignees (14 October 2026)
 
 The user authorized multiple assignees for one service and membership in its existing internal client Team chat. The opt-in shared-service roster adds eligible assignees through the existing Team membership boundary. It retains that conversation and its messages. Removing an assignee removes only membership recorded as created by this feature, and only when no other current service or independent grant retains it. Existing historical/manual membership stays intact. Workspace offboarding and eligibility removal require the shared assignment to be removed first.

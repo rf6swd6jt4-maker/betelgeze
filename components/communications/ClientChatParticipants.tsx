@@ -14,6 +14,7 @@ export function ClientChatParticipants({ active = true, workspaceSlug, conversat
     const dialogSession = useRef(0)
     const roster = conversation.participants
     const canManage = roster?.managerId === userId
+    const editablePeople = active && open && canManage ? people.filter(person => roster?.eligibleIds.includes(person.id) || roster?.optionalIds.includes(person.id)) : []
     const close = useCallback(() => { dialogSession.current++; setOpen(false) }, [])
     const dialogRef = useRosterDialog(active && open, close)
     useLayoutEffect(() => {
@@ -43,9 +44,9 @@ export function ClientChatParticipants({ active = true, workspaceSlug, conversat
             <header className="flex items-center gap-3"><h2 id="client-participants-title" className="flex-1 text-lg font-semibold">Client conversation</h2><button type="button" onClick={close} aria-label="Close participants" className="h-9 w-9 text-xl text-neutral-500">×</button></header>
             <p className="mt-1 text-xs text-neutral-500">{conversation.title}</p>
             <List ariaLabel="Client chat participants" className="!mt-3"><ListItem className="px-3 py-2 text-sm">{conversation.title} <span className="text-xs text-neutral-500">· Client</span></ListItem>{people.filter((p) => roster.memberIds.includes(p.id)).map((p) => <ListItem key={p.id} className="px-3 py-2"><Assignee userId={p.id} name={p.name} avatarSrc={p.avatarSrc} /></ListItem>)}</List>
-            {canManage && roster.eligibleIds.length ? <fieldset className="mt-4"><legend className="text-sm font-medium">Include fulfilment staff</legend><DeliveryUserPicker people={people.filter((p) => roster.eligibleIds.includes(p.id))} selected={selected} onChange={setSelected} disabled={pending} /><p className="mt-2 text-xs text-neutral-500">Included staff can read this conversation’s history and message the client. Delivery assignments stay the same.</p></fieldset> : null}
+            {canManage && editablePeople.length ? <fieldset className="mt-4"><legend className="text-sm font-medium">Client chat access</legend><DeliveryUserPicker ariaLabel="Optional Client chat participants" people={editablePeople} selected={selected} onChange={setSelected} disabled={pending} /><p className="mt-2 text-xs text-neutral-500">Included staff can read this conversation’s history and message the client. Add other members from this client’s Team chat.</p></fieldset> : null}
             {error ? <p role="alert" className="mt-3 text-sm text-red-300">{error}</p> : null}
-            {canManage && roster.eligibleIds.length ? <div className="mt-4 flex justify-end"><button disabled={pending} onClick={() => void save()} className="h-9 rounded-lg bg-white px-4 text-sm font-medium text-black disabled:opacity-40">{pending ? "Saving…" : "Save participants"}</button></div> : null}
+            {canManage && editablePeople.length ? <div className="mt-4 flex justify-end"><button disabled={pending} onClick={() => void save()} className="h-9 rounded-lg bg-white px-4 text-sm font-medium text-black disabled:opacity-40">{pending ? "Saving…" : "Save participants"}</button></div> : null}
         </section></div> : null}
     </>
 }

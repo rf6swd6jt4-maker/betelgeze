@@ -123,6 +123,8 @@ jobs:
           BE_GHL_NATIVE_PG=1 BE_PG_ROOT="$RUNNER_TEMP/device-pg-deps" BE_PGLITE_ROOT="$RUNNER_TEMP/device-pg-deps" node scripts/validate-meta-reporting-sql.mjs
           BE_GHL_NATIVE_PG=1 BE_PG_ROOT="$RUNNER_TEMP/device-pg-deps" BE_PGLITE_ROOT="$RUNNER_TEMP/device-pg-deps" node scripts/validate-current-client-connections-sql.mjs
           BE_GHL_NATIVE_PG=1 BE_PG_ROOT="$RUNNER_TEMP/device-pg-deps" BE_PGLITE_ROOT="$RUNNER_TEMP/device-pg-deps" node scripts/validate-staff-google-ads-sql.mjs
+      - name: Verify concurrent Client chat additions and participant-save costs
+        run: BE_CLIENT_CHAT_PG_BIN="$BE_RECORDS_PG_BIN" BE_PG_ROOT="$RUNNER_TEMP/device-pg-deps" BE_PGLITE_ROOT="$RUNNER_TEMP/device-pg-deps" node scripts/validate-client-chat-team-members.mjs --native
       - name: Print device concurrency evidence
         if: always()
         run: cat "$RUNNER_TEMP/device-unread-native-postgres.json"
@@ -176,6 +178,8 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/communications-pglite" --no-save --ignore-scripts --package-lock=false @electric-sql/pglite@0.5.8
       - name: Validate indexed WhatsApp phone routing and isolation
         run: node scripts/validate-whatsapp-inbound-routing.mjs
+      - name: Validate manager-only Client chat additions from Team chat
+        run: node scripts/validate-client-chat-team-members.mjs
       - name: Validate atomic cursors, deletion boundaries, summaries and authorization
         run: node scripts/validate-communications-unread-sql.mjs
       - name: Validate encrypted device counts, previews, search and rollback
@@ -235,6 +239,10 @@ jobs:
         run: node scripts/browser/run-comms-polish.mjs "${{ matrix.engine }}"
       - name: Exercise roster dismissal and hidden chrome cleanup
         run: node scripts/browser/run-comms-roster-cleanup.mjs "${{ matrix.engine }}"
+      - name: Exercise Client chat additions from a client's Team roster
+        env:
+          CLIENT_CHAT_MEMBERS_OUTPUT: browser-results/client-chat-team-members
+        run: node scripts/browser/run-client-chat-team-members.mjs "${{ matrix.engine }}"
       - name: Exercise acknowledged reads and unread updates on mobile and desktop
         run: node scripts/browser/run-comms-reads.mjs "${{ matrix.engine }}"
       - name: Exercise confirmed remote reads across isolated browser contexts

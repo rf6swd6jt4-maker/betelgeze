@@ -8,6 +8,7 @@ const now = Date.now()
 // Opt-in media for popup regression checks; other layout fixtures keep their
 // established message geometry. The runner supplies a synthetic PNG locally.
 const popupMedia = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("popup-media")
+const clientTeamPreview = typeof window !== "undefined" && new URLSearchParams(window.location.search).has("client-team-members")
 const bodies = [
     "Morning! I’ve added the latest notes for the team.",
     "Thanks — I’ll have a look after this call.",
@@ -40,7 +41,7 @@ export const teamBootstrap: NativeCommunicationsBootstrap = {
         ...people.slice(1).map((person, index) => ({ id: `preview-direct-${index}`, kind: "direct" as const, teamId: null, title: person.name, subtitle: "Direct message", avatarSrc: null, memberIds: [currentUser.id, person.id], archived: false, canWrite: true, pinnedMessageId: null, updatedAt: new Date(now - index * 240000).toISOString(), messages: messages(`preview-direct-${index}`, person.id, 18 + index * 7, (index + 1) * 60000) })),
         { id: "preview-empty", kind: "team", teamId: "preview-new-team", title: "New project", subtitle: "A fresh conversation", avatarSrc: null, memberIds: people.map(p => p.id), archived: false, canWrite: true, pinnedMessageId: null, updatedAt: new Date(now - 3600000).toISOString(), messages: [] },
     ],
-    teams: [{ id: "preview-project-team", name: "Project team", kind: "custom", archivedAt: null, memberIds: people.map(p => p.id), responsibilities: [], maintenanceResponsibilities: [] }, { id: "preview-new-team", name: "New project", kind: "custom", archivedAt: null, memberIds: people.map(p => p.id), responsibilities: [], maintenanceResponsibilities: [] }],
+    teams: [{ id: "preview-project-team", name: "Project team", kind: clientTeamPreview ? "relationship" : "custom", archivedAt: null, memberIds: people.map(p => p.id), responsibilities: [], maintenanceResponsibilities: [] }, { id: "preview-new-team", name: "New project", kind: "custom", archivedAt: null, memberIds: people.map(p => p.id), responsibilities: [], maintenanceResponsibilities: [] }],
     reactions: [{ id: "preview-reaction", conversationId: "preview-team", messageId: "preview-team-message-45", reactorUserId: "preview-sam", emoji: "👍", updatedAt: new Date(now).toISOString() }],
     readCursors: [], stickers: [], services: [], maintenanceCategories: [], canManageTeams: false, isOwner: true, currentUserRole: "owner", requestedConversationId: null, requestedDmUserId: null, schemaReady: true,
 }

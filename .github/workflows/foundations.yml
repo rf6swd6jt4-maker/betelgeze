@@ -124,7 +124,9 @@ jobs:
           BE_GHL_NATIVE_PG=1 BE_PG_ROOT="$RUNNER_TEMP/device-pg-deps" BE_PGLITE_ROOT="$RUNNER_TEMP/device-pg-deps" node scripts/validate-current-client-connections-sql.mjs
           BE_GHL_NATIVE_PG=1 BE_PG_ROOT="$RUNNER_TEMP/device-pg-deps" BE_PGLITE_ROOT="$RUNNER_TEMP/device-pg-deps" node scripts/validate-staff-google-ads-sql.mjs
       - name: Verify concurrent Client chat additions and participant-save costs
-        run: BE_CLIENT_CHAT_PG_BIN="$BE_RECORDS_PG_BIN" BE_PG_ROOT="$RUNNER_TEMP/device-pg-deps" BE_PGLITE_ROOT="$RUNNER_TEMP/device-pg-deps" node scripts/validate-client-chat-team-members.mjs --native
+        run: |
+          BE_CLIENT_CHAT_PG_BIN="$BE_RECORDS_PG_BIN" BE_PG_ROOT="$RUNNER_TEMP/device-pg-deps" BE_PGLITE_ROOT="$RUNNER_TEMP/device-pg-deps" node scripts/validate-client-chat-team-members.mjs --native
+          BE_CLIENT_CHAT_PG_BIN="$BE_RECORDS_PG_BIN" BE_PG_ROOT="$RUNNER_TEMP/device-pg-deps" BE_PGLITE_ROOT="$RUNNER_TEMP/device-pg-deps" node scripts/validate-client-chat-permissions.mjs --native
       - name: Print device concurrency evidence
         if: always()
         run: cat "$RUNNER_TEMP/device-unread-native-postgres.json"
@@ -179,7 +181,9 @@ jobs:
       - name: Validate indexed WhatsApp phone routing and isolation
         run: node scripts/validate-whatsapp-inbound-routing.mjs
       - name: Validate manager-only Client chat additions from Team chat
-        run: node scripts/validate-client-chat-team-members.mjs
+        run: |
+          node scripts/validate-client-chat-team-members.mjs
+          node scripts/validate-client-chat-permissions.mjs
       - name: Validate atomic cursors, deletion boundaries, summaries and authorization
         run: node scripts/validate-communications-unread-sql.mjs
       - name: Validate encrypted device counts, previews, search and rollback

@@ -125,7 +125,7 @@ test("workspace checklist acknowledgements use the saved body without a fallible
             "@/lib/workspace-access": { requireWorkspacePanel: async () => ({ workspace: { id: "workspace" }, user: { id: "actor" } }) },
             "@/lib/teams/server": { assertNativeConversationAccess: async () => true, loadNativeMessageForCurrentUser: loadMessage },
             "@/lib/communications/server": { loadCommunicationMessage: loadMessage },
-            "@/lib/communications/access": { clientConversationCanAccess: async () => true },
+            "@/lib/communications/access": { clientConversationCanWrite: async () => true },
             "@/lib/supabase/admin": { supabaseAdmin: { from: () => query } },
             "@/lib/communications/checklists": { ...f.service, updateChatCheckbox: async (input: { loadBody: () => Promise<string> }) => {
                 assert.equal(await input.loadBody(), body)

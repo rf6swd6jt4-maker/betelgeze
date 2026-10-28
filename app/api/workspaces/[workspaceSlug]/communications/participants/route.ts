@@ -17,6 +17,16 @@ export async function POST(request: Request, context: { params: Promise<{ worksp
     const { workspaceSlug } = await context.params
     const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "communications")
     const input = await request.json().catch(() => null)
+    if (input?.operation === "setPermissions" || input && Object.hasOwn(input, "viewIds")) {
+        const viewOnlyIds = input.viewOnlyIds === undefined ? [] : input.viewOnlyIds
+        const validIds = (ids: unknown): ids is string[] => Array.isArray(ids) && ids.length <= 1000 && ids.every((id: unknown) => typeof id === "string" && uuid.test(id))
+        if (typeof input.relationshipId !== "string" || !uuid.test(input.relationshipId) || !validIds(input.viewIds) || !validIds(viewOnlyIds)) return Response.json({ error: "Invalid participant permissions." }, { status: 400, headers })
+        const viewIds = new Set<string>(input.viewIds)
+        if (viewOnlyIds.some((id: string) => !viewIds.has(id))) return Response.json({ error: "Invalid participant permissions." }, { status: 400, headers })
+        const { error } = await supabaseAdmin.rpc("set_client_chat_permissions", { p_workspace_id: workspace.id, p_relationship_id: input.relationshipId, p_actor_user_id: user.id, p_view_ids: input.viewIds, ...(viewOnlyIds.length ? { p_view_only_ids: viewOnlyIds } : {}) })
+        if (error) return Response.json({ error: error.message }, { status: error.code === "22023" ? 400 : 403, headers })
+        return Response.json({ ok: true }, { headers })
+    }
     if (input?.operation === "addFromTeam") {
         if (typeof input.teamId !== "string" || !uuid.test(input.teamId) || !Array.isArray(input.userIds) || input.userIds.length < 1 || input.userIds.length > 200 || input.userIds.some((id: unknown) => typeof id !== "string" || !uuid.test(id))) return Response.json({ error: "Invalid team members." }, { status: 400, headers })
         const { data, error } = await supabaseAdmin.rpc("add_team_client_chat_members", { p_workspace_id: workspace.id, p_team_id: input.teamId, p_actor_user_id: user.id, p_user_ids: input.userIds })

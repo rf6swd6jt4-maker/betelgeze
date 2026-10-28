@@ -1,7 +1,7 @@
 import { deviceCommunicationErrorResponse, validateCommunicationReadProtocol } from "@/lib/communications/device-server"
 import { loadDeviceCommunicationHistory } from "@/lib/communications/progressive-server"
 import { withChatPerformance } from "@/lib/communications/performance-server"
-import { clientConversationCanAccess } from "@/lib/communications/access"
+import { clientConversationCanAccess, clientConversationCanWrite } from "@/lib/communications/access"
 import { NextRequest } from "next/server"
 
 import { recordClientAdminActivity } from "@/lib/admin/activity"
@@ -63,7 +63,7 @@ async function handlePOST(request: NextRequest, context: { params: Promise<{ wor
     if (input?.offlineWorkspaceId && input.offlineWorkspaceId !== workspace.id) return Response.json({ error: "This workspace is no longer available at this address." }, { status: 409 })
     if (input?.offlineUserId && input.offlineUserId !== user.id) return Response.json({ error: "Sign in with the account that wrote this message." }, { status: 409 })
     const relationshipId = typeof input?.relationshipId === "string" ? input.relationshipId : ""
-    if (!/^[0-9a-f-]{36}$/i.test(relationshipId) || !await clientConversationCanAccess(workspace.id, relationshipId, user.id)) return Response.json({ error: "Conversation not found." }, { status: 404 })
+    if (!/^[0-9a-f-]{36}$/i.test(relationshipId) || !await clientConversationCanWrite(workspace.id, relationshipId, user.id)) return Response.json({ error: "Conversation not found." }, { status: 404 })
     const clientRequestId = typeof input?.clientRequestId === "string" ? input.clientRequestId : ""
     const replyToMessageId = typeof input?.replyToMessageId === "string" ? input.replyToMessageId : ""
     const stickerId = typeof input?.stickerId === "string" ? input.stickerId : ""

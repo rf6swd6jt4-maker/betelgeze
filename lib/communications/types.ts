@@ -93,13 +93,14 @@ export type ClientConversation = {
     cursorDeviceId?: string | null
     cursorKnown?: true
     deviceCursor?: { lastReadAt: string; lastReadMessageId: string | null } | null
-    participants?: { managerId: string | null; memberIds: string[]; optionalIds: string[]; eligibleIds: string[] }
+    participants?: { managerId: string | null; memberIds: string[]; optionalIds: string[]; eligibleIds: string[]; viewOnlyIds: string[] }
     id: string
     clientId: string | null
     title: string
     subtitle: string | null
     isTest: boolean
     canSend: boolean
+    canWrite: boolean
     channels?: Array<"meta_whatsapp" | "twilio_sms">
     primaryProvider?: "meta_whatsapp" | "twilio_sms"
     lastWhatsAppInboundAt?: string | null

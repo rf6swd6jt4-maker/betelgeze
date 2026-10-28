@@ -19,6 +19,32 @@ function fixture(error: { message: string; code: string } | null = null) {
         post: (input: unknown) => compiled.exports.POST(new Request("https://fixture/participants", { method: "POST", body: JSON.stringify(input) }), context) }
 }
 
+test("View/Edit saves use session authority, one committed RPC, and no roster reads", async () => {
+    const f = fixture()
+    const saved = await f.post({ operation: "setPermissions", relationshipId: id(3), viewIds: [id(4), id(5)], viewOnlyIds: [id(5)], workspaceId: id(8), actorUserId: id(9) })
+    assert.equal(saved.status, 200)
+    assert.deepEqual(await saved.json(), { ok: true })
+    assert.equal(saved.headers.get("cache-control"), "private, no-store")
+    assert.deepEqual(f.calls, [{ name: "set_client_chat_permissions", args: { p_workspace_id: id(1), p_relationship_id: id(3), p_actor_user_id: id(2), p_view_ids: [id(4), id(5)], p_view_only_ids: [id(5)] } }])
+    const denied = await fixture({ message: "Only the assigned manager can change access", code: "42501" }).post({ operation: "setPermissions", relationshipId: id(3), viewIds: [], viewOnlyIds: [] })
+    assert.equal(denied.status, 403)
+})
+
+test("View/Edit input requires bounded UUID arrays and Edit implies View", async () => {
+    const f = fixture()
+    for (const input of [{ viewIds: [], viewOnlyIds: [id(4)] }, { viewIds: [null], viewOnlyIds: [] }, { viewIds: [id(4)], viewOnlyIds: null }, { viewIds: Array(1001).fill(id(4)), viewOnlyIds: [] }, { viewIds: ["bad"], viewOnlyIds: [] }]) {
+        assert.equal((await f.post({ operation: "setPermissions", relationshipId: id(3), ...input })).status, 400)
+    }
+    assert.deepEqual(f.calls, [])
+})
+
+test("existing full-access saves omit the empty exception array through the API and RPC", async () => {
+    const f = fixture()
+    const saved = await f.post({ relationshipId: id(3), viewIds: [id(4)] })
+    assert.equal(saved.status, 200)
+    assert.deepEqual(f.calls, [{ name: "set_client_chat_permissions", args: { p_workspace_id: id(1), p_relationship_id: id(3), p_actor_user_id: id(2), p_view_ids: [id(4)] } }])
+})
+
 test("Team roster read and additive write use session authority and one scoped RPC", async () => {
     const f = fixture()
     const response = await f.get()

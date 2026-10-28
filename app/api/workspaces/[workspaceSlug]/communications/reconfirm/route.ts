@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server"
-import { clientConversationCanAccess } from "@/lib/communications/access"
+import { clientConversationCanWrite } from "@/lib/communications/access"
 import { requireCommunicationsWorkspace } from "@/lib/communications/workspace-access"
 import { normalizeProviderAddress } from "@/lib/client-messages/addresses"
 import { sendCommunicationDeliveries } from "@/lib/client-messages/omnichannel"
@@ -19,7 +19,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ wo
     const relationshipId = typeof input?.relationshipId === "string" ? input.relationshipId : ""
     const clientRequestId = typeof input?.clientRequestId === "string" ? input.clientRequestId : ""
     if (!UUID.test(relationshipId) || !UUID.test(clientRequestId)) return Response.json({ error: "Invalid confirmation request." }, { status: 400 })
-    if (!await clientConversationCanAccess(workspace.id, relationshipId, user.id)) return Response.json({ error: "Conversation not found." }, { status: 404 })
+    if (!await clientConversationCanWrite(workspace.id, relationshipId, user.id)) return Response.json({ error: "Conversation not found." }, { status: 404 })
     const { data: relationship, error } = await supabaseAdmin.from("relationships")
         .select("id, client_id, status, whatsapp_phone, primary_phone, last_whatsapp_inbound_at, whatsapp_opted_out_at")
         .eq("workspace_id", workspace.id).eq("id", relationshipId).maybeSingle()

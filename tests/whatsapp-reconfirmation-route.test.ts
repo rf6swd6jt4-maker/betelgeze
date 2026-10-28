@@ -36,7 +36,7 @@ function fixture(options: {
     }]
     const modules: Record<string, unknown> = {
         "@/lib/communications/workspace-access": { requireCommunicationsWorkspace: async () => ({ workspace: { id: workspaceId }, user: { id: "staff" } }) },
-        "@/lib/communications/access": { clientConversationCanAccess: async () => options.access !== false },
+        "@/lib/communications/access": { clientConversationCanWrite: async () => options.access !== false },
         "@/lib/client-messages/addresses": { normalizeProviderAddress },
         "@/lib/client-messages/whatsapp-window": { whatsappWindowIsOpen },
         "@/lib/workspace-integrations": { getWorkspaceProviderConfig: async () => ({

@@ -58,6 +58,7 @@ export async function loadClientCommunicationsBootstrap({ currentUserId, request
             ...(relationship.id === requestedConversationId && selectedMessages && "deviceCursor" in selectedMessages ? { cursorKnown: true as const, deviceCursor: selectedMessages.deviceCursor as import("@/lib/communications/device-server").DeviceReadPosition | null } : {}),
         } : {}),
         participants: rosterById.get(relationship.id),
+        canWrite: rosterById.get(relationship.id)?.viewOnlyIds.includes(currentUserId) === false,
         clientId: relationship.client_id,
         title: relationship.business_name ? `${relationship.primary_person_name} – ${relationship.business_name}` : relationship.primary_person_name,
         subtitle: relationship.whatsapp_phone ?? relationship.primary_phone ?? relationship.primary_email,

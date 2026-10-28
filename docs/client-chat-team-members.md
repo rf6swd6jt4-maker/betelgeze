@@ -1,4 +1,6 @@
-# Client chat access from a client's Team chat
+# Client chat access from a client's Team chat (previous implementation)
+
+The UI described below was released at `560cc4c2902216ebf016820e07b50079f231aa64`. The user's subsequent correction removes that Team button and adds View/Edit checkmarks in the existing Client participant dialog; see [Client chat permissions](client-chat-permissions.md) for the current candidate and its separate validation. The following development record is retained as historical context.
 
 Updated 28 October 2026. Isolated candidate based on `64f67633fa9c9e7101c2244934f1aa4078489e7c`. Not deployed; no live membership or client data was changed.
 

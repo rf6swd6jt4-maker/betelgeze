@@ -243,7 +243,7 @@ test("the client portal mirrors the approved BE message interactions without mak
     const communicationsWorkspace = readFileSync("components/communications/CommunicationsWorkspace.tsx", "utf8")
     const communicationInteractions = readFileSync("lib/communications/interactions.ts", "utf8")
     assert.match(communicationInteractions, /message\.provider === "client_portal"/u)
-    assert.match(communicationsWorkspace, /const canInteract = clientMessageSupportsReaction\(message, reactionCutoff\)/u)
+    assert.match(communicationsWorkspace, /const canInteract = selected\.canWrite && clientMessageSupportsReaction\(message, reactionCutoff\)/u)
     assert.match(communicationsWorkspace, /payload\.eventType === "DELETE"[\s\S]*updates\.removeMessage\(messageId\)/u)
     assert.match(communicationsWorkspace, /updates\.applySnapshot\(read, deviceMode \? \{ \.\.\.result, conversations: result\.conversations\.map/u)
     assert.match(communicationsWorkspace, /cursorDeviceId: result\.deviceId \}\)\) \} : result\)/u)

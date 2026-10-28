@@ -8,9 +8,15 @@ export async function clientConversationCanAccess(workspaceId: string, relations
 }
 
 export async function clientConversationRosters(workspaceId: string, userId: string) {
-    const { data, error } = await supabaseAdmin.rpc("client_conversation_rosters", { p_workspace_id: workspaceId, p_user_id: userId })
+    const { data, error } = await supabaseAdmin.rpc("client_conversation_permission_rosters", { p_workspace_id: workspaceId, p_user_id: userId })
     if (error) throw new Error("Could not load conversation participants.")
-    return new Map((data as Array<{ relationship_id: string; manager_id: string | null; member_ids: string[]; optional_ids: string[]; eligible_ids: string[] }> ?? []).map((r) => [r.relationship_id, { managerId: r.manager_id, memberIds: r.member_ids, optionalIds: r.optional_ids, eligibleIds: r.eligible_ids }]))
+    return new Map((data as Array<{ relationship_id: string; manager_id: string | null; member_ids: string[]; optional_ids: string[]; eligible_ids: string[]; view_only_ids: string[] }> ?? []).map((r) => [r.relationship_id, { managerId: r.manager_id, memberIds: r.member_ids, optionalIds: r.optional_ids, eligibleIds: r.eligible_ids, viewOnlyIds: r.view_only_ids }]))
+}
+
+export async function clientConversationCanWrite(workspaceId: string, relationshipId: string, userId: string) {
+    const { data, error } = await supabaseAdmin.rpc("client_conversation_can_write", { p_workspace_id: workspaceId, p_relationship_id: relationshipId, p_user_id: userId })
+    if (error) throw new Error("Could not verify conversation permissions.")
+    return data === true
 }
 
 export async function clientConversationParticipants(workspaceId: string, relationshipId: string) {

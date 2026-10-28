@@ -39,7 +39,8 @@ export async function startFixture({port=45679,chats=48,backlog=100,rpcOverride}
   if(name==='workspace_shell_bootstrap')return {workspace_id:ids.workspace,workspace_name:workspace.name,workspace_slug:'fixture',role:'owner',username:'fixture',capabilities:['communications.manage','relationships.view'],allowed_service_ids:[],service_access_schema_ready:true}
   if(name==='account_devices')return {device_id:args.p_device,devices:[]}
   if(name==='client_conversation_rosters')return tables.relationships.map(r=>({relationship_id:r.id,manager_id:null,member_ids:[ids.me],optional_ids:[],eligible_ids:[]}))
-  if(['client_conversation_can_access','native_conversation_can_read','native_conversation_can_write'].includes(name))return true
+  if(name==='client_conversation_permission_rosters')return tables.relationships.map(r=>({relationship_id:r.id,manager_id:null,member_ids:[ids.me],optional_ids:[],eligible_ids:[],view_only_ids:[]}))
+  if(['client_conversation_can_access','client_conversation_can_write','native_conversation_can_read','native_conversation_can_write'].includes(name))return true
   if(['workspace_notifications','workspace_notification_count','workspace_shell_secondary'].includes(name))return []
   unexpected.push(`RPC ${name}`);throw Error(`Unhandled synthetic RPC ${name}`)
  }

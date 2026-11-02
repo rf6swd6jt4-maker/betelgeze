@@ -43,6 +43,98 @@ try {
                 try { await run(); assert.deepEqual(errors, []); results.push({ engine, name, passed: true }); console.log(`${engine}: PASS ${name}`) }
                 catch (error) { results.push({ engine, name, passed: false, error: String(error) }); console.log(`${engine}: FAIL ${name}: ${error}`); await page.screenshot({ path: `browser-results/${engine}-comms-final-actions-${results.length}.png` }) }
             }
+            await check("an incoming WhatsApp message keeps the active draft and renews its real expiry", async () => {
+                await page.clock.install()
+                await open("client")
+                await editor().fill("Keep this draft")
+                await page.clock.fastForward(30_000)
+                await page.evaluate(() => window.dispatchEvent(new CustomEvent("preview:realtime", { detail: {
+                    kind: "postgres_changes", table: "client_messages", payload: { eventType: "INSERT", new: {
+                        id: "fresh-inbound", relationship_id: "preview-client-0", direction: "inbound", provider: "meta_whatsapp",
+                        body: "Reply while typing", created_at: new Date().toISOString(),
+                    } },
+                } })))
+                await row("fresh-inbound").waitFor()
+                assert.equal(await editor().textContent(), "Keep this draft")
+                assert.equal(await editor().getAttribute("contenteditable"), "true")
+                assert.equal(await surface().getByRole("button", { name: "Send message", exact: true }).isEnabled(), true)
+                await page.clock.fastForward(24 * 60 * 60 * 1000 - 10_000)
+                assert.equal(await editor().textContent(), "Keep this draft", "old deadline must not close the renewed window")
+                await page.clock.fastForward(11_000)
+                await surface().getByRole("button", { name: "Send WhatsApp reconfirmation template" }).waitFor()
+            })
+            await check("a team reaction previews old-message activity and info updates as recipients read", async () => {
+                await open()
+                const preview = page.locator('[data-preview-conversation="preview-team"]')
+                assert.match(await preview.textContent(), /Sam Taylor reacted 👍 to a message/)
+                await menu("preview-team-message-46")
+                await popup().getByRole("button", { name: "Message info" }).click()
+                const info = page.getByRole("dialog", { name: "Message info" })
+                await info.getByText("Seen by 0 of 3").waitFor()
+                await page.evaluate(() => {
+                    for (const user_id of ["preview-alex", "preview-sam", "preview-jamie"]) window.dispatchEvent(new CustomEvent("preview:realtime", { detail: {
+                        kind: "postgres_changes", table: "workspace_native_read_cursors", payload: { eventType: "UPDATE", new: {
+                            conversation_id: "preview-team", user_id, last_read_at: new Date().toISOString(), last_read_message_id: "preview-team-message-47",
+                        } },
+                    } }))
+                })
+                await info.getByText("Seen by everyone").waitFor()
+                assert.equal(await info.getByText("Seen", { exact: true }).count(), 3)
+                await page.keyboard.press("Escape")
+                await info.waitFor({ state: "detached" })
+            })
+            await check("client reaction removal restores the preview and WhatsApp read times stay separate from staff receipts", async () => {
+                await open("client")
+                const latest = "preview-client-0-message-21"
+                const preview = page.locator('[data-preview-conversation="preview-client-0"]')
+                const original = "Do you have a moment to look at the final paragraph? It should read clearly on a small screen too."
+                await preview.getByText(original, { exact: true }).waitFor({ state: "attached" })
+                async function reactionEvent(type) {
+                    await page.evaluate(eventType => window.dispatchEvent(new CustomEvent("preview:realtime", { detail: {
+                        kind: "postgres_changes", table: "communication_reactions", payload: { eventType, [eventType === "DELETE" ? "old" : "new"]: {
+                            id: "client-live-reaction", relationship_id: "preview-client-0", client_message_id: "old-message", direction: "inbound",
+                            emoji: "❤️", updated_at: new Date().toISOString(),
+                        } },
+                    } })), type)
+                }
+                await reactionEvent("INSERT")
+                await preview.getByText("Northstar Studio reacted ❤️ to a message").waitFor({ state: "attached" })
+                await reactionEvent("DELETE")
+                await preview.getByText(original, { exact: true }).waitFor({ state: "attached" })
+                assert.doesNotMatch(await preview.textContent(), /reacted/)
+                await page.evaluate(() => window.dispatchEvent(new CustomEvent("preview:realtime", { detail: {
+                    kind: "postgres_changes", table: "communication_message_deliveries", payload: { eventType: "UPDATE", new: {
+                        client_message_id: "preview-client-0-message-19", provider: "meta_whatsapp", status: "read",
+                        read_at: "2026-09-03T10:11:12Z",
+                    } },
+                } })))
+                await menu("preview-client-0-message-19")
+                await popup().getByRole("button", { name: "Message info" }).click()
+                const info = page.getByRole("dialog", { name: "Message info" })
+                await info.getByText("WhatsApp delivery").waitFor()
+                await info.locator('time[datetime="2026-09-03T10:11:12Z"]').waitFor()
+                await info.getByText("Staff read receipts").waitFor()
+                await info.getByRole("button", { name: "Close popup" }).click()
+                await info.waitFor({ state: "detached" })
+                await row(latest).waitFor()
+            })
+            await check("view-only client info fits a small phone and closes without exposing edit actions", async () => {
+                await page.setViewportSize({ width: 320, height: 568 })
+                try {
+                    await page.goto(origin + "/?client-team-members")
+                    await page.getByRole("tab", { name: "Clients", exact: true }).click()
+                    await choose("Harbour Coffee")
+                    await menu("preview-client-1-message-24")
+                    assert.equal(await popup().getByRole("button", { name: "React to message" }).count(), 0)
+                    await popup().getByRole("button", { name: "Message info" }).tap()
+                    const info = page.getByRole("dialog", { name: "Message info" })
+                    await info.getByText("Staff read receipts").waitFor()
+                    const bounds = await info.locator("section").first().boundingBox()
+                    assert(bounds && bounds.x >= 0 && bounds.y >= 0 && bounds.x + bounds.width <= 320 && bounds.y + bounds.height <= 568)
+                    await info.getByRole("button", { name: "Close popup" }).tap()
+                    await info.waitFor({ state: "detached" })
+                } finally { await page.setViewportSize({ width: 390, height: 844 }) }
+            })
             await check("remote removal restores the pre-edit draft", async () => {
                 await open(); await editor().fill("Draft before editing")
                 await menu("preview-team-message-46"); await popup().getByRole("button", { name: "Edit message", exact: true }).click()
@@ -143,6 +235,19 @@ try {
                     await row(messageId).locator("xpath=following-sibling::*[1]").getByText("🎯", { exact: true }).waitFor()
                 })
             }
+            await check("desktop direct-message info opens from the keyboard and dismisses with Escape", async () => {
+                await page.setViewportSize({ width: 1280, height: 800 })
+                await page.goto(origin)
+                await page.locator('[data-preview-conversation="preview-direct-0"]').click()
+                const bubble = page.locator('[data-message-interaction="preview-direct-0-message-16"] [data-message-bubble]')
+                await bubble.press("Shift+F10")
+                await popup().getByRole("button", { name: "Message info" }).press("Enter")
+                const info = page.getByRole("dialog", { name: "Message info" })
+                await info.getByText("Seen by 0 of 1").waitFor()
+                await info.getByText("Alex Morgan", { exact: true }).waitFor()
+                await page.keyboard.press("Escape")
+                await info.waitFor({ state: "detached" })
+            })
             assert.deepEqual(external, [])
             await context.close()
         } finally { await browser.close() }

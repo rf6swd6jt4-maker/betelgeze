@@ -49,3 +49,7 @@ export function DoubleDeliveryCheckIcon({ className = "h-3 w-4" }: { className?:
 export function SingleDeliveryCheckIcon({ className = "h-3 w-4" }: { className?: string }) {
     return <svg viewBox="0 0 10 10" aria-hidden="true" className={`${className} shrink-0 fill-none stroke-current`} strokeWidth="1.65" strokeLinecap="round" strokeLinejoin="round"><path d="m1 5 2.4 2.4L8.7 1.6" /></svg>
 }
+
+export function InfoIcon({ className = "h-4 w-4" }: { className?: string }) {
+    return <svg viewBox="0 0 24 24" aria-hidden="true" className={`${className} fill-none stroke-current`} strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="9" /><path d="M12 11v5m0-9v.1" /></svg>
+}

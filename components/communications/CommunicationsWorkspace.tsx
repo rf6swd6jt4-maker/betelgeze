@@ -28,8 +28,9 @@ import { copyMessageText, downloadMessageAttachment, MessageReactionActions, Mes
 import { DoubleDeliveryCheckIcon, ReplyIcon, SingleDeliveryCheckIcon } from "@/components/communications/MessageInteractionIcons"
 import { JumpToLatestButton, messagePaneCanShowNewMessage } from "@/components/communications/JumpToLatestButton"
 import { MessageComposer } from "@/components/communications/MessageComposer"
-import { WHATSAPP_SERVICE_WINDOW_MS, whatsappWindowIsOpen } from "@/lib/client-messages/whatsapp-window"
+import { useWhatsAppWindowOpen } from "./useWhatsAppWindowOpen"
 import { MessageMediaLightbox, type MessageMediaPreview } from "@/components/communications/MessageMediaLightbox"
+import { MessageInfoDialog } from "./MessageInfoDialog"
 import { MessageReadAvatars } from "@/components/communications/MessageReadAvatars"
 import { PinnedMessageBar } from "@/components/communications/PinnedMessageBar"
 import { ResizableConversationColumns } from "@/components/communications/ResizableConversationColumns"
@@ -54,6 +55,7 @@ import { SquarePill } from "@/components/ui"
 import { useSharedUnreadSummary } from "./useSharedUnreadSummary"
 import { useCommunicationsReadProtocol } from "./CommunicationsReadProtocol"
 import { subscribeDeviceChatReads } from "@/lib/communications/device-read-state"
+import { conversationInbox, indexChatReactions, reactionPreviewText } from "@/lib/communications/reaction-previews"
 import { confirmedPreviewCursor } from "@/lib/communications/progressive-previews"
 import { useConversationListActive, useProgressivePreviews, type ProgressivePreview } from "./useProgressivePreviews"
 import { useConversationPreviewSearch } from "./useConversationPreviewSearch"
@@ -210,7 +212,7 @@ function MessageAttachment({ attachment, onOpenImage, light, whiteOnColor = fals
     return <NativeAttachment attachment={attachment} onOpenImage={onOpenImage} light={light} whiteOnColor={whiteOnColor} />
 }
 
-function MessageActionTray({ view, canInteract, interactionBlocked = false, currentEmoji, recentEmoji, onReact, onRecentEmoji, onReply, onCopy, onPin, onShowReactions, pinned, side, onSave, saveLabel, saveDisabled, saveActive }: {
+function MessageActionTray({ view, canInteract, interactionBlocked = false, currentEmoji, recentEmoji, onReact, onRecentEmoji, onReply, onCopy, onPin, onInfo, onShowReactions, pinned, side, onSave, saveLabel, saveDisabled, saveActive }: {
     view: MessageActionView
     canInteract: boolean
     interactionBlocked?: boolean
@@ -221,6 +223,7 @@ function MessageActionTray({ view, canInteract, interactionBlocked = false, curr
     onReply: (() => void) | null
     onCopy: () => void
     onPin: (() => void) | null
+    onInfo?: () => void
     onShowReactions: () => void
     pinned: boolean
     side: "left" | "right"
@@ -230,7 +233,7 @@ function MessageActionTray({ view, canInteract, interactionBlocked = false, curr
     saveActive?: boolean
 }) {
     return view === "actions"
-        ? <PrimaryMessageActions onDelete={null} onEdit={null} onSave={onSave} saveLabel={saveLabel} saveDisabled={saveDisabled} saveActive={saveActive} onReply={onReply} replyDisabled={interactionBlocked} onCopy={onCopy} onPin={onPin} onReact={canInteract ? onShowReactions : null} reactDisabled={interactionBlocked} pinned={pinned} />
+        ? <PrimaryMessageActions onInfo={onInfo} onDelete={null} onEdit={null} onSave={onSave} saveLabel={saveLabel} saveDisabled={saveDisabled} saveActive={saveActive} onReply={onReply} replyDisabled={interactionBlocked} onCopy={onCopy} onPin={onPin} onReact={canInteract ? onShowReactions : null} reactDisabled={interactionBlocked} pinned={pinned} />
         : canInteract && !interactionBlocked ? <MessageReactionActions currentEmoji={currentEmoji} recentEmoji={recentEmoji} onReact={onReact} onRecentEmoji={onRecentEmoji} side={side} /> : null
 }
 
@@ -259,6 +262,8 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     const supabase = useCommunicationsClient()
     const [updates] = useState(() => createCoordinatedChat<CommunicationMessage, ClientConversation, CommunicationReaction>({ ...bootstrap, conversations: bootstrap.conversations.map(conversation => ({ ...conversation, cursorDeviceId: bootstrap.deviceId })) }, (reaction) => `${reaction.messageId}:${reaction.direction}`))
     const { conversations, reactions } = useSyncExternalStore(updates.subscribe, updates.getSnapshot, updates.getSnapshot)
+    const reactionIndex = useMemo(() => indexChatReactions(reactions, reaction => reaction.relationshipId), [reactions])
+    const inbox = useMemo(() => conversationInbox(conversations, reactionIndex.latestByConversation), [conversations, reactionIndex])
     const { setConversations } = updates
     const [schemaReady, setSchemaReady] = useState(bootstrap.schemaReady)
     const [selectedId, setSelectedId] = useState(bootstrap.selectedConversationId)
@@ -275,7 +280,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     const [replyingTo, setReplyingTo] = useState<CommunicationMessage | null>(null)
     const [actionMessageId, setActionMessageId] = useState<string | null>(null)
     const [actionAnchor, setActionAnchor] = useState<MessageActionAnchor | null>(null)
-    const [actionView, setActionView] = useState<MessageActionView>("actions")
+    const [actionView, setActionView] = useState<MessageActionView | "info">("actions")
     const [recentReaction, setRecentReaction] = useState<string | null>(null)
     const [stickers, setStickers] = useState(bootstrap.stickers)
     const [stickerTrayOpen, setStickerTrayOpen] = useState(false)
@@ -283,7 +288,6 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     const [savingStickerMessageId, setSavingStickerMessageId] = useState<string | null>(null)
     const [downloadingMessageId, setDownloadingMessageId] = useState<string | null>(null)
     const [interactionError, setInteractionError] = useState<string | null>(null)
-    const [windowNow, setWindowNow] = useState(() => Date.now())
     const [reconfirmPendingId, setReconfirmPendingId] = useState<string | null>(null)
     const [reconfirmRequestedKey, setReconfirmRequestedKey] = useState<string | null>(null)
     const [swipePosition, setSwipePosition] = useState<{ id: string; offset: number; active: boolean } | null>(null)
@@ -372,25 +376,13 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     const latestInboundMessageAt = useMemo(() => selected?.messages.reduce((latest, message) =>
         message.direction === "inbound" && usesWhatsApp(message) && message.createdAt > latest ? message.createdAt : latest, "") ?? "", [selected?.messages])
     const lastWhatsAppInboundAt = [selected?.lastWhatsAppInboundAt ?? "", latestInboundMessageAt].sort().at(-1) || null
-    const whatsappWindowClosed = Boolean(selected?.channels?.includes("meta_whatsapp") && !whatsappWindowIsOpen(lastWhatsAppInboundAt, windowNow))
+    const windowOpen = useWhatsAppWindowOpen(lastWhatsAppInboundAt, interactionActive)
+    const whatsappWindowClosed = Boolean(selected?.channels?.includes("meta_whatsapp") && !windowOpen)
     const whatsappOptedOut = Boolean(selected?.whatsappOptedOutAt)
     const reconfirmationKey = selected ? `${selected.id}:${lastWhatsAppInboundAt ?? "never"}` : ""
     const priorReconfirmation = selected?.messages.findLast((message) => message.automationKind === "whatsapp_reconfirmation" && (!lastWhatsAppInboundAt || message.createdAt > lastWhatsAppInboundAt))
     const reconfirmationAwaitingReply = Boolean(priorReconfirmation && !["send_failed", "delivery_failed"].includes(priorReconfirmation.status)) || reconfirmRequestedKey === reconfirmationKey
 
-    useEffect(() => {
-        const refresh = () => { if (document.visibilityState === "visible") setWindowNow(Date.now()) }
-        document.addEventListener("visibilitychange", refresh)
-        if (!lastWhatsAppInboundAt || !active || !workspaceTabActive || !documentVisible) {
-            return () => document.removeEventListener("visibilitychange", refresh)
-        }
-        const remaining = new Date(lastWhatsAppInboundAt).getTime() + WHATSAPP_SERVICE_WINDOW_MS - windowNow
-        const timer = remaining > 0 ? window.setTimeout(() => setWindowNow(Date.now()), Math.min(remaining + 50, 2_147_483_647)) : null
-        return () => {
-            document.removeEventListener("visibilitychange", refresh)
-            if (timer !== null) window.clearTimeout(timer)
-        }
-    }, [active, documentVisible, lastWhatsAppInboundAt, windowNow, workspaceTabActive])
     const history = useConversationHistory(selectedId, selected?.messages ?? [], {
         hasMore: Boolean(selected?.messageWindowStart),
         load: async (before, signal) => {
@@ -860,7 +852,9 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                         const deleted = record(payload.old)
                         const messageId = stringValue(deleted.client_message_id)
                         const direction = deleted.direction
+                        const id = stringValue(deleted.id)
                         if (messageId && (direction === "inbound" || direction === "outbound")) updates.receiveReaction(`${messageId}:${direction}`, null, stringValue(deleted.updated_at) ?? undefined)
+                        else if (id) updates.removeReactionById(id, stringValue(deleted.updated_at) ?? undefined)
                         return
                     }
                     const reaction = realtimeReaction(payload.new)
@@ -1010,7 +1004,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     }
 
     const normalizedSearch = search.trim().toLowerCase()
-    const visibleConversations = conversations.filter((conversation) => !normalizedSearch || `${conversation.title} ${conversation.subtitle ?? ""} ${conversation.previewMessage?.body ?? conversation.messages.at(-1)?.body ?? ""}`.toLowerCase().includes(normalizedSearch) || Boolean(previewSearch.ids?.has(conversation.id)))
+    const visibleConversations = inbox.filter(({ conversation }) => !normalizedSearch || `${conversation.title} ${conversation.subtitle ?? ""} ${conversation.previewMessage?.body ?? conversation.messages.at(-1)?.body ?? ""}`.toLowerCase().includes(normalizedSearch) || Boolean(previewSearch.ids?.has(conversation.id)))
     const peopleById = new Map(bootstrap.people.map((person) => [person.id, person]))
     const senderName = (message: CommunicationMessage) => message.senderKind === "automation"
         ? message.automationLabel ?? "Automation"
@@ -1038,13 +1032,17 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                     </div>
                     <label className="relative mt-3 block"><span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-600"><SearchIcon /></span><input ref={searchRef} type="search" value={search} onChange={(event) => setSearch(event.target.value)} aria-label="Search conversations" placeholder="Search conversations" className="h-10 w-full rounded-lg border border-neutral-800 bg-black pl-9 pr-3 text-sm outline-none placeholder:text-neutral-600 focus:border-neutral-600" /></label>{previewSearch.pending ? <p role="status" className="mt-2 text-[11px] text-neutral-500">Searching messages…</p> : previewSearch.error ? <button type="button" onClick={previewSearch.retry} className="mt-2 text-[11px] text-neutral-400">Could not search messages · Retry</button> : null}
                 </div>
-                <div ref={previewListRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{visibleConversations.length ? visibleConversations.map((conversation) => {
+                <div ref={previewListRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{visibleConversations.length ? visibleConversations.map(({ conversation, reaction, activityAt }) => {
                     const latest = progressivePreviews && conversation.previewMessage !== undefined ? conversation.previewMessage : conversation.messages.at(-1)
+                    const reactionText = reaction ? reactionPreviewText(
+                        reaction.direction === "inbound" ? conversation.title : reaction.reactorUserId === bootstrap.currentUser.id ? "You" : peopleById.get(reaction.reactorUserId ?? "")?.name ?? "Team member",
+                        reaction.emoji, latest?.id === reaction.messageId ? messagePreview(latest) : undefined,
+                    ) : null
                     const ownCursor = readCursors.find((cursor) => cursor.relationshipId === conversation.id && cursor.userId === bootstrap.currentUser.id)
                     const unread = unreadByConversation ? unreadByConversation.get(conversation.id) ?? 0 : deviceMode ? null : clientConversationUnreadCount(conversation, ownCursor)
                     return <button key={conversation.id} data-preview-conversation={conversation.id} type="button" onClick={() => { if (previewFailures.has(conversation.id)) retryPreview(conversation.id); selectConversation(conversation.id) }} aria-current={selectedId === conversation.id ? "page" : undefined} className={`grid w-full grid-cols-[2.75rem_minmax(0,1fr)] gap-3 border-b border-neutral-900 px-4 py-3.5 text-left transition ${selectedId === conversation.id ? "bg-neutral-900" : "hover:bg-black"}`}>
                         <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-full bg-neutral-800 text-sm font-semibold text-neutral-200">{initials(conversation.title)}</span>
-                        <span className="min-w-0"><span className="flex min-w-0 items-start justify-between gap-3"><span className="min-w-0 flex-1 truncate text-sm font-semibold">{conversation.title}</span><span className="flex shrink-0 items-center gap-2">{conversation.isTest ? <SquarePill tone="yellow" className="!min-h-5 !px-2 !py-0.5 !text-[10px] !leading-3">Test</SquarePill> : null}{latest ? <time dateTime={latest.createdAt} className={`text-[11px] ${unread ? "text-white" : "text-neutral-600"}`}>{formatRelativeTime(latest.createdAt)}</time> : null}</span></span><span className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-neutral-500">{latest?.direction === "outbound" ? <DeliveryTicks message={latest} /> : null}<span className="truncate">{progressivePreviews && conversation.previewState !== "ready" && !latest ? <ConversationPreviewStatus failed={previewFailures.has(conversation.id)} /> : latest?.body || "No messages"}</span>{unread === null ? <span className="ml-auto" aria-label="Unread count loading">…</span> : unread ? <span className="ml-auto"><UnreadMessageCount count={unread} label="unread messages" /></span> : null}</span></span>
+                        <span className="min-w-0"><span className="flex min-w-0 items-start justify-between gap-3"><span className="min-w-0 flex-1 truncate text-sm font-semibold">{conversation.title}</span><span className="flex shrink-0 items-center gap-2">{conversation.isTest ? <SquarePill tone="yellow" className="!min-h-5 !px-2 !py-0.5 !text-[10px] !leading-3">Test</SquarePill> : null}{activityAt ? <time dateTime={activityAt} className={`text-[11px] ${unread ? "text-white" : "text-neutral-600"}`}>{formatRelativeTime(activityAt)}</time> : null}</span></span><span className="mt-1 flex min-w-0 items-center gap-1.5 text-xs text-neutral-500">{!reaction && latest?.direction === "outbound" ? <DeliveryTicks message={latest} /> : null}<span className="truncate">{reactionText ?? (progressivePreviews && conversation.previewState !== "ready" && !latest ? <ConversationPreviewStatus failed={previewFailures.has(conversation.id)} /> : latest?.body || "No messages")}</span>{unread === null ? <span className="ml-auto" aria-label="Unread count loading">…</span> : unread ? <span className="ml-auto"><UnreadMessageCount count={unread} label="unread messages" /></span> : null}</span></span>
                     </button>
                 }) : <div className="p-6 text-center"><p className="text-sm font-medium text-neutral-300">{previewSearch.pending ? "Searching conversations…" : previewSearch.error ? "Search incomplete" : conversations.length ? "No matching conversations" : "No clients yet"}</p><p className="mt-2 text-xs leading-5 text-neutral-600">{conversations.length ? "Try another name or message." : "Client relationships will appear here automatically."}</p></div>}</div>
             </aside>
@@ -1080,7 +1078,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                                 : message.replyToProviderMessageId
                                     ? selected.messages.find((candidate) => candidate.providerMessageId === message.replyToProviderMessageId) ?? null
                                     : null
-                            const messageReactions = reactions.filter((reaction) => reaction.messageId === message.id)
+                            const messageReactions = reactionIndex.byMessage.get(message.id) ?? []
                             const teamReaction = messageReactions.find((reaction) => reaction.direction === "outbound") ?? null
                             const canInteract = selected.canWrite && clientMessageSupportsReaction(message, reactionCutoff)
                             const swipeOffset = swipePosition?.id === message.id ? swipePosition.offset : 0
@@ -1098,7 +1096,12 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                                 <div data-message-scroll-anchor={messageAnimationKey(message)} data-message-interaction={message.id} inert={Boolean(replyingTo)} className={`relative flex items-center gap-2 transition-[filter,opacity,transform] duration-150 ${message.direction === "outbound" ? "justify-end origin-right" : "justify-start origin-left"} ${replyingTo ? replyingTo.id === message.id ? "pointer-events-none z-10 scale-[1.03]" : "pointer-events-none opacity-30 blur-[1px]" : ""} ${enteringMessageIds.has(message.id) ? message.direction === "outbound" ? "betelgeze-message-enter-right" : "betelgeze-message-enter-left" : ""}`}>
                                     <span aria-hidden="true" style={{ opacity: Math.min(1, swipeOffset / 36) }} className="pointer-events-none absolute -inset-x-3 inset-y-0 bg-gradient-to-r from-white/20 via-white/5 to-transparent lg:hidden" />
                                     <span aria-hidden="true" style={{ top: "50%", opacity: Math.min(1, swipeOffset / 38), transform: `translateY(-50%) scale(${0.72 + Math.min(0.28, swipeOffset / 190)})` }} className="pointer-events-none absolute left-0 flex h-9 w-9 items-center justify-center rounded-full bg-neutral-800 text-white lg:hidden"><ReplyIcon className="h-5 w-5" /></span>
-                                    {message.direction === "outbound" && showActions ? <MessageActionPopup key={`${message.id}:${actionView}`} anchor={actionAnchor} onDismiss={() => setActionMessageId(null)}><MessageActionTray view={actionView} canInteract={canInteract} interactionBlocked={!selected.canWrite || whatsappWindowClosed || whatsappOptedOut} currentEmoji={teamReaction?.emoji ?? null} recentEmoji={recentReaction} onReact={(emoji) => void sendReaction(message, emoji)} onRecentEmoji={rememberRecentReaction} onReply={() => beginReply(message)} onCopy={() => void copyMessage(message)} onPin={canPin ? () => void togglePinnedMessage(message) : null} onShowReactions={() => setActionView("reactions")} pinned={selected.pinnedMessageId === message.id} side="right" onSave={canSaveAttachment ? () => void saveOrDownloadAttachment(message) : null} saveLabel={saveAttachmentLabel} saveDisabled={saveAttachmentDisabled} saveActive={stickerSaved} /></MessageActionPopup> : null}
+                                    {showActions && actionView === "info" ? <MessageInfoDialog
+                                        message={message} sender={sender} preview={messagePreview(message)}
+                                        memberIds={selected.participants?.memberIds} people={peopleById} cursors={readCursors} currentUserId={bootstrap.currentUser.id}
+                                        onClose={() => setActionMessageId(null)}
+                                    /> : null}
+                                    {message.direction === "outbound" && showActions && actionView !== "info" ? <MessageActionPopup key={`${message.id}:${actionView}`} anchor={actionAnchor} onDismiss={() => setActionMessageId(null)}><MessageActionTray view={actionView} onInfo={message.id !== message.clientRequestId ? () => setActionView("info") : undefined} canInteract={canInteract} interactionBlocked={!selected.canWrite || whatsappWindowClosed || whatsappOptedOut} currentEmoji={teamReaction?.emoji ?? null} recentEmoji={recentReaction} onReact={(emoji) => void sendReaction(message, emoji)} onRecentEmoji={rememberRecentReaction} onReply={() => beginReply(message)} onCopy={() => void copyMessage(message)} onPin={canPin ? () => void togglePinnedMessage(message) : null} onShowReactions={() => setActionView("reactions")} pinned={selected.pinnedMessageId === message.id} side="right" onSave={canSaveAttachment ? () => void saveOrDownloadAttachment(message) : null} saveLabel={saveAttachmentLabel} saveDisabled={saveAttachmentDisabled} saveActive={stickerSaved} /></MessageActionPopup> : null}
                                     <NativeMessageBubble
                                         active={interactionActive}
                                         video={message.attachment?.kind === "video"}
@@ -1168,7 +1171,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                                         {message.error ? <p className={`mt-1 text-[10px] ${message.status === "send_failed" || message.status === "delivery_failed" ? "text-red-600" : "text-amber-700"}`}>{message.error}</p> : null}
                                         {["send_failed", "partial_sent"].includes(message.status) && message.clientRequestId ? <button type="button" onClick={() => void sendMessage(message)} disabled={!selected.canWrite || whatsappWindowClosed || whatsappOptedOut} className="mt-2 text-xs font-semibold underline underline-offset-2 disabled:text-neutral-500">Retry failed channel{message.status === "partial_sent" ? "" : "s"}</button> : null}
                                     </NativeMessageBubble>
-                                    {message.direction === "inbound" && showActions ? <MessageActionPopup key={`${message.id}:${actionView}`} anchor={actionAnchor} onDismiss={() => setActionMessageId(null)}><MessageActionTray view={actionView} canInteract={canInteract} interactionBlocked={!selected.canWrite || whatsappWindowClosed || whatsappOptedOut} currentEmoji={teamReaction?.emoji ?? null} recentEmoji={recentReaction} onReact={(emoji) => void sendReaction(message, emoji)} onRecentEmoji={rememberRecentReaction} onReply={() => beginReply(message)} onCopy={() => void copyMessage(message)} onPin={canPin ? () => void togglePinnedMessage(message) : null} onShowReactions={() => setActionView("reactions")} pinned={selected.pinnedMessageId === message.id} side="left" onSave={canSaveAttachment ? () => void saveOrDownloadAttachment(message) : null} saveLabel={saveAttachmentLabel} saveDisabled={saveAttachmentDisabled} saveActive={stickerSaved} /></MessageActionPopup> : null}
+                                    {message.direction === "inbound" && showActions && actionView !== "info" ? <MessageActionPopup key={`${message.id}:${actionView}`} anchor={actionAnchor} onDismiss={() => setActionMessageId(null)}><MessageActionTray view={actionView} onInfo={message.id !== message.clientRequestId ? () => setActionView("info") : undefined} canInteract={canInteract} interactionBlocked={!selected.canWrite || whatsappWindowClosed || whatsappOptedOut} currentEmoji={teamReaction?.emoji ?? null} recentEmoji={recentReaction} onReact={(emoji) => void sendReaction(message, emoji)} onRecentEmoji={rememberRecentReaction} onReply={() => beginReply(message)} onCopy={() => void copyMessage(message)} onPin={canPin ? () => void togglePinnedMessage(message) : null} onShowReactions={() => setActionView("reactions")} pinned={selected.pinnedMessageId === message.id} side="left" onSave={canSaveAttachment ? () => void saveOrDownloadAttachment(message) : null} saveLabel={saveAttachmentLabel} saveDisabled={saveAttachmentDisabled} saveActive={stickerSaved} /></MessageActionPopup> : null}
                                 </div>
                                 {!isSticker && messageReactions.length ? <div inert={Boolean(replyingTo)} className={`flex max-w-full flex-wrap gap-1 px-1 transition-opacity duration-150 ${replyingTo && replyingTo.id !== message.id ? "pointer-events-none select-none opacity-30" : ""} ${message.direction === "outbound" ? "justify-end" : "justify-start"}`}>{messageReactions.map((reaction) => <span key={`${reaction.messageId}:${reaction.direction}`} title={reaction.direction === "inbound" ? `Reacted by ${selected.title}` : `Reacted in Betelgeze by ${peopleById.get(reaction.reactorUserId ?? "")?.name ?? "Team"}`} className="rounded-full border border-neutral-800 bg-neutral-950 px-2 py-0.5 text-sm shadow-sm">{reaction.emoji}</span>)}</div> : null}
                             </Fragment>

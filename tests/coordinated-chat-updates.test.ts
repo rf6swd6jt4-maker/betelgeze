@@ -317,3 +317,27 @@ test("metadata refresh preserves a server-confirmed empty device cursor after hi
     chat.applySnapshot(chat.beginRead(), { conversations: [], reactions: [] })
     assert.equal(chat.getSnapshot().conversations.length, 0, "lost access still removes the conversation")
 })
+
+test("a reaction to unloaded history survives preview loading and respects recovery, deletion and access loss", () => {
+    const base = { ...snapshot().conversations[0], messages: [] as Message[], previewState: "loading" as const }
+    const scoped = { ...reaction(), conversationId: base.id, messageId: "unloaded" }
+    const chat = createCoordinatedChat({ conversations: [base], reactions: [scoped] }, reactionKey)
+    const roster = { conversations: [base], reactions: [scoped] }
+    chat.applySnapshot(chat.beginRead(), roster)
+    chat.setPreviews([{ conversationId: base.id, preview: message, cursorKnown: true, deviceCursor: null, cursorDeviceId: "local" }])
+    assert.deepEqual(chat.getSnapshot().reactions, [scoped])
+    assert.deepEqual(chat.getSnapshot().conversations[0].messages, [])
+    const stale = chat.beginRead()
+    chat.removeReactionById("unrelated-row")
+    assert.deepEqual(chat.getSnapshot().reactions, [scoped])
+    chat.removeReactionById(scoped.id, scoped.updatedAt)
+    chat.applySnapshot(stale, roster)
+    assert.deepEqual(chat.getSnapshot().reactions, [])
+    chat.receiveReaction(reactionKey(scoped), { ...scoped, updatedAt: "2026-09-06T12:05:00Z" })
+    chat.applySnapshot(chat.beginRead(), { conversations: [base], reactions: [] })
+    assert.deepEqual(chat.getSnapshot().reactions, [], "a full reaction snapshot recovers a missed removal")
+    chat.applySnapshot(chat.beginRead(), roster)
+    chat.applySnapshot(chat.beginRead(), { conversations: [], reactions: [] })
+    chat.receiveReaction(reactionKey(scoped), scoped)
+    assert.deepEqual(chat.getSnapshot().reactions, [])
+})

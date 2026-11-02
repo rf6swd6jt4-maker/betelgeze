@@ -9,7 +9,7 @@ export class ChatMutationError extends Error {
 
 type Message = { id: string; clientRequestId: string | null; createdAt: string; replyToMessageId?: string | null }
 type Conversation<M> = { id: string; messages: M[]; pinnedMessageId: string | null; updatedAt?: string; latestMessageAt?: string | null; previewState?: "loading" | "ready"; previewMessage?: M | null; cursorDeviceId?: string | null; cursorKnown?: true; deviceCursor?: { lastReadAt: string; lastReadMessageId: string | null } | null; title?: string; messageWindowStart?: string | null; unreadMessages?: Array<{ id: string }> }
-type Reaction = { id: string; messageId: string; updatedAt: string }
+type Reaction = { id: string; messageId: string; updatedAt: string; conversationId?: string; relationshipId?: string }
 type Cell<T> = { value: T | null; revision: number; pending?: { value: T | null }; version: string; readSequence?: number }
 type Setter<T> = T | ((current: T) => T)
 
@@ -104,6 +104,8 @@ export function createCoordinatedChat<M extends Message, C extends Conversation<
     const reactions = collection<R>(reactionKey, tick, (reaction) => reaction.updatedAt)
     const pins = collection<{ id: string; messageId: string | null }>((pin) => pin.id, tick)
     const owners = new Map<string, string>()
+    // Reaction rows carry their own authorized chat scope even when their target is outside loaded history.
+    const reactionOwner = (reaction: R) => reaction.conversationId ?? reaction.relationshipId ?? owners.get(reaction.messageId) ?? ""
     let metadata = initial.conversations
     const listeners = new Set<() => void>()
     let state = initial
@@ -140,7 +142,7 @@ export function createCoordinatedChat<M extends Message, C extends Conversation<
         })
         const latestAt = (conversation: C) => conversation.latestMessageAt !== undefined ? conversation.latestMessageAt ?? conversation.updatedAt ?? "" : conversation.messages.at(-1)?.createdAt ?? conversation.updatedAt ?? ""
         conversations.sort((left, right) => latestAt(right).localeCompare(latestAt(left)) || (left.title ?? "").localeCompare(right.title ?? ""))
-        const visibleReactions = reactions.values().filter((reaction) => allowed.has(owners.get(reaction.messageId) ?? "") && (!messages.has(reaction.messageId) || messages.get(reaction.messageId)))
+        const visibleReactions = reactions.values().filter((reaction) => allowed.has(reactionOwner(reaction)) && (!messages.has(reaction.messageId) || messages.get(reaction.messageId)))
         state = { conversations, reactions: visibleReactions }
         listeners.forEach((listener) => listener())
     }
@@ -182,7 +184,7 @@ export function createCoordinatedChat<M extends Message, C extends Conversation<
             pins.replace(read, incoming.conversations.map((conversation) => ({ id: conversation.id, messageId: conversation.pinnedMessageId })))
             const allowed = new Set(metadata.map((conversation) => conversation.id))
             messages.prune((message) => allowed.has(owners.get(message.id) ?? ""))
-            reactions.prune((reaction) => allowed.has(owners.get(reaction.messageId) ?? ""))
+            reactions.prune((reaction) => allowed.has(reactionOwner(reaction)))
             publish()
             return true
         },
@@ -235,6 +237,15 @@ export function createCoordinatedChat<M extends Message, C extends Conversation<
         },
         removeMessage(messageId: string) { messages.write(messageId, null); publish() },
         receiveReaction(key: string, value: R | null, version?: string) { reactions.write(key, value, version); publish() },
+        removeReactionById(id: string, version?: string) {
+            // Some DELETE payloads only contain the primary key. Match the actual
+            // row so a delayed removal cannot clear a replacement reaction.
+            const reaction = state.reactions.find(candidate => candidate.id === id)
+            if (reaction) {
+                reactions.write(reactionKey(reaction), null, version)
+                publish()
+            }
+        },
         mutateReaction: (key: string, desired: R | null, request: () => Promise<R | null>) => reactions.mutate(key, desired, request, publish),
         mutatePin: (conversationId: string, messageId: string | null, request: () => Promise<void>) => pins.mutate(conversationId, { id: conversationId, messageId }, async () => { await request(); return { id: conversationId, messageId } }, publish),
         mutateMessage: (messageId: string, desired: M | null, request: () => Promise<M | null>) => messages.mutate(messageId, desired, request, publish),

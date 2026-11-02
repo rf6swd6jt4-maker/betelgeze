@@ -26,6 +26,7 @@ import { copyMessageText, downloadMessageAttachment, MessageReactionActions, Mes
 import { CancelIcon, CheckIcon, DeleteIcon, DoubleDeliveryCheckIcon, ReplyIcon, SingleDeliveryCheckIcon } from "@/components/communications/MessageInteractionIcons"
 import { JumpToLatestButton, messagePaneCanShowNewMessage } from "@/components/communications/JumpToLatestButton"
 import { MessageMediaLightbox, type MessageMediaPreview } from "@/components/communications/MessageMediaLightbox"
+import { MessageInfoDialog } from "./MessageInfoDialog"
 import { MessageReadAvatars } from "@/components/communications/MessageReadAvatars"
 import { PinnedMessageBar } from "@/components/communications/PinnedMessageBar"
 import { ResizableConversationColumns } from "@/components/communications/ResizableConversationColumns"
@@ -50,6 +51,7 @@ import { useReliableCommunicationsRealtime, type CommunicationsConnectionState }
 import { useSharedUnreadSummary } from "./useSharedUnreadSummary"
 import { useCommunicationsReadProtocol } from "./CommunicationsReadProtocol"
 import { subscribeDeviceChatReads } from "@/lib/communications/device-read-state"
+import { conversationInbox, indexChatReactions, reactionPreviewText } from "@/lib/communications/reaction-previews"
 import { confirmedPreviewCursor } from "@/lib/communications/progressive-previews"
 import { useConversationListActive, useProgressivePreviews, type ProgressivePreview } from "./useProgressivePreviews"
 import { useConversationPreviewSearch } from "./useConversationPreviewSearch"
@@ -186,6 +188,8 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     const supabase = useCommunicationsClient()
     const [updates] = useState(() => createCoordinatedChat<NativeMessage, NativeConversation, NativeReaction>({ ...bootstrap, conversations: bootstrap.conversations.map(conversation => ({ ...conversation, cursorDeviceId: bootstrap.deviceId })) }, (reaction) => `${reaction.messageId}:${reaction.reactorUserId}`))
     const { conversations, reactions } = useSyncExternalStore(updates.subscribe, updates.getSnapshot, updates.getSnapshot)
+    const reactionIndex = useMemo(() => indexChatReactions(reactions, reaction => reaction.conversationId), [reactions])
+    const inbox = useMemo(() => conversationInbox(conversations, reactionIndex.latestByConversation), [conversations, reactionIndex])
     const { setConversations } = updates
     const [schemaReady, setSchemaReady] = useState(bootstrap.schemaReady)
     const [teams, setTeams] = useState(bootstrap.teams)
@@ -227,7 +231,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     const [error, setError] = useState<string | null>(null)
     const [actionMessageId, setActionMessageId] = useState<string | null>(null)
     const [actionAnchor, setActionAnchor] = useState<MessageActionAnchor | null>(null)
-    const [actionView, setActionView] = useState<MessageActionView>("actions")
+    const [actionView, setActionView] = useState<MessageActionView | "info">("actions")
     const [recentReaction, setRecentReaction] = useState<string | null>(null)
     const [downloadingMessageId, setDownloadingMessageId] = useState<string | null>(null)
     const [swipePosition, setSwipePosition] = useState<{ id: string; offset: number; active: boolean } | null>(null)
@@ -533,7 +537,11 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                 })
                 .on("postgres_changes", { event: "*", schema: "public", table: "workspace_native_reactions", filter: `workspace_id=eq.${bootstrap.workspaceId}` }, (payload) => {
                     const row = record(payload.eventType === "DELETE" ? payload.old : payload.new); const messageId = text(row.message_id); const reactorUserId = text(row.reactor_user_id)
-                    if (!messageId || !reactorUserId) return
+                    if (!messageId || !reactorUserId) {
+                        const id = text(row.id)
+                        if (id && payload.eventType === "DELETE") updates.removeReactionById(id, text(row.updated_at) ?? undefined)
+                        return
+                    }
                     if (payload.eventType === "DELETE") updates.receiveReaction(`${messageId}:${reactorUserId}`, null, text(row.updated_at) ?? undefined)
                     else { const id = text(row.id); const conversationId = text(row.conversation_id); const emoji = text(row.emoji); const updatedAt = text(row.updated_at); if (id && conversationId && emoji && updatedAt) updates.receiveReaction(`${messageId}:${reactorUserId}`, { id, conversationId, messageId, reactorUserId, emoji, updatedAt }) }
                 })
@@ -885,7 +893,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
     }
 
     const normalizedSearch = search.trim().toLowerCase()
-    const visible = conversations.filter((conversation) => (showArchived ? conversation.archived : !conversation.archived) && (!normalizedSearch || `${conversation.title} ${conversation.previewMessage?.body ?? conversation.messages.at(-1)?.body ?? ""}`.toLowerCase().includes(normalizedSearch) || Boolean(previewSearch.ids?.has(conversation.id))))
+    const visible = inbox.filter(({ conversation }) => (showArchived ? conversation.archived : !conversation.archived) && (!normalizedSearch || `${conversation.title} ${conversation.previewMessage?.body ?? conversation.messages.at(-1)?.body ?? ""}`.toLowerCase().includes(normalizedSearch) || Boolean(previewSearch.ids?.has(conversation.id))))
     const currentTeam = selected?.teamId ? teams.find((team) => team.id === selected.teamId) : null
     const pinnedMessage = selected?.pinnedMessageId ? selected.messages.find((message) => message.id === selected.pinnedMessageId) ?? null : null
     const pinnedPreview = pinnedMessage ? messagePreview(pinnedMessage).split(/\r?\n/, 1)[0] : selected?.pinnedMessageId && selected.kind !== "direct" ? "Pinned message unavailable" : null
@@ -905,13 +913,17 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                     <label className="relative mt-3 block"><span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-600"><SearchIcon /></span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search team conversations" className="h-10 w-full rounded-lg border border-neutral-800 bg-black pl-9 pr-3 text-sm outline-none placeholder:text-neutral-600" /></label>{previewSearch.pending ? <p role="status" className="mt-2 text-[11px] text-neutral-500">Searching messages…</p> : previewSearch.error ? <button type="button" onClick={previewSearch.retry} className="mt-2 text-[11px] text-neutral-400">Could not search messages · Retry</button> : null}
                     {bootstrap.canManageTeams && teams.some((team) => team.archivedAt) ? <button type="button" onClick={() => { setShowArchived((value) => !value); setSelectedId(null) }} className={`mt-2 text-[11px] ${showArchived ? "text-white" : "text-neutral-500"}`}>{showArchived ? "← Active conversations" : "View archived groups"}</button> : null}
                 </div>
-                <div ref={previewListRef} className="min-h-0 flex-1 overflow-y-auto">{visible.length ? visible.map((conversation) => {
+                <div ref={previewListRef} className="min-h-0 flex-1 overflow-y-auto">{visible.length ? visible.map(({ conversation, reaction, activityAt }) => {
                     const latest = progressivePreviews && conversation.previewMessage !== undefined ? conversation.previewMessage : conversation.messages.at(-1)
                     const showTypingPreview = conversation.id !== selectedId && Object.keys(typingByConversation[conversation.id] ?? {}).length > 0
+                    const reactionText = reaction ? reactionPreviewText(
+                        reaction.reactorUserId === bootstrap.currentUser.id ? "You" : peopleById.get(reaction.reactorUserId)?.name ?? "Team member",
+                        reaction.emoji, latest?.id === reaction.messageId ? messagePreview(latest) : undefined,
+                    ) : null
                     const ownCursor = readCursors.find((cursor) => cursor.conversationId === conversation.id && cursor.userId === bootstrap.currentUser.id)
                     const unread = unreadByConversation ? unreadByConversation.get(conversation.id) ?? 0 : deviceMode ? null : nativeConversationUnreadCount(conversation, ownCursor, bootstrap.currentUser.id)
                     const latestRead = Boolean(latest && readCursors.some((cursor) => cursor.conversationId === conversation.id && cursor.userId !== latest.senderUserId && readCursorCoversMessage(cursor, latest)))
-                    return <button key={conversation.id} data-preview-conversation={conversation.id} type="button" onClick={() => { if (previewFailures.has(conversation.id)) retryPreview(conversation.id); selectConversation(conversation.id) }} className={`grid w-full grid-cols-[2.75rem_minmax(0,1fr)] gap-3 border-b border-neutral-900 px-4 py-3.5 text-left ${selectedId === conversation.id ? "bg-neutral-900" : "hover:bg-black"}`}><TeamAvatar conversation={conversation} currentUserId={bootstrap.currentUser.id} /><span className="min-w-0"><span className="flex items-start justify-between gap-3"><span className="truncate text-sm font-semibold">{conversation.title}</span>{latest ? <time className={unread ? "text-[11px] text-white" : "text-[11px] text-neutral-600"}>{formatRelativeTime(latest.createdAt)}</time> : null}</span><span className="mt-1 flex min-w-0 items-center gap-2 text-xs text-neutral-500">{!showTypingPreview && latest?.senderUserId === bootstrap.currentUser.id ? <NativeDeliveryTicks message={latest} read={latestRead} /> : null}<span className={`truncate ${showTypingPreview ? "font-medium text-neutral-300" : ""}`}>{showTypingPreview ? "typing…" : latest ? `${latest.senderUserId === bootstrap.currentUser.id ? "You: " : ""}${messagePreview(latest)}` : progressivePreviews && conversation.previewState !== "ready" ? <ConversationPreviewStatus failed={previewFailures.has(conversation.id)} /> : "No messages"}</span>{unread === null ? <span className="ml-auto" aria-label="Unread count loading">…</span> : unread ? <span className="ml-auto"><UnreadMessageCount count={unread} label="unread messages" /></span> : null}</span></span></button>
+                    return <button key={conversation.id} data-preview-conversation={conversation.id} type="button" onClick={() => { if (previewFailures.has(conversation.id)) retryPreview(conversation.id); selectConversation(conversation.id) }} className={`grid w-full grid-cols-[2.75rem_minmax(0,1fr)] gap-3 border-b border-neutral-900 px-4 py-3.5 text-left ${selectedId === conversation.id ? "bg-neutral-900" : "hover:bg-black"}`}><TeamAvatar conversation={conversation} currentUserId={bootstrap.currentUser.id} /><span className="min-w-0"><span className="flex items-start justify-between gap-3"><span className="truncate text-sm font-semibold">{conversation.title}</span>{activityAt ? <time dateTime={activityAt} className={unread ? "text-[11px] text-white" : "text-[11px] text-neutral-600"}>{formatRelativeTime(activityAt)}</time> : null}</span><span className="mt-1 flex min-w-0 items-center gap-2 text-xs text-neutral-500">{!showTypingPreview && !reaction && latest?.senderUserId === bootstrap.currentUser.id ? <NativeDeliveryTicks message={latest} read={latestRead} /> : null}<span className={`truncate ${showTypingPreview ? "font-medium text-neutral-300" : ""}`}>{showTypingPreview ? "typing…" : reactionText ?? (latest ? `${latest.senderUserId === bootstrap.currentUser.id ? "You: " : ""}${messagePreview(latest)}` : progressivePreviews && conversation.previewState !== "ready" ? <ConversationPreviewStatus failed={previewFailures.has(conversation.id)} /> : "No messages")}</span>{unread === null ? <span className="ml-auto" aria-label="Unread count loading">…</span> : unread ? <span className="ml-auto"><UnreadMessageCount count={unread} label="unread messages" /></span> : null}</span></span></button>
                 }) : <div className="p-6 text-center"><p className="text-sm text-neutral-300">{previewSearch.pending ? "Searching conversations…" : previewSearch.error ? "Search incomplete" : normalizedSearch ? "No matching conversations" : showArchived ? "No archived teams" : "No team conversations yet"}</p><p className="mt-2 text-xs text-neutral-600">{showArchived ? "Archived team history will appear here." : "Open a profile to start a DM or create a team."}</p></div>}</div>
             </aside>
             <MobileConversationSurface selected={Boolean(selected)} active={active && workspaceTabActive} onClose={() => selectConversation(null)}>
@@ -940,7 +952,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                         const interactionBlocked = Boolean(editingMessage || (selectingQuote ? quoteSelectionMuted : replyingTo))
                         const sender = message.senderUserId === "be" ? { name: "BE", avatarSrc: "/brand/betelgeze-logo.svg", former: false } : peopleById.get(message.senderUserId)
                         const reply = message.replyToMessageId ? selected.messages.find((candidate) => candidate.id === message.replyToMessageId) ?? null : null
-                        const messageReactions = reactions.filter((reaction) => reaction.messageId === message.id)
+                        const messageReactions = reactionIndex.byMessage.get(message.id) ?? []
                         const ownReaction = messageReactions.find((reaction) => reaction.reactorUserId === bootstrap.currentUser.id)
                         const readers = readCursors.filter((cursor) => cursor.conversationId === selected.id && cursor.userId !== message.senderUserId && readCursorCoversMessage(cursor, message)).flatMap((cursor) => peopleById.get(cursor.userId) ?? [])
                         const showDay = index === 0 || !sameDay(selected.messages[index - 1].createdAt, message.createdAt)
@@ -960,7 +972,12 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
                                 <span aria-hidden="true" style={{ opacity: Math.min(1, Math.abs(swipeOffset) / 36) }} className={`pointer-events-none absolute -inset-x-3 inset-y-0 lg:hidden ${swipeOffset < 0 ? "bg-gradient-to-l from-red-600/45 via-red-950/20 to-transparent" : "bg-gradient-to-r from-white/20 via-white/5 to-transparent"}`} />
                                 <span aria-hidden="true" style={{ top: "50%", opacity: Math.min(1, Math.max(0, swipeOffset) / 38), transform: `translateY(-50%) scale(${0.72 + Math.min(0.28, Math.max(0, swipeOffset) / 190)})` }} className="pointer-events-none absolute left-0 flex h-9 w-9 items-center justify-center rounded-full bg-neutral-800 text-white lg:hidden"><ReplyIcon className="h-5 w-5" /></span>
                                 {canDelete ? <span aria-hidden="true" style={{ top: "50%", opacity: Math.min(1, Math.max(0, -swipeOffset) / 38), transform: `translateY(-50%) scale(${0.72 + Math.min(0.28, Math.max(0, -swipeOffset) / 190)})` }} className="pointer-events-none absolute right-0 flex h-9 w-9 items-center justify-center rounded-full bg-red-600 text-white lg:hidden"><DeleteIcon className="h-5 w-5" /></span> : null}
-                                {interactionActive && actionMessageId === message.id ? <MessageActionPopup key={`${message.id}:${actionView}`} anchor={actionAnchor} onDismiss={() => setActionMessageId(null)}>{actionView === "actions" ? <PrimaryMessageActions onDelete={canDelete && selected.canWrite ? () => void deleteMessage(message) : null} onEdit={canEdit ? () => startEditingMessage(message) : null} onSave={canSaveAttachment ? () => void downloadAttachment(message) : null} saveLabel={saveAttachmentLabel} saveDisabled={downloadingMessageId === message.id} onQuote={selected.canWrite ? () => startQuotingMessage(message) : null} onReply={null} onCopy={() => void copyMessage(message)} onPin={canPin ? () => void togglePinnedMessage(message) : null} onReact={selected.canWrite ? () => setActionView("reactions") : null} pinned={selected.pinnedMessageId === message.id} /> : selected.canWrite ? <MessageReactionActions currentEmoji={ownReaction?.emoji ?? null} recentEmoji={recentReaction} onReact={(emoji) => void sendReaction(message, emoji)} onRecentEmoji={rememberRecentReaction} side={own ? "right" : "left"} /> : null}</MessageActionPopup> : null}
+                                {interactionActive && actionMessageId === message.id && actionView === "info" ? <MessageInfoDialog
+                                    message={message} sender={own ? "You" : sender?.name ?? "Team member"} preview={messagePreview(message)}
+                                    memberIds={selected.memberIds} people={peopleById} cursors={readCursors} currentUserId={bootstrap.currentUser.id}
+                                    onClose={() => setActionMessageId(null)}
+                                /> : null}
+                                {interactionActive && actionMessageId === message.id && actionView !== "info" ? <MessageActionPopup key={`${message.id}:${actionView}`} anchor={actionAnchor} onDismiss={() => setActionMessageId(null)}>{actionView === "actions" ? <PrimaryMessageActions onInfo={message.id !== message.clientRequestId ? () => setActionView("info") : undefined} onDelete={canDelete && selected.canWrite ? () => void deleteMessage(message) : null} onEdit={canEdit ? () => startEditingMessage(message) : null} onSave={canSaveAttachment ? () => void downloadAttachment(message) : null} saveLabel={saveAttachmentLabel} saveDisabled={downloadingMessageId === message.id} onQuote={selected.canWrite ? () => startQuotingMessage(message) : null} onReply={null} onCopy={() => void copyMessage(message)} onPin={canPin ? () => void togglePinnedMessage(message) : null} onReact={selected.canWrite ? () => setActionView("reactions") : null} pinned={selected.pinnedMessageId === message.id} /> : selected.canWrite ? <MessageReactionActions currentEmoji={ownReaction?.emoji ?? null} recentEmoji={recentReaction} onReact={(emoji) => void sendReaction(message, emoji)} onRecentEmoji={rememberRecentReaction} side={own ? "right" : "left"} /> : null}</MessageActionPopup> : null}
                                 {!own && selected.kind === "team" ? sender?.former
                                     ? <span title={`${sender.name} · former member`} className="mb-1 mr-2 inline-flex h-7 w-7 shrink-0 overflow-hidden rounded-full opacity-70"><Avatar src={sender.avatarSrc} name={sender.name} className="h-full w-full object-center" /></span>
                                     : <button data-icon-button type="button" onClick={() => openWorkspaceMemberProfile(message.senderUserId)} aria-label={`Open ${sender?.name ?? "team member"} profile`} className="mb-1 mr-2 inline-flex h-7 w-7 shrink-0 aspect-square items-center justify-center overflow-hidden rounded-full p-0 outline-none focus-visible:ring-2 focus-visible:ring-neutral-500"><Avatar src={sender?.avatarSrc} name={sender?.name ?? "Team member"} className="h-full w-full object-center" /></button> : null}

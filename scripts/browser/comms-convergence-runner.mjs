@@ -46,7 +46,7 @@ function App() {
             setReplyingTo() {}, setEditingMessage() {}, setActionMessageId() {}, setDraft() {}, setEditState() {}, editingSessionRef: { current: null },
             setReadCursors, knownReadCursors, publishedReadSnapshot, mergeCursor: (current, incoming) => reads.mergeChatReadCursor(current, incoming, cursor => cursor.conversationId ?? cursor.relationshipId),
             refresh: async () => {}, synchronize: async () => {}, NATIVE_TYPING_EVENT: "typing", syncLifetime: lifetime, selectedRef: { current: selected },
-            knownMessageKeysRef: { current: new Set() }, messageAnimationKey: message => message.id, invalidateUnreadSummary, setSchemaReady() {}, setTeams() {}, setStickers() {}, setSelectedId() {}, flushPendingRead: async () => {}, fetch: window.fetch,
+            knownMessageKeysRef: { current: new Set() }, messageAnimationKey: message => message.id, invalidateUnreadSummary, setInfoRole() {}, setSchemaReady() {}, setTeams() {}, setStickers() {}, setSelectedId() {}, flushPendingRead: async () => {}, fetch: window.fetch,
         }
         const handlers = new Map(), channel = { on(_event, options, handler) { if (options.table) handlers.set(options.table, handler); return channel } }
         ;(kind === "native" ? nativeRealtime : clientRealtime)(dependencies)(channel)

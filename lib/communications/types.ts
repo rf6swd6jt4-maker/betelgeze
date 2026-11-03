@@ -111,6 +111,7 @@ export type ClientConversation = {
 }
 
 export type CommunicationsBootstrap = {
+    currentUserRole?: string
     readProtocol?: CommunicationReadProtocol
     progressivePreviews?: boolean
     deviceId?: string | null

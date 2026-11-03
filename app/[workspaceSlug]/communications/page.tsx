@@ -25,7 +25,7 @@ export default async function CommunicationsPage({ params, searchParams }: PageP
     let bootstrap = null as Awaited<ReturnType<typeof loadClientCommunicationsBootstrap>> | null
     let nativeBootstrap = null as Awaited<ReturnType<typeof loadNativeCommunications>> | null
     try {
-        if (initialMode === "clients") bootstrap = await loadClientCommunicationsBootstrap({ readProtocol, currentUserId: user.id, requestedConversationId: query.conversation, workspaceId: workspace.id, workspaceSlug: workspace.slug })
+        if (initialMode === "clients") bootstrap = await loadClientCommunicationsBootstrap({ role, readProtocol, currentUserId: user.id, requestedConversationId: query.conversation, workspaceId: workspace.id, workspaceSlug: workspace.slug })
         else nativeBootstrap = await loadNativeCommunications({ readProtocol, workspaceId: workspace.id, workspaceSlug: workspace.slug, currentUserId: user.id, role, requestedConversationId: query.nativeConversation, requestedDmUserId: query.dm })
     } catch (error) {
         // Mount the existing device observation owner before retrying a cold

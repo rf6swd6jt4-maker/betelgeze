@@ -34,6 +34,8 @@ function messages(conversationId: string, other: string, amount = 28, age = 0): 
         } : null, createdAt: new Date(now - age - (amount - index) * 180000).toISOString(), editedAt: null,
     }))
 }
+const roleParam = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("role")
+const previewRole = roleParam === "staff" || roleParam === "admin" ? roleParam : "owner"
 export const teamBootstrap: NativeCommunicationsBootstrap = {
     workspaceId: "preview-workspace", workspaceSlug: "local-preview", currentUser, people, formerPeople: [],
     conversations: [
@@ -43,10 +45,10 @@ export const teamBootstrap: NativeCommunicationsBootstrap = {
     ],
     teams: [{ id: "preview-project-team", name: "Project team", kind: clientTeamPreview ? "relationship" : "custom", archivedAt: null, memberIds: people.map(p => p.id), responsibilities: [], maintenanceResponsibilities: [] }, { id: "preview-new-team", name: "New project", kind: "custom", archivedAt: null, memberIds: people.map(p => p.id), responsibilities: [], maintenanceResponsibilities: [] }],
     reactions: [{ id: "preview-reaction", conversationId: "preview-team", messageId: "preview-team-message-45", reactorUserId: "preview-sam", emoji: "👍", updatedAt: new Date(now).toISOString() }],
-    readCursors: [], stickers: [], services: [], maintenanceCategories: [], canManageTeams: false, isOwner: true, currentUserRole: "owner", requestedConversationId: null, requestedDmUserId: null, schemaReady: true,
+    readCursors: [], stickers: [], services: [], maintenanceCategories: [], canManageTeams: false, isOwner: previewRole === "owner", currentUserRole: previewRole, requestedConversationId: null, requestedDmUserId: null, schemaReady: true,
 }
 export const clientBootstrap: CommunicationsBootstrap = {
-    workspaceId: teamBootstrap.workspaceId, workspaceSlug: teamBootstrap.workspaceSlug, currentUser, people, readCursors: [], reactions: [], stickers: [], selectedConversationId: null, schemaReady: true,
+    currentUserRole: previewRole, workspaceId: teamBootstrap.workspaceId, workspaceSlug: teamBootstrap.workspaceSlug, currentUser, people, readCursors: [], reactions: [], stickers: [], selectedConversationId: null, schemaReady: true,
     conversations: ["Northstar Studio", "Harbour Coffee", "Willow Interiors", "New client"].map((title, index) => {
         const id = `preview-client-${index}`
         return { id, clientId: null, title, subtitle: "Local sample conversation", isTest: true, canSend: true, canWrite: !clientTeamPreview || index !== 1, channels: ["meta_whatsapp"], primaryProvider: "meta_whatsapp", lastWhatsAppInboundAt: new Date(now).toISOString(), whatsappOptedOutAt: null, pinnedMessageId: null, participants: { managerId: index === 0 ? currentUser.id : "preview-alex", memberIds: clientTeamPreview ? ["preview-you", "preview-alex", "preview-sam"] : people.map(person => person.id), optionalIds: clientTeamPreview ? index === 1 ? ["preview-you", "preview-sam"] : ["preview-sam"] : ["preview-sam", "preview-jamie"], eligibleIds: ["preview-sam", "preview-jamie"], viewOnlyIds: clientTeamPreview ? index === 1 ? ["preview-you", "preview-sam"] : ["preview-sam"] : [] }, messages: messages(id, "preview-alex", index === 3 ? 0 : 22 + index * 3, index * 60000).map(m => ({ ...m, relationshipId: id, direction: m.senderUserId === currentUser.id ? "outbound" : "inbound", provider: "meta_whatsapp", status: "delivered", error: null, senderKind: m.senderUserId === currentUser.id ? "staff" : "client", automationKind: null, automationLabel: null, providerMessageId: m.id, replyToProviderMessageId: null, sentAt: m.createdAt, deliveredAt: m.createdAt, readAt: null, failedAt: null })) }

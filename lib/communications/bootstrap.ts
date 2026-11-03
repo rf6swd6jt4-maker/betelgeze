@@ -6,8 +6,9 @@ import type { ClientConversation, CommunicationsBootstrap } from "@/lib/communic
 import { listRelationshipsForWorkspace } from "@/lib/relationships"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 
-export async function loadClientCommunicationsBootstrap({ currentUserId, requestedConversationId, workspaceId, workspaceSlug, readProtocol = "account-v1" }: {
+export async function loadClientCommunicationsBootstrap({ currentUserId, role, requestedConversationId, workspaceId, workspaceSlug, readProtocol = "account-v1" }: {
     readProtocol?: CommunicationReadProtocol
+    role: string
     currentUserId: string
     requestedConversationId?: string | null
     workspaceId: string
@@ -86,7 +87,7 @@ export async function loadClientCommunicationsBootstrap({ currentUserId, request
         return rightDate.localeCompare(leftDate) || left.title.localeCompare(right.title)
     })
     return {
-        readProtocol, progressivePreviews: progressive, deviceId: deviceRoster?.deviceId ?? null,
+        currentUserRole: role, readProtocol, progressivePreviews: progressive, deviceId: deviceRoster?.deviceId ?? null,
         workspaceId,
         workspaceSlug,
         currentUser: peopleResult.currentUser,

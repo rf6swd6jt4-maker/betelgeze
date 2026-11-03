@@ -6,12 +6,13 @@ export const dynamic = "force-dynamic"
 
 export async function GET(request: Request, context: { params: Promise<{ workspaceSlug: string }> }) {
     const { workspaceSlug } = await context.params
-    const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "communications")
+    const { workspace, user, role } = await requireWorkspacePanel(workspaceSlug, "communications")
     const readProtocol = validateCommunicationReadProtocol(request, workspace.id, user.id)
     if (readProtocol instanceof Response) return readProtocol
     try {
     const bootstrap = await loadClientCommunicationsBootstrap({
         readProtocol,
+        role,
         currentUserId: user.id,
         requestedConversationId: new URL(request.url).searchParams.get("conversation"),
         workspaceId: workspace.id,

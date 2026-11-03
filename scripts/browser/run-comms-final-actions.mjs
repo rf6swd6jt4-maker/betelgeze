@@ -121,7 +121,7 @@ try {
             await check("view-only client info fits a small phone and closes without exposing edit actions", async () => {
                 await page.setViewportSize({ width: 320, height: 568 })
                 try {
-                    await page.goto(origin + "/?client-team-members")
+                    await page.goto(origin + "/?client-team-members&role=admin")
                     await page.getByRole("tab", { name: "Clients", exact: true }).click()
                     await choose("Harbour Coffee")
                     await menu("preview-client-1-message-24")
@@ -235,6 +235,18 @@ try {
                     await row(messageId).locator("xpath=following-sibling::*[1]").getByText("🎯", { exact: true }).waitFor()
                 })
             }
+            await check("staff menus omit message info in Team, direct and Client chats", async () => {
+                await page.goto(origin + "/?role=staff")
+                for (const [name, id] of [["Project team", "preview-team-message-46"], ["Alex Morgan", "preview-direct-0-message-16"], ["Northstar Studio", "preview-client-0-message-19"]]) {
+                    if (name === "Northstar Studio") await page.getByRole("tab", { name: "Clients", exact: true }).click()
+                    await choose(name)
+                    await menu(id)
+                    await popup().getByRole("button", { name: "Copy message" }).waitFor()
+                    assert.equal(await popup().getByRole("button", { name: "Message info" }).count(), 0)
+                    await page.keyboard.press("Escape")
+                    await back()
+                }
+            })
             await check("desktop direct-message info opens from the keyboard and dismisses with Escape", async () => {
                 await page.setViewportSize({ width: 1280, height: 800 })
                 await page.goto(origin)

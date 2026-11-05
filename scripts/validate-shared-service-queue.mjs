@@ -117,6 +117,12 @@ try {
  await save([outsider]);assert.equal((await one('select count(*)::int n from service_queue_chat_members where user_id=$1',[outsider])).n,1)
  await q('update relationship_service_instances set assignee_user_id=$2 where id=$1',[instance,outsider])
  assert.equal((await one('select count(*)::int n from service_queue_chat_members where user_id=$1',[outsider])).n,0)
+ // This reassignment is a raw relationship_service_instances update, not the
+ // admin transfer_service_assignee RPC. The transfer-time chat cleanup added in
+ // 20261105120000_service_assignee_transfer_chat_cleanup.sql lives entirely
+ // inside that RPC (no new trigger), so it never fires here — this keeps
+ // verifying the Shared Service Assignees feature's own "promotion to primary
+ // retains historical grant" rule for its internal lifecycle path, unchanged.
  await q('update relationship_service_instances set assignee_user_id=$2 where id=$1',[instance,alice])
  assert.equal((await one('select native_conversation_can_read($1,$2) ok',[c,outsider])).ok,true)
 

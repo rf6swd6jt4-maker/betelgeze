@@ -40,6 +40,11 @@ try {
         create table work_item_dependencies(workspace_id uuid,work_item_id uuid,depends_on_work_item_id uuid);
         create table assets(id uuid primary key,workspace_id uuid,relationship_id uuid);
         create table fixture_client_chat_members(workspace_id uuid,relationship_id uuid,user_id uuid);
+        create table workspace_teams(id uuid primary key default gen_random_uuid(),workspace_id uuid,relationship_id uuid,unique(workspace_id,relationship_id));
+        create table workspace_team_members(workspace_id uuid,team_id uuid,user_id uuid,added_by uuid,added_at timestamptz default now(),primary key(team_id,user_id));
+        create table service_queue_members(workspace_id uuid,instance_id uuid,user_id uuid,primary key(instance_id,user_id));
+        create table service_queue_chat_members(workspace_id uuid,team_id uuid,user_id uuid,primary key(team_id,user_id));
+        create function service_queue_is_member(uuid,uuid,uuid) returns boolean language sql as $$select false$$;
         create function workspace_user_can_access_relationship(p_workspace_id uuid,p_relationship_id uuid,p_user_id uuid default auth.uid()) returns boolean language sql stable security definer as $$
             select exists(select 1 from relationships x join workspace_memberships m on m.workspace_id=x.workspace_id and m.user_id=p_user_id
                 where x.workspace_id=p_workspace_id and x.id=p_relationship_id and (m.role in ('owner','admin') or p_user_id in(x.seller_user_id,x.fulfilment_manager_user_id)
@@ -129,6 +134,7 @@ try {
     // internal assignment reader must explicitly remove that inherited grant.
     await db.exec('alter default privileges in schema public grant execute on functions to service_role')
     await db.exec(await migration('20261005220000_service_assignee_transfer.sql'))
+    await db.exec(await migration('20261105120000_service_assignee_transfer_chat_cleanup.sql'))
     assert.deepEqual(await commandDefinition(),beforeTransferMigration)
     assert.deepEqual(await shellDefinition(),beforeShell)
     const transferDefinition=(await one("select pg_get_functiondef('public.transfer_service_assignee(uuid,uuid,uuid,uuid,uuid,jsonb)'::regprocedure) definition")).definition
@@ -338,4 +344,34 @@ try {
     await db.exec('reset role')
     await assert.rejects(q("update service_assignee_transfer_receipts set input='{}'"),/immutable/)
     pass('RPC and immutable receipt permission boundaries')
+
+    // Team chat membership cleanup: at this point instance.assignee_user_id is
+    // staff (the checkRetention block above always rolls back to that baseline).
+    // The fixture's own legacy relationship_services row still names staff as
+    // assignee (never touched by any instance-based transfer); clear it to
+    // establish a clean "no current role" baseline, then let each scenario's
+    // own setup() add back whatever role should retain chat membership.
+    const chatCheck=async(setup,expectRetained)=>{
+      await db.exec('begin')
+      try {
+        await q('update relationship_services set assignee_user_id=null where workspace_id=$1 and relationship_id=$2',[w,r])
+        const team=(await one('insert into workspace_teams(workspace_id,relationship_id) values($1,$2) returning id',[w,r])).id
+        await q('insert into workspace_team_members(workspace_id,team_id,user_id,added_by) values($1,$2,$3,$4)',[w,team,staff,owner])
+        const bystander=uuid(900)
+        await q('insert into workspace_team_members(workspace_id,team_id,user_id,added_by) values($1,$2,$3,$4)',[w,team,bystander,owner])
+        await setup()
+        const candidate=await preview()
+        assert.equal(candidate.formerId,staff)
+        assert.equal(candidate.teamMembershipRetained,expectRetained)
+        await save(candidate,[],uuid(retentionRequest++))
+        assert.equal((await one('select count(*)::int n from workspace_team_members where team_id=$1 and user_id=$2',[team,staff])).n,expectRetained?1:0)
+        // An independent/manual member unrelated to the transferred assignee is
+        // never inspected or removed by this cleanup.
+        assert.equal((await one('select count(*)::int n from workspace_team_members where team_id=$1 and user_id=$2',[team,bystander])).n,1)
+      } finally { await db.exec('rollback') }
+    }
+    await chatCheck(async()=>{},false)
+    await chatCheck(async()=>{ await q('update relationships set seller_user_id=$2 where id=$1',[r,staff]) },true)
+    await chatCheck(reviveShared,true)
+    pass('transfer removes the former assignee from Team chat only when no current role retains them, leaving independent members untouched')
 } finally { await db.close() }

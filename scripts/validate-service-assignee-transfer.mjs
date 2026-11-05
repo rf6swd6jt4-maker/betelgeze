@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { PGlite, repositoryRoot } from './pglite-fixture.mjs'
+import { defaultTransferWork, recoverServiceTransfer } from '../lib/service-assignee-transfer.ts'
 
 const db = new PGlite()
 const uuid = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`
@@ -163,6 +164,26 @@ try {
     assert.equal(p.formerName,'Assigned staff')
     assert.equal(p.recipientName,'Recipient staff')
     assert.deepEqual(p.items.filter(x=>x.movable).map(x=>x.id),[uuid(810),uuid(813)])
+    await db.exec('begin')
+    try {
+      // service_id is nullable on canonical work. SQL AND returns null for this
+      // linked task, which must remain unselected without blocking the handover.
+      await q("insert into work_items(id,workspace_id,title,status) values($1,$2,'Linked work without service attribution','todo')",[uuid(817),w])
+      await q('insert into work_item_relationships values($1,$2,$3)',[w,r,uuid(817)])
+      await q('insert into service_instance_work_items(workspace_id,instance_id,work_item_id) values($1,$2,$3)',[w,instance,uuid(817)])
+      const nullablePreview=await preview()
+      assert.equal(nullablePreview.items.find(item=>item.id===uuid(817)).movable,null)
+      const workIds=defaultTransferWork(nullablePreview)
+      assert.deepEqual(workIds,[uuid(810)])
+      const input={expectedUserId:owner,requestId:uuid(818),instanceId:instance,recipientId:nullablePreview.recipientId,fingerprint:nullablePreview.fingerprint,workIds,reason:'Fixture handover'}
+      assert.deepEqual(recoverServiceTransfer(JSON.stringify({input,preview:nullablePreview}),owner,instance),{input,preview:nullablePreview})
+      await db.exec('savepoint rejected_selection')
+      await assert.rejects(save(nullablePreview,[uuid(817)],uuid(819)),/transferable/)
+      await db.exec('rollback to savepoint rejected_selection')
+      assert.equal((await save(nullablePreview,workIds,uuid(818))).version,2)
+      assert.equal((await one('select execution_owner_id from work_items where id=$1',[uuid(817)])).execution_owner_id,null)
+    } finally { await db.exec('rollback') }
+    pass('actual SQL preview with nullable transferability survives device recovery and preserves retained work')
     await assert.rejects(save(p,[uuid(811)]),/transferable/)
     await assert.rejects(save(p,[uuid(812)]),/transferable/)
     await assert.rejects(save(p,[uuid(814)]),/transferable/)

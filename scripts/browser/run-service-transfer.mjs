@@ -30,7 +30,9 @@ try {
     {id:'00000000-0000-4000-8000-000000000010',title:'Prepare campaign',status:'todo',execution_owner_id:'00000000-0000-4000-8000-000000000004',assignees:['00000000-0000-4000-8000-000000000004'],movable:true,shared:false},
     {id:'00000000-0000-4000-8000-000000000011',title:'Shared review',status:'todo',execution_owner_id:'00000000-0000-4000-8000-000000000004',assignees:['00000000-0000-4000-8000-000000000004'],movable:false,shared:true},
     {id:'00000000-0000-4000-8000-000000000012',title:'Another owner task',status:'todo',execution_owner_id:'00000000-0000-4000-8000-000000000014',assignees:['00000000-0000-4000-8000-000000000014'],movable:true,shared:false},
-    {id:'00000000-0000-4000-8000-000000000013',title:'Inherits service owner',status:'todo',execution_owner_id:null,assignees:[],movable:true,shared:false}
+    {id:'00000000-0000-4000-8000-000000000013',title:'Inherits service owner',status:'todo',execution_owner_id:null,assignees:[],movable:true,shared:false},
+    // Actual SQL shape for linked work whose service_id is null.
+    {id:'00000000-0000-4000-8000-000000000015',title:'Retained linked work',status:'todo',execution_owner_id:null,assignees:[],movable:null,shared:false}
    ]}})
   })
   await page.goto(scenario==='recovery-empty'?`${origin}?recovery=1`:origin)
@@ -68,6 +70,8 @@ try {
    assert.equal(await page.getByRole('checkbox',{name:'Shared review'}).isEnabled(),false)
    assert.equal(await page.getByRole('checkbox',{name:'Inherits service owner'}).isEnabled(),false)
    assert.equal(await page.getByRole('checkbox',{name:'Another owner task'}).isChecked(),false)
+   assert.equal(await page.getByRole('checkbox',{name:'Retained linked work'}).isEnabled(),false)
+   assert.equal(await page.getByRole('checkbox',{name:'Retained linked work'}).isChecked(),false)
    await page.getByRole('textbox',{name:'Reason'}).fill('Reassign delivery responsibility')
    await page.getByRole('checkbox',{name:/I reviewed/}).check()
    await page.getByRole('button',{name:'Transfer assignee',exact:true}).click()

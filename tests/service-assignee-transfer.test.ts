@@ -15,7 +15,7 @@ test("shared, completed and private work marked non-transferable never enter the
 
 const id = (n: number) => `00000000-0000-4000-8000-${String(n).padStart(12, "0")}`
 function recoveryRecord() {
-    const p = { ...preview([item({ id: id(10), execution_owner_id: id(4), assignees: [id(4)] })]), instanceId: id(6), recipientId: id(5), fingerprint: "a".repeat(32) }
+    const p = { ...preview([item({ id: id(10), execution_owner_id: id(4), assignees: [id(4)] })]), instanceId: id(6), formerId: id(4), recipientId: id(5), fingerprint: "a".repeat(32) }
     return { input: { expectedUserId: id(3), requestId: id(8), instanceId: id(6), recipientId: id(5), fingerprint: p.fingerprint, workIds: [id(10)], reason: "Handover" }, preview: p }
 }
 test("recovery preserves exact request identity and rejects other accounts or services", () => {
@@ -32,4 +32,21 @@ test("malformed saved previews cannot crash the recovery dialog or become transf
     assert.equal(recoverServiceTransfer("broken", id(3), id(6)), null)
     const value = recoveryRecord()
     assert.equal(recoverServiceTransfer(JSON.stringify({ ...value, input: { ...value.input, workIds: Array(201).fill(id(10)) } }), id(3), id(6)), null)
+})
+
+test("a SQL-null transferability flag preserves the preview and never selects that work", () => {
+    const value = recoveryRecord()
+    const retained = { ...value.preview.items[0], id: id(11), movable: null }
+    const record = { ...value, preview: { ...value.preview, items: [...value.preview.items, retained] } }
+    const recovered = recoverServiceTransfer(JSON.stringify(record), id(3), id(6))
+    assert.deepEqual(recovered, record)
+    assert.deepEqual(defaultTransferWork(recovered!.preview), [id(10)])
+})
+
+test("missing or non-boolean transferability values remain invalid recovery data", () => {
+    for (const movable of [undefined, "true", "false", 0, 1, {}, []]) {
+        const value = recoveryRecord()
+        const record = { ...value, preview: { ...value.preview, items: [{ ...value.preview.items[0], movable }] } }
+        assert.equal(recoverServiceTransfer(JSON.stringify(record), id(3), id(6)), null)
+    }
 })

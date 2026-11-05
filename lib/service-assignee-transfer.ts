@@ -1,6 +1,8 @@
 export type ServiceTransferWork = {
     id: string; title: string; status: string; execution_owner_id: string | null;
-    assignees: string[]; shared: boolean; movable: boolean;
+    // SQL can return null when a linked work item has no service_id. Only true
+    // permits handover; null retains that work just like false.
+    assignees: string[]; shared: boolean; movable: boolean | null;
 }
 export type ServiceTransferPreview = {
     instanceId: string; version: number; stage: string; formerId: string | null; recipientId: string;
@@ -8,7 +10,7 @@ export type ServiceTransferPreview = {
     formerSetupRetained: boolean; formerBookingRetained: boolean; teamMembershipRetained: boolean;
 }
 export function defaultTransferWork(preview: ServiceTransferPreview) {
-    return preview.items.filter(item => item.movable
+    return preview.items.filter(item => item.movable === true
         && (!item.execution_owner_id || item.execution_owner_id === preview.formerId)
         && item.assignees.every(id => id === preview.formerId)).map(item => item.id)
 }
@@ -36,7 +38,7 @@ export function recoverServiceTransfer(value: string, userId: string, instanceId
         for (const item of preview.items) {
             if (!item || !uuid(item.id) || typeof item.title !== "string" || item.title.length > 1000 || typeof item.status !== "string"
                 || item.execution_owner_id !== null && !uuid(item.execution_owner_id)
-                || typeof item.shared !== "boolean" || typeof item.movable !== "boolean" || !Array.isArray(item.assignees) || item.assignees.length > 200 || !item.assignees.every(uuid)) return null
+                || typeof item.shared !== "boolean" || (item.movable !== null && typeof item.movable !== "boolean") || !Array.isArray(item.assignees) || item.assignees.length > 200 || !item.assignees.every(uuid)) return null
         }
         return { input, preview }
     } catch { return null }

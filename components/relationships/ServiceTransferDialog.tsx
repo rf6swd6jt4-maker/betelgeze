@@ -114,7 +114,7 @@ export function ServiceTransferDialog({ row, endpoint, workspaceSlug, relationsh
         checkpointValue.current = JSON.stringify({ input: request.current, preview })
         if (!recoverServiceTransfer(checkpointValue.current, userId, row.id)) {
             request.current = null; checkpointValue.current = ""
-            setError("This preview cannot be safely recovered on this device. Reload the preview before transferring."); return
+            setError("This transfer preview contains unsupported data. No transfer was sent. Reload the preview and try again."); return
         }
         if (!checkpoint()) { request.current = null; checkpointValue.current = ""; setError(`No transfer was sent. ${journal.error() ?? "Device recovery is unavailable."}`); return }
         startTransition(async () => {

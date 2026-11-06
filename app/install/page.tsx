@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import Image from "next/image";
 import Link from "next/link";
 import { InstallPrompt } from "@/components/pwa/InstallPrompt";
+import { Button, Card } from "@/components/ui";
 
 const appOrigin = "https://app.betelgeze.com";
 const appInstallUrl = `${appOrigin}/install`;
@@ -48,9 +49,9 @@ export default async function InstallPage() {
             <Image src="/brand/betelgeze-logo-inverted-no-background.svg" alt="Betelgeze" width={32} height={32} priority />
             <span>Betelgeze</span>
           </Link>
-          <Link href={loginHref} className="rounded-lg border border-neutral-700 px-3 py-2 text-sm text-neutral-200 hover:border-neutral-400">
+          <Button href={loginHref} variant="secondary" size="sm">
             Log in
-          </Link>
+          </Button>
         </nav>
 
         <section className="grid gap-8 py-14 lg:grid-cols-[0.9fr_1.1fr] lg:items-end lg:py-20">
@@ -66,16 +67,16 @@ export default async function InstallPage() {
         {isAppHost ? (
           <InstallPrompt />
         ) : (
-          <section className="rounded-lg border border-neutral-800 bg-neutral-950 p-5">
+          <Card>
             <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">App domain required</p>
             <h2 className="mt-3 text-2xl font-semibold tracking-tight">Open the app domain before installing.</h2>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-neutral-400">
               Safari installs the current website. Use the app domain so the Dock icon opens the Betelgeze app, not the marketing site.
             </p>
-            <Link href={appInstallUrl} className="mt-6 inline-flex rounded-lg bg-white px-4 py-3 text-sm font-semibold text-black transition hover:bg-neutral-200">
+            <Button href={appInstallUrl} className="mt-6">
               Open app install page
-            </Link>
-          </section>
+            </Button>
+          </Card>
         )}
 
         <section className="mt-6 grid gap-3 sm:grid-cols-3">
@@ -84,10 +85,10 @@ export default async function InstallPage() {
             ["Safe caching", "Static app assets only; live client data stays fresh."],
             ["Notification-ready", "The service worker is in place for future workflow alerts."],
           ].map(([title, body]) => (
-            <div key={title} className="rounded-lg border border-neutral-800 bg-neutral-900 p-4">
+            <Card key={title} padding="sm">
               <p className="text-sm font-semibold text-white">{title}</p>
               <p className="mt-2 text-sm leading-6 text-neutral-400">{body}</p>
-            </div>
+            </Card>
           ))}
         </section>
       </div>

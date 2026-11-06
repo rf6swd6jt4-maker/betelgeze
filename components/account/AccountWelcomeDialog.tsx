@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Status } from "@/components/ui"
+import { Button, Status } from "@/components/ui"
 
 type WelcomeEvent = { workspaceName: string; workspaceSlug: string; role: string }
 
@@ -41,8 +41,8 @@ export function AccountWelcomeDialog() {
             <h2 id="welcome-title" className="mt-5 text-2xl font-semibold">You joined {event.workspaceName}</h2>
             <p id="welcome-description" className="mt-3 text-sm leading-6 text-neutral-300">Your account is secured and you now have {role} access. You can open the workspace now or finish looking around your profile.</p>
             <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                <button ref={close} type="button" onClick={() => setEvent(null)} className="min-h-11 rounded-lg border border-neutral-700 px-4 py-3 text-sm font-medium hover:border-neutral-500">Stay on profile</button>
-                <a href={`/${event.workspaceSlug}`} className="flex min-h-11 items-center justify-center rounded-lg bg-white px-4 py-3 text-sm font-semibold text-black hover:bg-neutral-200">Open workspace</a>
+                <Button ref={close} variant="secondary" onClick={() => setEvent(null)}>Stay on profile</Button>
+                <Button href={`/${event.workspaceSlug}`}>Open workspace</Button>
             </div>
         </section>
     </div>

@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "@/components/workspace/WorkspaceLink"
-import type { ButtonHTMLAttributes, ReactNode } from "react"
+import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react"
 import { cx } from "./cx"
 
 export type ButtonVariant = "primary" | "secondary" | "ghost" | "destructive"
@@ -33,7 +33,12 @@ type CommonProps = {
 type ButtonAsButton = CommonProps & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className" | "children"> & { href?: undefined }
 type ButtonAsLink = CommonProps & { href: string; external?: boolean; type?: undefined }
 
-export function Button({ variant = "primary", size = "md", children, className = "", ...props }: ButtonAsButton | ButtonAsLink) {
+// ref forwarding only reaches the native <button> path — WorkspaceLink isn't
+// ref-forwarding, and nothing yet needs a ref on the href/anchor path.
+export const Button = forwardRef<HTMLButtonElement, ButtonAsButton | ButtonAsLink>(function Button(
+    { variant = "primary", size = "md", children, className = "", ...props },
+    ref,
+) {
     const classes = cx(
         "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-lg font-medium outline-none transition-colors",
         "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white",
@@ -50,5 +55,5 @@ export function Button({ variant = "primary", size = "md", children, className =
     }
 
     const { type = "button", ...rest } = props as ButtonAsButton
-    return <button type={type} className={classes} {...rest}>{children}</button>
-}
+    return <button ref={ref} type={type} className={classes} {...rest}>{children}</button>
+})

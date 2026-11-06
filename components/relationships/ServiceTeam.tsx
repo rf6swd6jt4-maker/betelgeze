@@ -98,7 +98,7 @@ function ServiceTeamEditor({ endpoint, workspaceSlug, relationshipId, instanceId
     const additional = roster.people.filter(person => person.id !== roster.primaryId && !members.includes(person.id))
     return <div className="mt-4">
         <h3 className="text-sm font-medium text-neutral-300">Service team</h3>
-        <p className="mt-1 text-sm text-neutral-400">Everyone here shares this service’s work queue and the internal client group chat, including its history.{chat?.canManage ? " Toggle In client chat to also add someone to the client-facing conversation." : ""}</p>
+        <p className="mt-1 text-sm text-neutral-400">Everyone here shares this service’s work queue, its attached assets and the internal client group chat, including its history.{chat?.canManage ? " Toggle In client chat to also add someone to the client-facing conversation." : ""}</p>
         <List ariaLabel="Service team" className="mt-3">
             <ListItem>
                 <ListPrimaryRow><Assignee name={ownerName} userId={ownerId} /><RoundPill tone="sky" className="ml-auto">Owner</RoundPill></ListPrimaryRow>

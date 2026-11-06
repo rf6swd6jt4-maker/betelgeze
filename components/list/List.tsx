@@ -3,19 +3,19 @@ import type { ReactNode } from "react"
 import { serializeWorkspaceDetailPreview, type WorkspaceDetailPreview } from "@/lib/workspace-detail-preview"
 
 export function List({ children, ariaLabel, surface = "dark", embedded = false, className = "" }: { children: ReactNode; ariaLabel?: string; surface?: "dark" | "light"; embedded?: boolean; className?: string }) {
-    return <section role="list" aria-label={ariaLabel} data-surface={surface} className={`group/list mt-5 overflow-hidden ${embedded ? "border-y" : "rounded-2xl border"} ${surface === "light" ? "border-black/10 bg-[var(--onboarding-surface,#FFFFFF)]" : "border-neutral-800 bg-black"} ${className}`}>{children}</section>
+    return <section role="list" aria-label={ariaLabel} data-surface={surface} className={`group/list mt-5 overflow-hidden ${embedded ? "border-y border-card-border" : "rounded-2xl border border-card-border shadow-card"} ${surface === "light" ? "border-black/10 bg-[var(--onboarding-surface,#FFFFFF)]" : "bg-[var(--color-surface-1)]"} ${className}`}>{children}</section>
 }
 
 export function ListItem({ children, className = "", detailPreview }: { children: ReactNode; className?: string; detailPreview?: WorkspaceDetailPreview }) {
     return <article
         role="listitem"
         data-workspace-detail-preview={detailPreview ? serializeWorkspaceDetailPreview(detailPreview) : undefined}
-        className={`border-b border-neutral-800 transition-colors last:border-0 hover:bg-neutral-900/50 group-data-[surface=light]/list:border-black/10 group-data-[surface=light]/list:hover:bg-black/[0.02] [contain-intrinsic-size:auto_88px] [content-visibility:auto] ${className}`}
+        className={`border-b border-card-border transition-colors last:border-0 hover:bg-[var(--color-surface-hover)] group-data-[surface=light]/list:border-black/10 group-data-[surface=light]/list:hover:bg-black/[0.02] [contain-intrinsic-size:auto_88px] [content-visibility:auto] ${className}`}
     >{children}</article>
 }
 
 export function ListPrimaryRow({ children, className = "" }: { children: ReactNode; className?: string }) {
-    return <div className={`flex min-w-0 flex-nowrap items-center gap-3 overflow-hidden whitespace-nowrap border-b border-neutral-900 bg-neutral-900/35 px-3.5 py-2 group-data-[surface=light]/list:border-black/5 group-data-[surface=light]/list:bg-black/[0.015] sm:px-4 sm:py-2.5 ${className}`}>{children}</div>
+    return <div className={`flex min-w-0 flex-nowrap items-center gap-3 overflow-hidden whitespace-nowrap border-b border-white/[0.06] bg-white/[0.02] px-3.5 py-2 group-data-[surface=light]/list:border-black/5 group-data-[surface=light]/list:bg-black/[0.015] sm:px-4 sm:py-2.5 ${className}`}>{children}</div>
 }
 
 export function ListSecondaryRow({ children, className = "" }: { children: ReactNode; className?: string }) {

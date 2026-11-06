@@ -11,10 +11,10 @@ Dark-workspace surface, border, and text colours are named CSS custom properties
 | `--color-surface-canvas` | `var(--background)` (`#0a0a0a`) | Page/body canvas |
 | `--color-surface-1` | `#171717` | Raised card/panel default |
 | `--color-surface-hover` | `rgb(255 255 255 / 0.04)` | Generic hover tint for interactive surfaces (`Button` ghost, `Card`) |
-| `--color-border-subtle` | `#171717` | Divider *within* a record/card (mirrors `List`'s inner divider) |
-| `--color-border-default` | `#262626` | Divider *between* records (mirrors `List`'s outer divider); available for any future solid-border consumer |
+| `--color-border-subtle` | `#171717` | Available for a future solid-border consumer that wants a near-invisible, surface-blending divider |
+| `--color-border-default` | `#262626` | Available for any future solid-border consumer that wants a plain, non-elevated divider |
 | `--color-border-strong` | `#404040` | Inputs, dialogs, drawers |
-| `--color-card-border` / `--shadow-card` | `rgb(255 255 255 / 0.08)` / soft shadow + top highlight | `Card`'s own elevated edge — a translucent hairline and subtle shadow instead of a solid divider, so a card reads as "lifted" rather than "outlined" |
+| `--color-card-border` / `--shadow-card` | `rgb(255 255 255 / 0.08)` / soft shadow + top highlight | The shared "lifted surface" edge — a translucent hairline and subtle shadow instead of a solid divider. Used by `Card`'s own elevated edge, `List`'s outer perimeter and between-record dividers, and `QuickStats`'s desktop boxes/mobile strip, so a card, list, or stat strip all read as "lifted" rather than "outlined" |
 | `--color-text-primary` | `#f5f5f5` | Titles |
 | `--color-text-secondary` | `#d4d4d4` | Body text |
 | `--color-text-tertiary` | `#737373` | Meta/labels |
@@ -342,7 +342,7 @@ A list tab must not insert a page-specific summary, capacity note, explanatory p
 
 - Use `surface="light"` in a themed client portal; dark remains the workspace default. The light treatment uses the same layout and non-clickable summary contract.
 - Use three visible statistics on mobile. A fourth lower-priority statistic may set `hideOnMobile` and return from `sm` upward.
-- Mobile renders one consolidated, bordered strip with internal dividers. Desktop separates the same statistics into evenly sized bordered boxes.
+- Mobile renders one consolidated, bordered strip with internal dividers, using the shared `Card`/`List` lifted-surface edge (`--color-surface-1`, `--color-card-border`, `--shadow-card`). Desktop separates the same statistics into evenly sized boxes using that same edge per box, rather than a flat `neutral-900` fill.
 - Labels are short neutral text; values are prominent, tabular, and limited to one line.
 - Prefer current list facts such as actionable count, reserved time, open failures, or poll results. Do not fill the strip with decorative totals.
 - Capacity and forecast information belongs here when it can be expressed compactly, for example `Capacity — 10h late`; do not repeat it in a prose block beneath the filters.
@@ -410,9 +410,9 @@ Use the primitives in `components/list`:
 </List>
 ```
 
-- `List` owns the consolidated black surface, `rounded-2xl` outer corners, neutral border, clipping, and list semantics.
-- `ListItem` owns the divider between records and the restrained hover highlight. Its divider uses `border-neutral-800`, exactly matching the outer list border. Do not wrap every item in its own floating card.
-- `ListPrimaryRow` is the identity and state band. It has the subtly tinted surface and an internal `border-neutral-900` divider.
+- `List` owns the consolidated surface, `rounded-2xl` outer corners, the shared Card elevation edge (`--color-surface-1` background, `--color-card-border` hairline, `--shadow-card`), clipping, and list semantics — the same "lifted" language as `Card` and `QuickStats` rather than a flat black box with a solid border.
+- `ListItem` owns the divider between records and the restrained hover highlight. Its divider uses the same `--color-card-border` hairline as the outer list edge, and its hover uses `--color-surface-hover`. Do not wrap every item in its own floating card.
+- `ListPrimaryRow` is the identity and state band. It has a subtle white-wash tint (`bg-white/[0.02]`) and an internal soft hairline divider (`border-white/[0.06]`), one step fainter than the between-record `--color-card-border` hairline.
 - `ListSecondaryRow` is the supporting-information band. It is always one line and never wraps.
 - `ListTitle` is the primary identity, always placed first and given the flexible width. Link it whenever the record has a canonical destination. It truncates rather than displacing state or actions.
 - `ListTrailing` is the stable audit/action cluster at the end of the supporting row.
@@ -458,7 +458,7 @@ The meaning of the time may vary—created, updated, or latest activity—but it
 - The outer list remains one consolidated collection on mobile and desktop; do not switch between separate cards and a table at an arbitrary breakpoint.
 - Mobile rows use slightly tighter vertical padding than desktop rows. Preserve the shared `py-2 sm:py-2.5` rhythm rather than overriding row height per feature.
 
-The two divider colours are deliberately different: the darker `border-neutral-900` separates the primary and secondary bands within one record, while the stronger `border-neutral-800` separates records and matches the list perimeter. This alternating rhythm must remain visible on mobile and desktop.
+The two dividers are deliberately different weights of the same soft hairline language: the fainter `border-white/[0.06]` separates the primary and secondary bands within one record, while `--color-card-border` (`border-card-border`) separates records and matches the list perimeter. This alternating rhythm must remain visible on mobile and desktop.
 
 ### Interaction and exceptional state
 

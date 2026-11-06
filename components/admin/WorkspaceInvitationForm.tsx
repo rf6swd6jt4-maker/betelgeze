@@ -5,7 +5,7 @@ import { useModalOwnerActive } from "@/components/ui/useModalDialog"
 import { bindPortalOwnerLifetime } from "@/components/ui/portal-owner-lifetime"
 import { useEffect, useLayoutEffect, useRef, useState, useTransition, type FormEvent } from "react"
 import type { WorkspaceInvitationActionState } from "@/app/[workspaceSlug]/users/actions"
-import { Status, type StatusTone } from "@/components/ui"
+import { Button, Status, type StatusTone } from "@/components/ui"
 import { WorkspaceSuccessNotice } from "@/components/workspace/WorkspaceSuccessNotice"
 
 type InvitationLookupStatus = "already_member" | "workspace_invite_pending" | "betelgeze_invite_pending" | "on_betelgeze" | "not_on_betelgeze"
@@ -220,8 +220,8 @@ export function WorkspaceInvitationForm({
                     {submitError ? <p role="alert" className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">{submitError}</p> : null}
 
                     <div className="flex items-center justify-end gap-2 border-t border-neutral-800 pt-4">
-                        <button type="button" disabled={pending} onClick={() => setOpen(false)} className="h-9 px-3 text-sm text-neutral-400 hover:text-white disabled:opacity-40">Cancel</button>
-                        <button type="submit" disabled={invitationDisabled} className="h-9 rounded-lg bg-white px-4 text-sm font-medium text-black disabled:cursor-not-allowed disabled:opacity-40">{pending ? "Sending…" : lookup.actionLabel}</button>
+                        <Button variant="ghost" size="sm" disabled={pending} onClick={() => setOpen(false)}>Cancel</Button>
+                        <Button type="submit" size="sm" disabled={invitationDisabled}>{pending ? "Sending…" : lookup.actionLabel}</Button>
                     </div>
                 </form> : null}
             </div>
@@ -229,7 +229,7 @@ export function WorkspaceInvitationForm({
     </div> : null
 
     return <>
-        <button type="button" onClick={openDialog} className="inline-flex h-10 items-center justify-center rounded-lg bg-white px-4 text-sm font-medium text-black transition hover:bg-neutral-200">Add user</button>
+        <Button onClick={openDialog}>Add user</Button>
         {modal && portalTarget ? createPortal(modal, portalTarget) : null}
         {ownerActive && notice && portalTarget ? createPortal(<WorkspaceSuccessNotice label={notice} />, portalTarget) : null}
     </>

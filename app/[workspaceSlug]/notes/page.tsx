@@ -1,4 +1,4 @@
-import Link from "next/link"
+import { Button } from "@/components/ui"
 import { LibraryTabs } from "@/components/library/LibraryTabs"
 import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle, ListTrailing } from "@/components/list/List"
 import { PanelTabHeader } from "@/components/panel/PanelTabHeader"
@@ -24,7 +24,7 @@ export default async function NotesPage({ params }: { params: Promise<{ workspac
             <PanelTabHeader
                 title="Notes"
                 description="Call notes and durable workspace context, ordered by their most recent update."
-                actions={<Link href={workspaceHref(workspace.slug, "notes?create=note")} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-4 py-2 text-center text-sm font-medium leading-none text-black sm:min-h-10 sm:px-3">New note</Link>}
+                actions={<Button href={workspaceHref(workspace.slug, "notes?create=note")}>New note</Button>}
                 tabs={<LibraryTabs workspaceSlug={workspace.slug} active="notes" />}
             />
             <QuickStats ariaLabel="Note statistics" items={[

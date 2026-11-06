@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { WorkspaceActionButton } from "@/components/workspace/WorkspaceActionButton"
+import { Button } from "@/components/ui"
 
 type DnsRecord = {
     type: "A" | "CNAME" | "TXT"
@@ -29,7 +30,7 @@ function DomainSetupForm({ domain, action, onCancel, surface }: { domain: string
         <form action={action} data-workspace-mutation="background" className="mt-4 space-y-3">
             <label className="block text-sm text-neutral-300">Domain<input name="domain" type="text" defaultValue={domain ?? ""} placeholder={example} autoCapitalize="none" autoCorrect="off" spellCheck={false} className="mt-1.5 w-full rounded-lg border border-neutral-700 bg-black px-3 py-2 text-white" /></label>
             <p className="text-xs leading-5 text-neutral-500">Enter only the hostname, without <code>https://</code> or a path. We will provide the DNS records to add at the domain provider.</p>
-            <div className="flex flex-wrap gap-2"><WorkspaceActionButton pendingLabel="Saving…" className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black">Continue to DNS setup</WorkspaceActionButton><button type="button" onClick={onCancel} className="rounded-lg border border-neutral-700 px-4 py-2 text-sm text-neutral-300">Cancel</button></div>
+            <div className="flex flex-wrap gap-2"><WorkspaceActionButton pendingLabel="Saving…" className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black">Continue to DNS setup</WorkspaceActionButton><Button variant="secondary" onClick={onCancel}>Cancel</Button></div>
         </form>
     </div>
 }
@@ -53,7 +54,7 @@ export function WorkspaceOnboardingDomain({ surface = "onboarding", domain, stat
         <h2 className="text-lg font-semibold">Custom {label} domain</h2>
         <p className="mt-1 text-sm text-neutral-400">Give clients a direct {label} link on your own domain.</p>
 
-        {!domain && <><p className="mt-4 text-sm text-neutral-500">New links currently use the Betelgeze {label} URL. No custom domain is connected yet.</p>{canManage && !setupOpen && <button type="button" onClick={() => setSetupOpen(true)} className="mt-4 rounded-lg bg-white px-4 py-2 text-sm font-medium text-black">Connect custom domain</button>}{canManage && setupOpen && <DomainSetupForm surface={surface} domain={null} action={saveAction} onCancel={() => setSetupOpen(false)} />}</>}
+        {!domain && <><p className="mt-4 text-sm text-neutral-500">New links currently use the Betelgeze {label} URL. No custom domain is connected yet.</p>{canManage && !setupOpen && <Button className="mt-4" onClick={() => setSetupOpen(true)}>Connect custom domain</Button>}{canManage && setupOpen && <DomainSetupForm surface={surface} domain={null} action={saveAction} onCancel={() => setSetupOpen(false)} />}</>}
 
         {pending && <div className="mt-4 rounded-lg border border-amber-900/70 bg-amber-950/30 px-3 py-3 text-sm text-amber-100">
             <p className="font-medium">Step 2 of 2: connect DNS</p>

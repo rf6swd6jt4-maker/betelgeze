@@ -1,4 +1,3 @@
-import Link from "next/link"
 import { LibraryTabs } from "@/components/library/LibraryTabs"
 import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle, ListTrailing } from "@/components/list/List"
 import { ListActionMenu } from "@/components/list/ListActionMenu"
@@ -9,7 +8,7 @@ import { FilterRail, FilterRailCount, FilterRailLink } from "@/components/panel/
 import { InstantFilterResults } from "@/components/panel/InstantFilterResults"
 import { PanelTabHeader } from "@/components/panel/PanelTabHeader"
 import { QuickStats } from "@/components/panel/QuickStats"
-import { RelationshipStage, SquarePill, Status } from "@/components/ui"
+import { Button, RelationshipStage, SquarePill, Status } from "@/components/ui"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { profileAvatarUrl } from "@/lib/profile-avatar"
 import { listWorkspaceWorkItems, workItemHref, workspaceHref } from "@/lib/relationships"
@@ -49,7 +48,7 @@ export default async function WorkItemsPage({ params, searchParams }: PageProps)
                 <PanelTabHeader
                     title="Work Items"
                     description="Workspace tasks ordered by their most recent update."
-                    actions={<Link href={workspaceHref(workspace.slug, "work-items?create=work-item")} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-4 py-2 text-center text-sm font-medium leading-none text-black sm:min-h-10 sm:px-3">New work item</Link>}
+                    actions={<Button href={workspaceHref(workspace.slug, "work-items?create=work-item")}>New work item</Button>}
                     tabs={<LibraryTabs workspaceSlug={workspace.slug} active="work-items" limited={role !== "owner" && role !== "admin"} />}
                 />
 

@@ -3,14 +3,13 @@
 import { GhlCalendarPicker } from "./GhlCalendarPicker"
 
 import { useEffect, useRef, useState } from "react"
-import { CenteredDialog, Selector, Status } from "@/components/ui"
+import { Button, CenteredDialog, Selector, Status } from "@/components/ui"
 import type { ClientConnectionAccount } from "@/lib/client-connections"
 
 type Choice = { id: string; name: string; isActive?: boolean }
 type Session = { relationshipId: string; phase: string; locations: Choice[]; limited: boolean; locationId: string | null; calendars: Choice[] }
 type Notifications = { ready: boolean; syncAvailable?: boolean; sendingEnabled: boolean; consentReady: boolean; reminderMinutes: number; calendars?: Choice[]; error?: string }
 type Connected = { connected: true; revision: string; notifications: Notifications }
-const button = "min-h-11 w-full rounded-lg bg-white px-4 py-2 text-sm font-semibold text-black disabled:opacity-40"
 const field = "mt-2 h-11 w-full rounded-xl border border-neutral-700 bg-black px-3 text-sm text-white outline-none focus:border-neutral-400"
 
 export function GhlAppConnectionDialog({ workspaceSlug, accounts, initialAccount, initialChoices, resume = false, onClose, onManual, onSaved }: {
@@ -195,19 +194,19 @@ export function GhlAppConnectionDialog({ workspaceSlug, accounts, initialAccount
             {recoveryNeeded ? <button type="button" disabled={busy} onClick={() => void recover()} className="min-h-11 text-sm underline underline-offset-4">Resume connection</button> : null}
             {!authorizationUrl && (phase === "start" || (phase === "connected" && !notifications?.ready)) ? <>
                 <p className="text-sm leading-6 text-neutral-400">Continue an unfinished setup, or authorise an existing HighLevel installation. A temporary window opens for authorisation, then calendar selection continues here.</p>
-                <button type="button" className={button} disabled={busy || !account} onClick={() => void start()}>{busy ? "Preparing…" : "Connect HighLevel"}</button>
+                <Button className="w-full" disabled={busy || !account} onClick={() => void start()}>{busy ? "Preparing…" : "Connect HighLevel"}</Button>
             </> : null}
             {authorizationUrl ? <p className="text-sm leading-6 text-neutral-300">Finish authorising in the new tab. If it did not open, <a href={authorizationUrl} target="_blank" rel="noopener noreferrer" className="underline underline-offset-4">continue to HighLevel</a>.</p> : null}
             {phase === "location" ? <>
                 <label className="block text-sm text-neutral-300">HighLevel sub-account<Selector ariaLabel="HighLevel sub-account" appearance="input" value={locationId} disabled={busy} onChange={value => { setLocationId(value); setExactLocation("") }} options={locations.map(item => ({ value: item.id, label: item.name }))} /></label>
                 {limited ? <label className="block text-sm text-neutral-300">Another installed sub-account<p className="mt-1 text-xs text-neutral-400">Showing the first 50. Enter the Location ID if yours is not listed.</p><input aria-label="Installed Location ID" className={field} value={exactLocation} disabled={busy} onChange={event => setExactLocation(event.target.value)} /></label> : null}
-                <button type="button" className={button} disabled={busy || !(locationId || exactLocation.trim())} onClick={() => void selectLocation()}>Choose calendar</button>
+                <Button className="w-full" disabled={busy || !(locationId || exactLocation.trim())} onClick={() => void selectLocation()}>Choose calendar</Button>
             </> : null}
             {phase === "calendar" ? <>
                 <div className="text-sm text-neutral-300">Client portal calendars<GhlCalendarPicker calendars={calendars} value={calendarIds} disabled={busy || savePending} onChange={setCalendarIds} /></div>
                 <p className="text-sm leading-6 text-neutral-400">Inactive/draft calendars can be selected for existing appointments. This does not activate them in HighLevel.</p>
                 <p className="text-sm leading-6 text-neutral-400">Clients can switch between the selected calendars in their portal. Saving turns notifications off until you enable them for this selection in the next step.</p>
-                <button type="button" className={button} disabled={busy || !calendarIds.length} onClick={() => void connect()}>{savePending ? "Check and retry save" : "Save calendar connection"}</button>
+                <Button className="w-full" disabled={busy || !calendarIds.length} onClick={() => void connect()}>{savePending ? "Check and retry save" : "Save calendar connection"}</Button>
             </> : null}
             {phase === "connected" ? <section className="space-y-3 border-t border-neutral-800 pt-4">
                 <Status label={notifications?.ready ? "App calendar connected" : (calendarIds.length || account?.calendarId ? "Calendar saved — app setup unfinished" : "Account saved — app setup unfinished")} tone={notifications?.ready ? "green" : "grey"} />
@@ -222,14 +221,14 @@ export function GhlAppConnectionDialog({ workspaceSlug, accounts, initialAccount
                     <Status label={notifications.sendingEnabled ? "Notifications enabled" : "Notifications off"} tone={notifications.sendingEnabled ? "green" : "grey"} />
                     <p className="text-sm text-neutral-400">Reminder: {notifications.reminderMinutes} minutes before the appointment.</p>
                     {!notifications.consentReady ? <p className="text-sm text-yellow-200">Confirm this client’s WhatsApp number before enabling notifications.</p> : null}
-                    <button type="button" className={button} disabled={busy || (!notifications.sendingEnabled && !notifications.consentReady)} onClick={() => void toggleNotifications(!notifications.sendingEnabled)}>{notifications.sendingEnabled ? "Turn off WhatsApp notifications" : "Enable WhatsApp notifications"}</button>
+                    <Button className="w-full" disabled={busy || (!notifications.sendingEnabled && !notifications.consentReady)} onClick={() => void toggleNotifications(!notifications.sendingEnabled)}>{notifications.sendingEnabled ? "Turn off WhatsApp notifications" : "Enable WhatsApp notifications"}</Button>
                 </> : null}
                 <button type="button" disabled={busy} onClick={() => void checkNotificationSetup()} className="block min-h-11 text-sm underline underline-offset-4">Check notification setup</button>
                 <button type="button" disabled={busy || !!authorizationUrl} onClick={() => { setPhase("start"); setError(null) }} className="block min-h-11 text-sm underline underline-offset-4">Reconnect HighLevel</button>
             </section> : null}
             <div className="flex flex-wrap justify-between gap-3 border-t border-neutral-800 pt-3">
                 <button type="button" disabled={busy} onClick={() => onManual(account ?? null)} className="min-h-11 text-sm text-neutral-400 underline underline-offset-4">Manual connection{account?.connected ? " and retirement" : ""}</button>
-                <button type="button" disabled={busy} onClick={onClose} className="min-h-11 px-3 text-sm">Close</button>
+                <Button variant="ghost" size="sm" disabled={busy} onClick={onClose}>Close</Button>
             </div>
         </div>
     </CenteredDialog>

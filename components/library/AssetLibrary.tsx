@@ -1,10 +1,10 @@
 "use client"
 
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react"
-import Link from "@/components/workspace/WorkspaceLink"
 import { useWorkspaceNavigation } from "@/components/workspace/WorkspaceNavigation"
 import { AssetGallery, AssetGalleryCard } from "@/components/ui/AssetGallery"
 import { AnchoredPopup } from "@/components/ui/AnchoredPopup"
+import { Button } from "@/components/ui/Button"
 import { LibraryTabs } from "@/components/library/LibraryTabs"
 import { PanelTabHeader } from "@/components/panel/PanelTabHeader"
 import { Status } from "@/components/ui/Status"
@@ -65,7 +65,6 @@ function AssetContextMenu({ menu, selected, busy, onSelect, onDownload, onDismis
 
 type Feedback = { kind: "requested" | "choosing" | "saving" | "saved" | "error" | "cancelled"; message: string; ids: string[] }
 type SavePicker = (options: { suggestedName: string; types: { description: string; accept: Record<string, string[]> }[] }) => Promise<ArchiveFileHandle>
-const quietActionClass = "min-h-11 px-2 text-sm text-neutral-300 hover:text-white disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-10"
 
 export function AssetLibrary({ workspaceSlug, previewEntries, counts }: {
     workspaceSlug: string
@@ -187,8 +186,8 @@ export function AssetLibrary({ workspaceSlug, previewEntries, counts }: {
             title="Assets"
             description="Workspace files and media available for relationship and work-item use."
             actions={<div className="flex w-full flex-wrap items-center justify-end gap-3">
-                <button ref={selectRef} type="button" className={quietActionClass} aria-pressed={selecting} onClick={() => { if (selecting) { setSelecting(false); setSelectedIds(new Set()) } else enterSelection(); setMenu(null) }}>{selecting ? "Cancel" : "Select"}</button>
-                {selecting ? downloadHref && !busy ? <a href={downloadHref} download target="_blank" rel="noreferrer" className={primaryActionClass} onClick={event => nativeDownload(event, selected)}>Download {selected.length} asset{selected.length === 1 ? "" : "s"}</a> : <button type="button" disabled className={primaryActionClass}>Download {selected.length} asset{selected.length === 1 ? "" : "s"}</button> : <Link href={`/${workspaceSlug}/assets?create=asset`} className={primaryActionClass}>New asset</Link>}
+                <Button ref={selectRef} variant="ghost" size="sm" aria-pressed={selecting} onClick={() => { if (selecting) { setSelecting(false); setSelectedIds(new Set()) } else enterSelection(); setMenu(null) }}>{selecting ? "Cancel" : "Select"}</Button>
+                {selecting ? downloadHref && !busy ? <a href={downloadHref} download target="_blank" rel="noreferrer" className={primaryActionClass} onClick={event => nativeDownload(event, selected)}>Download {selected.length} asset{selected.length === 1 ? "" : "s"}</a> : <Button disabled>Download {selected.length} asset{selected.length === 1 ? "" : "s"}</Button> : <Button href={`/${workspaceSlug}/assets?create=asset`}>New asset</Button>}
             </div>}
             tabs={<LibraryTabs workspaceSlug={workspaceSlug} active="assets" />}
         />
@@ -200,17 +199,17 @@ export function AssetLibrary({ workspaceSlug, previewEntries, counts }: {
         ]} />
         {selecting ? <div role="group" aria-label="Asset selection" className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
             <span aria-live="polite" className="text-neutral-400">{selected.length} selected · {formatFileSize(knownBytes)}{unknownSizes ? ` + ${unknownSizes} unknown size${unknownSizes === 1 ? "" : "s"}` : ""}</span>
-            <button type="button" className={quietActionClass} disabled={!available.length || selected.length === available.length} onClick={() => { nativeRequested.current = null; setSelectedIds(new Set(available.map(entry => entry.asset.id))) }}>Select all visible</button>
-            <button type="button" className={quietActionClass} disabled={!selected.length} onClick={() => setSelectedIds(new Set())}>Clear selection</button>
-            {canSaveZip && selected.length > 1 ? <button type="button" className={quietActionClass} disabled={!downloadHref || busy} onClick={saveZip}>Save ZIP as…</button> : null}
+            <Button variant="ghost" size="sm" disabled={!available.length || selected.length === available.length} onClick={() => { nativeRequested.current = null; setSelectedIds(new Set(available.map(entry => entry.asset.id))) }}>Select all visible</Button>
+            <Button variant="ghost" size="sm" disabled={!selected.length} onClick={() => setSelectedIds(new Set())}>Clear selection</Button>
+            {canSaveZip && selected.length > 1 ? <Button variant="ghost" size="sm" disabled={!downloadHref || busy} onClick={saveZip}>Save ZIP as…</Button> : null}
             {previewEntries.length > available.length ? <span className="basis-full text-xs text-neutral-500">Assets without a stored file cannot be downloaded.</span> : null}
         </div> : null}
         {archiveTooLarge || tooMany ? <p role="alert" className="mt-5 text-sm text-amber-200">{tooMany ? "Select up to 24 assets at once." : "Download up to 500 MB at once, or download large assets individually."}</p> : null}
         {feedback ? <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-1">
             <div role={feedback.kind === "error" ? "alert" : "status"}><Status label={feedback.message} wrap tone={feedback.kind === "error" ? "red" : feedback.kind === "saved" ? "green" : busy ? "yellow" : "grey"} /></div>
-            {busy ? <button type="button" className={quietActionClass} onClick={() => saveAttempt.current?.abort()}>Cancel save</button> : <>
-                {feedback.ids.length > 0 ? <button type="button" className={quietActionClass} onClick={() => selectAgain(feedback.ids)}>Select again</button> : null}
-                <button type="button" className={quietActionClass} onClick={() => setFeedback(null)}>Dismiss</button>
+            {busy ? <Button variant="ghost" size="sm" onClick={() => saveAttempt.current?.abort()}>Cancel save</Button> : <>
+                {feedback.ids.length > 0 ? <Button variant="ghost" size="sm" onClick={() => selectAgain(feedback.ids)}>Select again</Button> : null}
+                <Button variant="ghost" size="sm" onClick={() => setFeedback(null)}>Dismiss</Button>
             </>}
         </div> : null}
         <section className="mt-5">

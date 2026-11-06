@@ -2,7 +2,7 @@
 /* eslint-disable @next/next/no-img-element -- Small local provider brand thumbnails. */
 
 import { useEffect, useRef, useState, type FormEvent } from "react"
-import { CenteredDialog, ChoiceCard, ChoiceCards, Selector } from "@/components/ui"
+import { Button, CenteredDialog, ChoiceCard, ChoiceCards, Selector } from "@/components/ui"
 import { GoogleAdsLogo } from "@/components/brand/GoogleAdsLogo"
 import type { ClientConnectionAccount } from "@/lib/client-connections"
 
@@ -55,12 +55,12 @@ export function AddConnectionDialog({ workspaceSlug, onClose, onChoose }: { work
         </ChoiceCards></> : <>
             <button type="button" onClick={back} className="mb-3 min-h-11 text-sm text-neutral-300 underline underline-offset-4">Back to providers</button>
             <p className="mb-4 text-sm text-neutral-400">Choose an active relationship you can manage.</p>
-            <form onSubmit={search} className="mb-4 flex items-end gap-2"><label className="min-w-0 flex-1 text-sm">Find relationship<input value={query} onChange={event => setQuery(event.target.value)} maxLength={100} placeholder="Name or business" className="mt-2 h-11 w-full rounded-xl border border-neutral-700 bg-black px-3 text-sm text-white" /></label><button type="submit" disabled={loading} className="h-11 rounded-lg border border-neutral-700 px-3 text-sm disabled:opacity-40">Search</button></form>
+            <form onSubmit={search} className="mb-4 flex items-end gap-2"><label className="min-w-0 flex-1 text-sm">Find relationship<input value={query} onChange={event => setQuery(event.target.value)} maxLength={100} placeholder="Name or business" className="mt-2 h-11 w-full rounded-xl border border-neutral-700 bg-black px-3 text-sm text-white" /></label><Button type="submit" variant="secondary" size="sm" disabled={loading}>Search</Button></form>
             <Selector appearance="input" value={selected} onChange={setSelected} ariaLabel="Active relationship" placeholder="Choose relationship" disabled={loading && !accounts.length} options={accounts.map(row => ({ value: row.relationshipId, label: clientLabel(row), description: provider === "ghl" && row.connected ? "GHL already connected" : undefined }))} />
             {loading ? <p role="status" className="mt-3 text-sm text-neutral-400">Loading relationships…</p> : !error && !accounts.length ? <p role="status" className="mt-3 text-sm text-neutral-400">No matching active relationships are available.</p> : null}
             {error ? <div className="mt-3"><p role="alert" className="text-sm text-red-200">{error}</p><button type="button" disabled={loading} onClick={() => void load(provider, lastQuery.current.query, lastQuery.current.after)} className="min-h-11 text-sm underline underline-offset-4">Retry relationships</button></div> : null}
             {cursor && !error ? <button type="button" disabled={loading} onClick={() => void load(provider, lastQuery.current.query, cursor)} className="mt-2 min-h-11 text-sm underline underline-offset-4 disabled:opacity-40">Load more relationships</button> : null}
-            <button type="button" disabled={!account || loading} onClick={() => { if (account) onChoose(provider, account) }} className="mt-5 min-h-11 w-full rounded-lg bg-white px-4 text-sm font-semibold text-black disabled:opacity-40">{provider === "ghl" && account?.connected ? "Manage connection" : "Continue"}</button>
+            <Button className="mt-5 w-full" disabled={!account || loading} onClick={() => { if (account) onChoose(provider, account) }}>{provider === "ghl" && account?.connected ? "Manage connection" : "Continue"}</Button>
         </>}
     </CenteredDialog>
 }

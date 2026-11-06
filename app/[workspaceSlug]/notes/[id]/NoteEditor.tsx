@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useRef, useState, useTransition, type FormEvent } from "react"
-import { CenteredDialog, MultiSelector, type MultiSelectorOption } from "@/components/ui"
+import { Button, CenteredDialog, MultiSelector, type MultiSelectorOption } from "@/components/ui"
 import { useRouter } from "@/components/workspace/WorkspaceNavigation"
 import { runWorkspaceMutation } from "@/lib/workspace-mutations"
 import { updateNoteRelationships } from "./actions"
@@ -46,7 +46,7 @@ export function NoteEditor({ workspaceSlug, noteId, userId, relationships }: {
         {open ? <CenteredDialog title="Linked relationships" busy={pending} onClose={() => setOpen(false)}><form onSubmit={submit} className="space-y-4">
             <MultiSelector label="Linked relationships" description="Choose up to 20 relationships for this note." placeholder={loading ? "Loading…" : "Choose relationships"} options={choices} selected={selected} onChange={setSelected} disabled={loading} maxSelections={20} />
             {error ? <p role="alert" className="text-sm text-red-300">{error}</p> : null}
-            <div className="flex justify-end gap-3"><button type="button" onClick={() => setOpen(false)} className="rounded-lg border border-neutral-700 px-3 py-2 text-sm">Cancel</button><button disabled={pending || loading} className="rounded-lg bg-white px-3 py-2 text-sm text-black disabled:opacity-50">Save links</button></div>
+            <div className="flex justify-end gap-3"><Button variant="secondary" size="sm" onClick={() => setOpen(false)}>Cancel</Button><Button type="submit" size="sm" disabled={pending || loading}>Save links</Button></div>
         </form></CenteredDialog> : null}
     </>
 }

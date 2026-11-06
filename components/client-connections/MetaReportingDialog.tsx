@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { CenteredDialog, Selector, Status } from "@/components/ui"
+import { Button, CenteredDialog, Selector, Status } from "@/components/ui"
 import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle } from "@/components/list/List"
 import { createWindsorReturnMonitor, observeWindsorReturn } from "@/lib/onboarding/windsor-return"
 import type { PortalMetaAdsReport } from "@/lib/client-portal/meta-ads-report"
@@ -118,12 +118,12 @@ export function MetaReportingDialog({ workspaceSlug, relationshipId, clientName,
             <p className="text-xs text-neutral-400">{connection.lastReportAt ? `Last successful report: ${new Date(connection.lastReportAt).toLocaleString()}` : "No verified report has been retained yet."}</p>
         </div> : !pending ? <p className="mt-4 text-sm text-neutral-400">No reporting account has been selected.</p> : null}
         <div className="mt-5 space-y-3">
-            <button type="button" disabled={pending || !state} onClick={() => void run("begin", !connection?.canReuseAuthorization)} className="min-h-11 rounded-lg border border-neutral-700 px-4 text-sm disabled:opacity-40">{connection?.canReuseAuthorization ? "Review authorized accounts" : "Connect in Windsor ↗"}</button>
+            <Button variant="secondary" disabled={pending || !state} onClick={() => void run("begin", !connection?.canReuseAuthorization)}>{connection?.canReuseAuthorization ? "Review authorized accounts" : "Connect in Windsor ↗"}</Button>
             {connection?.canReuseAuthorization ? <button type="button" disabled={pending} onClick={() => void run("begin", true)} className="ml-2 min-h-11 px-3 text-sm underline disabled:opacity-40">Reconnect in Windsor ↗</button> : null}
             {authorizationUrl ? <p><a href={authorizationUrl} target="_blank" rel="noopener noreferrer" className="text-sm underline">Continue authorization in Windsor ↗</a></p> : null}
             {state?.candidateId ? <button type="button" disabled={pending} onClick={() => void run("accounts")} className="block min-h-11 px-3 text-sm underline disabled:opacity-40">Load authorized accounts</button> : null}
             {accounts.length ? <label className="block text-sm text-neutral-300">Advertising account<Selector appearance="input" ariaLabel="Advertising account" value={accountId} onChange={value => { setAccountId(value); setPreview(null); setConfirmed(false) }} options={[{ value: "", label: "Choose the client's account" }, ...accounts.map(account => ({ value: account.id, label: `${account.name} · ${account.id}` }))]} /></label> : null}
-            {accountId ? <button type="button" disabled={pending} onClick={() => void run("preview")} className="min-h-11 rounded-lg border border-neutral-700 px-4 text-sm disabled:opacity-40">Preview report</button> : null}
+            {accountId ? <Button variant="secondary" disabled={pending} onClick={() => void run("preview")}>Preview report</Button> : null}
         </div>
         {preview ? <div className="mt-5 space-y-3 border-t border-neutral-800 pt-4">
             <p className="font-medium">{preview.account.name} · {preview.account.id}</p>
@@ -131,7 +131,7 @@ export function MetaReportingDialog({ workspaceSlug, relationshipId, clientName,
             <p className="text-sm">Spend {preview.report.totals.spend.toLocaleString()} · Impressions {preview.report.totals.impressions.toLocaleString()} · Clicks {preview.report.totals.clicks.toLocaleString()} · Leads {preview.report.totals.leads.toLocaleString()}</p>
             <p className="text-xs leading-5 text-neutral-400">A valid report can contain no activity. Check the account ID and the same dates in Ads Manager. Dates are requested explicitly; the provider’s account timezone is not supplied by this report.</p>
             <label className="flex items-start gap-3 text-sm"><input type="checkbox" checked={confirmed} disabled={pending} onChange={event => setConfirmed(event.target.checked)} className="mt-1" />This is the intended advertising account for {clientName}.</label>
-            <button type="button" disabled={!confirmed || pending} onClick={() => void run("commit")} className="min-h-11 w-full rounded-lg bg-white px-4 text-sm font-semibold text-black disabled:opacity-40">{pending ? "Saving…" : "Save reporting account"}</button>
+            <Button className="w-full" disabled={!confirmed || pending} onClick={() => void run("commit")}>{pending ? "Saving…" : "Save reporting account"}</Button>
         </div> : null}
         {pending ? <p role="status" className="mt-4 text-sm text-neutral-400">Checking reporting…</p> : null}
         {notice ? <p role="status" className="mt-4 text-sm leading-6 text-neutral-300">{notice}</p> : null}

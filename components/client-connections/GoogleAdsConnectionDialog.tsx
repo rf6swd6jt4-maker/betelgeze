@@ -1,7 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useRef, useState } from "react"
-import { CenteredDialog, Status } from "@/components/ui"
+import { Button, CenteredDialog, Status } from "@/components/ui"
 import { formatGoogleAdsCustomerId, googleAdsOnboardingResponse, type GoogleAdsOnboardingConnection } from "@/lib/onboarding/google-ads-state"
 
 export function GoogleAdsConnectionDialog({ workspaceSlug, relationshipId, clientName, onClose, onSaved }: { workspaceSlug: string; relationshipId: string; clientName: string; onClose: () => void; onSaved: () => void }) {
@@ -51,7 +51,7 @@ export function GoogleAdsConnectionDialog({ workspaceSlug, relationshipId, clien
         {ready ? <><label className="block text-sm">Customer ID<input value={connection ? formatGoogleAdsCustomerId(customerId) : customerId} onChange={event => setCustomerId(event.target.value)} readOnly={Boolean(connection)} disabled={pending} inputMode="numeric" maxLength={20} placeholder="123-456-7890" className="mt-2 h-11 w-full rounded-xl border border-neutral-700 bg-black px-3 text-white read-only:text-neutral-400" /></label>
             <p className="mt-3 text-sm leading-6 text-neutral-400">Connect this account to {manager?.name || "your agency"}{manager?.id ? ` (${formatGoogleAdsCustomerId(manager.id)})` : ""}. Sending an invitation requests manager access in Google Ads. An account administrator must approve it.</p>
             {connection?.status === "pending" ? <p className="mt-3 text-sm text-neutral-300">After the invitation is approved in Google Ads, check the connection here.</p> : null}
-            <div className="mt-5 flex flex-wrap gap-3">{connection?.status !== "connected" ? <button type="button" disabled={pending || !customerId} onClick={() => void submit("request")} className="min-h-11 rounded-lg bg-white px-4 text-sm font-semibold text-black disabled:opacity-40">{pending ? "Updating…" : "Send invitation"}</button> : null}<button type="button" disabled={pending || !customerId} onClick={() => void submit("verify")} className="min-h-11 rounded-lg border border-neutral-700 px-4 text-sm disabled:opacity-40">{pending ? "Updating…" : "Check connection"}</button></div>
+            <div className="mt-5 flex flex-wrap gap-3">{connection?.status !== "connected" ? <Button disabled={pending || !customerId} onClick={() => void submit("request")}>{pending ? "Updating…" : "Send invitation"}</Button> : null}<Button variant="secondary" disabled={pending || !customerId} onClick={() => void submit("verify")}>{pending ? "Updating…" : "Check connection"}</Button></div>
         </> : null}
         {error ? <p role="alert" className="mt-3 text-sm text-red-200">{error}</p> : null}
         {!loading && !pending ? <button type="button" onClick={() => void load()} className="mt-3 min-h-11 text-sm text-neutral-300 underline underline-offset-4">Reload saved status</button> : null}

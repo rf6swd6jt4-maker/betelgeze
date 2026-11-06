@@ -3102,9 +3102,9 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
 
         {sidebarOpen && <button data-workspace-sidebar-dismiss type="button" aria-label="Close sidebar" onClick={() => setSidebarOpen(false)} className="fixed inset-x-0 bottom-0 top-14 z-[45] cursor-default md:hidden" />}
 
-        <aside data-workspace-sidebar aria-hidden={!sidebarOpen} className={`fixed left-0 top-14 z-50 h-[calc(100dvh-3.5rem)] w-72 border-r border-neutral-800 bg-neutral-950 ${sidebarTransitionEnabled ? "transition-transform duration-200 ease-out" : ""} ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
+        <aside data-workspace-sidebar aria-hidden={!sidebarOpen} className={`fixed left-0 top-14 z-50 h-[calc(100dvh-3.5rem)] w-72 border-r border-card-border bg-[var(--color-surface-1)] shadow-card ${sidebarTransitionEnabled ? "transition-transform duration-200 ease-out" : ""} ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
             <nav className="flex h-full touch-pan-y flex-col gap-2 overflow-y-auto overscroll-contain px-4 py-5 md:gap-1 md:overflow-visible md:overscroll-auto md:px-3 md:py-4">
-                <div className="flex h-10 items-center border-b border-neutral-800 pb-2 md:hidden">
+                <div className="flex h-10 items-center border-b border-card-border pb-2 md:hidden">
                     <button data-icon-button type="button" onClick={() => { goBack(); closeSidebarAfterNavigation() }} disabled={!canGoBack} aria-label="Go back" className={navButtonClass}>
                         <ArrowLeftIcon />
                     </button>
@@ -3121,7 +3121,7 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
                         ?? (item.href === defaultWorkspaceUrl
                         ? activePathname === defaultWorkspaceUrl
                         : activePathname === item.href || activePathname.startsWith(`${item.href}/`))
-                    const itemClassName = `flex min-h-12 items-center gap-3 rounded-lg px-4 text-base transition md:min-h-10 md:px-3 md:text-sm ${active ? "bg-neutral-900 text-white" : "text-neutral-400 hover:bg-neutral-900/70 hover:text-white"}`
+                    const itemClassName = `flex min-h-12 items-center gap-3 rounded-lg px-4 text-base transition md:min-h-10 md:px-3 md:text-sm ${active ? "bg-white/[0.06] text-white" : "text-neutral-400 hover:bg-[var(--color-surface-hover)] hover:text-white"}`
 
                     return (
                         <Link key={item.key} aria-disabled={offlineBlocked} title={offlineBlocked ? "Connect to open this panel" : undefined} href={item.href} target={item.standalone ? "_blank" : undefined} rel={item.standalone ? "noopener noreferrer" : undefined} data-global-loading="false" onClick={(event) => { if (offlineBlocked) { event.preventDefault(); return }; if (!online) { event.preventDefault(); if (!activePathname.includes("/communications")) window.location.assign("/offline.html"); closeSidebarAfterNavigation(); return }; if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); navigateWorkspaceDestination(item.href); closeSidebarAfterNavigation() }} className={`${itemClassName} ${offlineBlocked ? "opacity-40 cursor-not-allowed" : ""}`}>
@@ -3131,24 +3131,24 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
                         </Link>
                     )
                 })}
-                <div className="mt-auto border-t border-neutral-800 pt-3 md:hidden">
-                    {canCreateRelationship && <button type="button" onClick={() => { openCreate("relationship"); closeSidebarAfterNavigation() }} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-4 text-left text-sm text-neutral-500 transition hover:bg-neutral-900/70 hover:text-neutral-200">
+                <div className="mt-auto border-t border-card-border pt-3 md:hidden">
+                    {canCreateRelationship && <button type="button" onClick={() => { openCreate("relationship"); closeSidebarAfterNavigation() }} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-4 text-left text-sm text-neutral-500 transition hover:bg-[var(--color-surface-hover)] hover:text-neutral-200">
                         <RelationshipsIcon />
                         <span>Add relationship</span>
                     </button>}
-                    {canCreateLibraryItem && <button type="button" onClick={() => { openCreate("work-item"); closeSidebarAfterNavigation() }} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-4 text-left text-sm text-neutral-500 transition hover:bg-neutral-900/70 hover:text-neutral-200">
+                    {canCreateLibraryItem && <button type="button" onClick={() => { openCreate("work-item"); closeSidebarAfterNavigation() }} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-4 text-left text-sm text-neutral-500 transition hover:bg-[var(--color-surface-hover)] hover:text-neutral-200">
                         <WorkIcon />
                         <span>Add work item</span>
                     </button>}
-                    {canCreateLibraryItem && <button type="button" onClick={() => { openCreate("asset"); closeSidebarAfterNavigation() }} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-4 text-left text-sm text-neutral-500 transition hover:bg-neutral-900/70 hover:text-neutral-200">
+                    {canCreateLibraryItem && <button type="button" onClick={() => { openCreate("asset"); closeSidebarAfterNavigation() }} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-4 text-left text-sm text-neutral-500 transition hover:bg-[var(--color-surface-hover)] hover:text-neutral-200">
                         <AssetsIcon />
                         <span>Add asset</span>
                     </button>}
-                    {canCreateLibraryItem && <button type="button" onClick={() => { openCreate("note"); closeSidebarAfterNavigation() }} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-4 text-left text-sm text-neutral-500 transition hover:bg-neutral-900/70 hover:text-neutral-200">
+                    {canCreateLibraryItem && <button type="button" onClick={() => { openCreate("note"); closeSidebarAfterNavigation() }} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-4 text-left text-sm text-neutral-500 transition hover:bg-[var(--color-surface-hover)] hover:text-neutral-200">
                         <NoteIcon />
                         <span>Add note</span>
                     </button>}
-                    {canCreateOkr && <button type="button" onClick={() => { openCreate("okr"); closeSidebarAfterNavigation() }} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-4 text-left text-sm text-neutral-500 transition hover:bg-neutral-900/70 hover:text-neutral-200">
+                    {canCreateOkr && <button type="button" onClick={() => { openCreate("okr"); closeSidebarAfterNavigation() }} className="flex min-h-10 w-full items-center gap-3 rounded-lg px-4 text-left text-sm text-neutral-500 transition hover:bg-[var(--color-surface-hover)] hover:text-neutral-200">
                         <OkrIcon />
                         <span>Create OKR</span>
                     </button>}

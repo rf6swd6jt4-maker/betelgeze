@@ -40,6 +40,8 @@ Keep the shell stacking order explicit: tab content `30`, relationship context `
 
 Top-bar mutation feedback uses short, bounded labels (`Saving…`, `Saved`, `Action failed`). Full error details stay in the originating form and the status tooltip/accessibility label; they must never expand the header or displace search, navigation, presence, or account controls.
 
+The sidebar (`data-workspace-sidebar`) uses the shared `Card`/`List` elevation edge — `--color-surface-1` background, `--color-card-border` hairline, `--shadow-card` — so it reads as a raised panel above the darker canvas rather than a flush black panel with a hard divider. Its active/hover nav-item states use translucent white washes (`bg-white/[0.06]`, `--color-surface-hover`) rather than a flat `neutral-900`, since that solid tone is no longer distinguishable from the new sidebar background. This is a surface/colour treatment only; it must not use `backdrop-filter` or blur, per the opaque-surface rule in Popup motion below, and the top bar and tab bar remain their existing opaque canvas-level treatment.
+
 ## Panel loading
 
 `PanelRouteLoading` is the presentation owner for panel opening, shared by `loading.tsx` and `WorkspaceTabOpeningState`. Use `components/panel/PanelLoading` for deferred sections of the same screen. Keep the shell, banner and any already resolved header outside section fallbacks.

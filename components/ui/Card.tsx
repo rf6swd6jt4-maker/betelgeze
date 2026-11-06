@@ -17,5 +17,5 @@ const paddingClasses: Record<CardPadding, string> = {
  * rule stays in one place rather than duplicated into this component's API.
  */
 export function Card({ children, padding = "sm", className = "" }: { children: ReactNode; padding?: CardPadding; className?: string }) {
-    return <div className={cx("rounded-xl border border-[var(--color-border-default)] bg-[var(--color-surface-1)]", paddingClasses[padding], className)}>{children}</div>
+    return <div className={cx("rounded-xl border border-card-border bg-[var(--color-surface-1)] shadow-card", paddingClasses[padding], className)}>{children}</div>
 }

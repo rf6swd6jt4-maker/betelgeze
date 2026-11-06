@@ -12,8 +12,9 @@ Dark-workspace surface, border, and text colours are named CSS custom properties
 | `--color-surface-1` | `#171717` | Raised card/panel default |
 | `--color-surface-hover` | `rgb(255 255 255 / 0.04)` | Generic hover tint for interactive surfaces (`Button` ghost, `Card`) |
 | `--color-border-subtle` | `#171717` | Divider *within* a record/card (mirrors `List`'s inner divider) |
-| `--color-border-default` | `#262626` | Divider *between* records; card perimeter |
+| `--color-border-default` | `#262626` | Divider *between* records (mirrors `List`'s outer divider); available for any future solid-border consumer |
 | `--color-border-strong` | `#404040` | Inputs, dialogs, drawers |
+| `--color-card-border` / `--shadow-card` | `rgb(255 255 255 / 0.08)` / soft shadow + top highlight | `Card`'s own elevated edge — a translucent hairline and subtle shadow instead of a solid divider, so a card reads as "lifted" rather than "outlined" |
 | `--color-text-primary` | `#f5f5f5` | Titles |
 | `--color-text-secondary` | `#d4d4d4` | Body text |
 | `--color-text-tertiary` | `#737373` | Meta/labels |

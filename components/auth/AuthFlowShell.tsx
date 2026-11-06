@@ -50,6 +50,4 @@ export function AuthBackToLogin({ href = "/login" }: { href?: string }) {
     return <Link href={href} className="text-neutral-200 underline decoration-neutral-600 underline-offset-4 hover:decoration-neutral-300">Back to login</Link>
 }
 
-export const authPrimaryButton = "inline-flex min-h-11 w-full items-center justify-center rounded-lg bg-white px-4 py-3 text-sm font-semibold text-black transition hover:bg-neutral-200 disabled:cursor-not-allowed disabled:opacity-45"
-export const authSecondaryButton = "inline-flex min-h-11 w-full items-center justify-center rounded-lg border border-neutral-700 px-4 py-3 text-sm font-medium text-white transition hover:border-neutral-500 hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-45"
 export const authInput = "mt-2 min-h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 py-2.5 text-base text-white outline-none transition placeholder:text-neutral-600 focus:border-neutral-400 focus:ring-2 focus:ring-white/10 disabled:cursor-not-allowed disabled:opacity-60"

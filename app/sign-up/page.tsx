@@ -1,7 +1,7 @@
-import Link from "next/link"
 import { redirect } from "next/navigation"
+import { Button } from "@/components/ui"
 import { AuthFieldFeedback } from "@/components/auth/AuthFieldFeedback"
-import { AuthFlowShell, authPrimaryButton } from "@/components/auth/AuthFlowShell"
+import { AuthFlowShell } from "@/components/auth/AuthFlowShell"
 import { accountFlowV2Enabled, getOnboardingContext } from "@/lib/auth/account-flow"
 
 export default async function SignUpPage({ searchParams }: { searchParams: Promise<{ reason?: string }> }) {
@@ -14,7 +14,7 @@ export default async function SignUpPage({ searchParams }: { searchParams: Promi
         <div className="rounded-xl border border-neutral-800 bg-neutral-950 p-4">
             <AuthFieldFeedback tone={disabled ? "yellow" : reason ? "red" : "grey"} message={disabled ? "New account setup is currently disabled." : reason ? "That invitation is invalid, expired, accepted, or has been replaced." : "Open the newest Betelgeze invitation email to begin."} />
         </div>
-        <Link href="/login" className={`${authPrimaryButton} mt-6`}>Log in to an existing account</Link>
+        <Button href="/login" className="mt-6">Log in to an existing account</Button>
         <p className="mt-5 text-center text-xs leading-5 text-neutral-500">Ask a workspace owner or administrator to send a fresh invitation if you need access.</p>
     </AuthFlowShell>
 }

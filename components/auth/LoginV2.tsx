@@ -3,8 +3,9 @@
 import Link from "next/link"
 import { Suspense, useEffect, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
+import { Button } from "@/components/ui"
 import { AuthFieldFeedback } from "@/components/auth/AuthFieldFeedback"
-import { AuthFlowShell, authInput, authPrimaryButton } from "@/components/auth/AuthFlowShell"
+import { AuthFlowShell, authInput } from "@/components/auth/AuthFlowShell"
 import { PasswordField } from "@/components/auth/PasswordField"
 import { normalizeAuthNext, resolveClientDestination } from "@/lib/auth/redirects"
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser"
@@ -67,7 +68,7 @@ function LoginForm() {
             {loggedOut ? <AuthFieldFeedback tone="green" message="You’re signed out on this device." /> : null}
             {notice ? <AuthFieldFeedback tone="green" message={notice} /> : null}
             {error ? <AuthFieldFeedback tone="red" message={error} /> : null}
-            <button disabled={loading || !identifier || !password} className={`${authPrimaryButton} mt-6`}>{loading ? "Signing in…" : "Sign in"}</button>
+            <Button type="submit" className="mt-6 w-full" disabled={loading || !identifier || !password}>{loading ? "Signing in…" : "Sign in"}</Button>
         </form>
     </AuthFlowShell>
 }

@@ -3,8 +3,8 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import { Button } from "@/components/ui"
 import { AuthFieldFeedback } from "@/components/auth/AuthFieldFeedback"
-import { authPrimaryButton, authSecondaryButton } from "@/components/auth/AuthFlowShell"
 import { OtpField } from "@/components/auth/OtpField"
 
 type MfaState = "checking" | "verify" | "start-setup" | "setup"
@@ -88,7 +88,7 @@ export function MfaGuide({ onVerified, onStageChange, setupLabel = "Betelgeze", 
         <div>
             <AuthFieldFeedback tone="yellow" message="Authenticator required before account access." />
             <p className="mt-4 text-sm leading-6 text-neutral-300">Use 1Password, Google Authenticator, Microsoft Authenticator, Authy, or another TOTP-compatible app.</p>
-            <button type="button" onClick={requestSetup} disabled={submitting} className={`${authPrimaryButton} mt-6`}>{submitting ? "Preparing…" : "Set up authenticator"}</button>
+            <Button className="mt-6 w-full" onClick={requestSetup} disabled={submitting}>{submitting ? "Preparing…" : "Set up authenticator"}</Button>
             {error ? <AuthFieldFeedback tone="red" message={error} /> : notice ? <AuthFieldFeedback tone="yellow" message={notice} /> : null}
         </div>
     )
@@ -115,7 +115,7 @@ export function MfaGuide({ onVerified, onStageChange, setupLabel = "Betelgeze", 
                 </div>
             )}
             {notice ? <AuthFieldFeedback tone={notice === "Manual key copied." ? "green" : "yellow"} message={notice} /> : null}
-            <button type="button" onClick={() => { setState("verify"); setNotice(null); setError(null) }} className={`${authPrimaryButton} mt-6`}>Continue to verification</button>
+            <Button className="mt-6 w-full" onClick={() => { setState("verify"); setNotice(null); setError(null) }}>Continue to verification</Button>
         </div>
     )
 
@@ -124,11 +124,11 @@ export function MfaGuide({ onVerified, onStageChange, setupLabel = "Betelgeze", 
             <p className="text-sm leading-6 text-neutral-300">Enter the current six-digit code from your authenticator app. This confirms that setup worked before Betelgeze secures your account.</p>
             <form onSubmit={(event) => { event.preventDefault(); void verify() }} className="mt-6">
                 <OtpField value={code} onChange={setCode} onComplete={(value) => void verify(value)} label="Authenticator code" disabled={submitting} invalid={Boolean(error)} />
-                <button type="submit" disabled={submitting || code.length !== 6} className={`${authPrimaryButton} mt-6`}>{submitting ? "Verifying…" : "Verify and continue"}</button>
+                <Button type="submit" className="mt-6 w-full" disabled={submitting || code.length !== 6}>{submitting ? "Verifying…" : "Verify and continue"}</Button>
             </form>
             {notice ? <AuthFieldFeedback tone={notice.includes("confirmed") ? "green" : "yellow"} message={notice} /> : null}
             {error ? <AuthFieldFeedback tone="red" message={error} /> : null}
-            {qr && secret ? <button type="button" onClick={() => { setState("setup"); setError(null); setNotice(null); setCode(""); submittedCode.current = "" }} disabled={submitting} className={`${authSecondaryButton} mt-3`}>Back to setup instructions</button> : factorId ? <button type="button" onClick={resetPending} disabled={submitting} className={`${authSecondaryButton} mt-3`}>Restart authenticator setup</button> : null}
+            {qr && secret ? <Button variant="secondary" className="mt-3 w-full" onClick={() => { setState("setup"); setError(null); setNotice(null); setCode(""); submittedCode.current = "" }} disabled={submitting}>Back to setup instructions</Button> : factorId ? <Button variant="secondary" className="mt-3 w-full" onClick={resetPending} disabled={submitting}>Restart authenticator setup</Button> : null}
             {factorId && !qr ? <p className="mt-3 text-xs leading-5 text-neutral-500">Restart only if you no longer have the setup details. It clears this unfinished authenticator and creates a new one.</p> : null}
         </div>
     )

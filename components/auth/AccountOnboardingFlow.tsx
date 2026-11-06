@@ -4,8 +4,9 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { useRouter } from "next/navigation"
 import { Avatar } from "@/components/account/Avatar"
 import { ProfileAvatarEditButton } from "@/components/account/ProfileAvatarEditButton"
+import { Button } from "@/components/ui"
 import { AuthFieldFeedback } from "@/components/auth/AuthFieldFeedback"
-import { AuthFlowShell, authInput, authPrimaryButton, authSecondaryButton } from "@/components/auth/AuthFlowShell"
+import { AuthFlowShell, authInput } from "@/components/auth/AuthFlowShell"
 import { MfaGuide, type MfaGuideStage } from "@/components/auth/MfaGuide"
 import { OtpField } from "@/components/auth/OtpField"
 import { PasswordField } from "@/components/auth/PasswordField"
@@ -44,7 +45,7 @@ function ReviewStep({ context }: { context: OnboardingContext }) {
             <p className="text-sm font-medium text-white">{context.workspaceName}</p>
             <div className="mt-3 space-y-2"><AuthFieldFeedback tone="green" message={`Invitation verified for ${context.email}`} /><AuthFieldFeedback tone="grey" message={`Workspace role: ${context.role === "admin" ? "Administrator" : "Staff"}`} />{context.existingAccount ? <AuthFieldFeedback tone="green" message="Existing Betelgeze account found" /> : <AuthFieldFeedback tone="yellow" message="A new account will be created" />}</div>
         </div>
-        <button type="button" onClick={continueFlow} disabled={loading} className={`${authPrimaryButton} mt-6`}>{loading ? "Preparing…" : context.existingAccount ? "Continue securely" : "Create my account"}</button>
+        <Button className="mt-6 w-full" onClick={continueFlow} disabled={loading}>{loading ? "Preparing…" : context.existingAccount ? "Continue securely" : "Create my account"}</Button>
         {error ? <AuthFieldFeedback tone="red" message={error} /> : null}
     </AuthFlowShell>
 }
@@ -56,7 +57,7 @@ function EmailStep({ context }: { context: OnboardingContext }) {
         <label htmlFor="signup-email" className="text-sm font-medium text-neutral-200">Email address</label>
         <input id="signup-email" value={context.email} readOnly aria-readonly="true" autoComplete="email" className={authInput} />
         <AuthFieldFeedback tone="green" message="Matches the verified invitation." />
-        <button type="button" disabled={loading} onClick={async () => { setLoading(true); setError(null); try { const result = await postOnboarding("email"); if (result.next) window.location.assign(result.next) } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not save this step.") } finally { setLoading(false) } }} className={`${authPrimaryButton} mt-6`}>{loading ? "Saving…" : "Continue"}</button>
+        <Button className="mt-6 w-full" disabled={loading} onClick={async () => { setLoading(true); setError(null); try { const result = await postOnboarding("email"); if (result.next) window.location.assign(result.next) } catch (reason) { setError(reason instanceof Error ? reason.message : "Could not save this step.") } finally { setLoading(false) } }}>{loading ? "Saving…" : "Continue"}</Button>
         {error ? <AuthFieldFeedback tone="red" message={error} /> : null}
     </StepFrame>
 }
@@ -103,7 +104,7 @@ function UsernameStep({ context }: { context: OnboardingContext }) {
             <input id="signup-username" name="username" value={username} onChange={(event) => { setUsername(event.target.value); if (event.target.value.length >= 3) setTouched(true) }} onBlur={() => setTouched(true)} autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} minLength={3} className={authInput} aria-describedby="username-status" aria-invalid={displayedValidation.state === "invalid"} />
             <AuthFieldFeedback id="username-status" tone={displayedValidation.tone} message={displayedValidation.message} />
             {!syntaxError && alternatives.length ? <div className="mt-3 flex flex-wrap gap-2">{alternatives.map((alternative) => <button key={alternative} type="button" onClick={() => setUsername(alternative)} className="rounded-md border border-neutral-700 px-2.5 py-1.5 text-xs text-neutral-300 hover:border-neutral-500">@{alternative}</button>)}</div> : null}
-            <button disabled={loading || displayedValidation.state !== "valid"} className={`${authPrimaryButton} mt-6`}>{loading ? "Reserving…" : "Continue"}</button>
+            <Button type="submit" className="mt-6 w-full" disabled={loading || displayedValidation.state !== "valid"}>{loading ? "Reserving…" : "Continue"}</Button>
         </form>
     </StepFrame>
 }
@@ -131,7 +132,7 @@ function PasswordStep({ context }: { context: OnboardingContext }) {
             <div className="mt-5"><PasswordField value={confirm} onChange={(value) => { setConfirm(value); setConfirmTouched(true) }} name="confirm-password" label="Confirm password" showRequirements={false} disabled={loading} invalid={confirmTouched && confirm !== password} /></div>
             {confirmTouched ? <AuthFieldFeedback tone={confirm && confirm === password ? "green" : "red"} message={confirm && confirm === password ? "Passwords match." : "Enter the same password again."} /> : <AuthFieldFeedback tone="grey" message="Repeat your password to catch typing mistakes." />}
             {error ? <AuthFieldFeedback tone="red" message={error} /> : null}
-            <button disabled={loading || !valid} className={`${authPrimaryButton} mt-6`}>{loading ? "Creating account and sending code…" : "Create account and send code"}</button>
+            <Button type="submit" className="mt-6 w-full" disabled={loading || !valid}>{loading ? "Creating account and sending code…" : "Create account and send code"}</Button>
         </form>
     </StepFrame>
 }
@@ -158,9 +159,9 @@ function VerifyEmailStep({ context }: { context: OnboardingContext }) {
         <form onSubmit={(event) => { event.preventDefault(); void submit() }}>
             <OtpField value={code} onChange={setCode} onComplete={(value) => void submit(value)} onLengthMismatch={(length) => { setCode(""); setMessage({ tone: "red", text: `That code contains ${length} digits, but Betelgeze requires six. Request a fresh code and do not shorten it.` }) }} disabled={loading} invalid={message.tone === "red"} />
             <AuthFieldFeedback tone={message.tone} message={message.text} />
-            <button type="submit" disabled={loading || code.length !== 6} className={`${authPrimaryButton} mt-6`}>{loading ? "Verifying…" : "Verify email"}</button>
+            <Button type="submit" className="mt-6 w-full" disabled={loading || code.length !== 6}>{loading ? "Verifying…" : "Verify email"}</Button>
         </form>
-        <button type="button" disabled={loading || seconds > 0} onClick={async () => { setLoading(true); try { await postOnboarding("resend-signup"); setSeconds(60); setMessage({ tone: "green", text: "A fresh code has been sent." }) } catch (reason) { setMessage({ tone: "red", text: reason instanceof Error ? reason.message : "A fresh code could not be sent." }) } finally { setLoading(false) } }} className={`${authSecondaryButton} mt-3`}>{seconds ? `Send a fresh code in ${seconds}s` : "Send a fresh code"}</button>
+        <Button variant="secondary" className="mt-3 w-full" disabled={loading || seconds > 0} onClick={async () => { setLoading(true); try { await postOnboarding("resend-signup"); setSeconds(60); setMessage({ tone: "green", text: "A fresh code has been sent." }) } catch (reason) { setMessage({ tone: "red", text: reason instanceof Error ? reason.message : "A fresh code could not be sent." }) } finally { setLoading(false) } }}>{seconds ? `Send a fresh code in ${seconds}s` : "Send a fresh code"}</Button>
     </StepFrame>
 }
 
@@ -181,7 +182,7 @@ function AboutStep({ context }: { context: OnboardingContext }) {
             <fieldset className="mt-6"><legend className="text-sm font-medium text-neutral-200">Which best describes your role?</legend><select value={role} onChange={(event) => setRole(event.target.value)} className={authInput}><option value="">Choose an answer</option>{roles.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></fieldset>
             <AuthFieldFeedback tone="grey" message="Analytics only — never used for access decisions." />
             {error ? <AuthFieldFeedback tone="red" message={error} /> : null}
-            <button disabled={loading} className={`${authPrimaryButton} mt-6`}>{loading ? "Saving…" : "Continue"}</button>
+            <Button type="submit" className="mt-6 w-full" disabled={loading}>{loading ? "Saving…" : "Continue"}</Button>
         </form>
     </StepFrame>
 }
@@ -214,7 +215,7 @@ function ProfileStep({ context }: { context: OnboardingContext }) {
             <input id="display-name" name="displayName" maxLength={50} autoComplete="name" placeholder={context.usernameCandidate ?? usernameFromEmail(context.email)} className={authInput} />
             <AuthFieldFeedback tone="grey" message={`Your display name is shown in conversations and can include spaces or capitals. Your username, @${fallbackName}, is your unique Betelgeze account address.`} />
             {error ? <AuthFieldFeedback tone="red" message={error} /> : null}
-            <button disabled={loading} className={`${authPrimaryButton} mt-6`}>{loading ? "Saving…" : "Continue"}</button>
+            <Button type="submit" className="mt-6 w-full" disabled={loading}>{loading ? "Saving…" : "Continue"}</Button>
         </form>
     </StepFrame>
 }
@@ -251,7 +252,7 @@ function CompleteStep({ context }: { context: OnboardingContext }) {
         }).catch(() => { if (!cancelled) setStatus({ tone: "red", message: "The final check was interrupted. Your progress is safe." }) })
         return () => { cancelled = true }
     }, [retry])
-    return <AuthFlowShell step="complete" showProgress={false} eyebrow="Setup complete" title="Welcome to Betelgeze" description={`We’re finishing your ${context.workspaceName} membership and opening your profile.`}><div className="rounded-xl border border-neutral-800 bg-neutral-950 p-4"><AuthFieldFeedback tone={status.tone} message={status.message} /></div>{status.tone === "red" ? <button type="button" onClick={() => { setStatus({ tone: "yellow", message: "Trying the final check again…" }); setRetry((value) => value + 1) }} className={`${authPrimaryButton} mt-6`}>Try again</button> : null}</AuthFlowShell>
+    return <AuthFlowShell step="complete" showProgress={false} eyebrow="Setup complete" title="Welcome to Betelgeze" description={`We’re finishing your ${context.workspaceName} membership and opening your profile.`}><div className="rounded-xl border border-neutral-800 bg-neutral-950 p-4"><AuthFieldFeedback tone={status.tone} message={status.message} /></div>{status.tone === "red" ? <Button className="mt-6 w-full" onClick={() => { setStatus({ tone: "yellow", message: "Trying the final check again…" }); setRetry((value) => value + 1) }}>Try again</Button> : null}</AuthFlowShell>
 }
 
 export function AccountOnboardingFlow({ context, step }: { context: OnboardingContext; step: AuthStep }) {

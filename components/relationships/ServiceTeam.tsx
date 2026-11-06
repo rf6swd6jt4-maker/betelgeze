@@ -1,6 +1,6 @@
 "use client"
 import { useEffect, useRef, useState } from "react"
-import { Assignee, RoundPill, SelectorDrawer, SelectorOption, SelectorTrigger } from "@/components/ui"
+import { Assignee, Button, RoundPill, SelectorDrawer, SelectorOption, SelectorTrigger } from "@/components/ui"
 import { List, ListItem, ListPrimaryRow, ListSecondaryRow } from "@/components/list/List"
 import { isServiceRosterRequest, type ServiceRoster, type ServiceRosterRequest } from "@/lib/shared-service-queue"
 
@@ -117,7 +117,7 @@ function ServiceTeamEditor({ endpoint, workspaceSlug, relationshipId, instanceId
                 </ListItem>
             })}
         </List>
-        {recovery ? <button type="button" disabled={pending} className="mt-3 min-h-11 rounded-lg bg-white px-4 text-sm text-black disabled:opacity-50" onClick={() => void save(recovery.members)}>{pending ? "Saving…" : "Retry same change"}</button>
+        {recovery ? <Button className="mt-3" disabled={pending} onClick={() => void save(recovery.members)}>{pending ? "Saving…" : "Retry same change"}</Button>
         : allowChanges && members.length < 19 ? <>
             <SelectorTrigger aria-label="Add to service team" open={Boolean(anchor)} disabled={pending || Boolean(recoveryProblem)} onClick={event => setAnchor(anchor ? null : event.currentTarget)} appearance="input" className="mt-3 h-auto min-h-11 py-2">
                 <span className="text-neutral-400">Add person</span>

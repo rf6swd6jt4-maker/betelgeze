@@ -1,6 +1,6 @@
 "use client"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, useTransition, type FormEvent } from "react"
-import { Assignee, AssignmentSelector, CenteredDialog } from "@/components/ui"
+import { Assignee, AssignmentSelector, Button, CenteredDialog } from "@/components/ui"
 import { List, ListItem, ListPrimaryRow, ListSecondaryRow } from "@/components/list/List"
 import { transferRelationshipService } from "@/app/[workspaceSlug]/relationships/service-actions"
 import { defaultTransferWork, recoverServiceTransfer, type ServiceTransferPreview } from "@/lib/service-assignee-transfer"
@@ -135,7 +135,7 @@ export function ServiceTransferDialog({ row, endpoint, workspaceSlug, relationsh
     const formerId = preview?.formerId ?? row.assignee_user_id
     const recipientName = people?.find(person => person.id === recipient)?.name || preview?.recipientName || "New assignee"
     return <CenteredDialog title={recoveryOnly ? `Saved transfers: ${row.name}` : `Transfer ${row.name}`} busy={pending || uncertain} onClose={saved ? onDone : onClose}>
-        {saved ? <div><p role="status" className="text-sm leading-6">Transfer saved. The selected work and recipient access passed the save checks.</p><button className="mt-4 min-h-11 rounded-lg bg-white px-4 text-sm text-black" onClick={onDone}>Done — refresh service</button></div> : <form onSubmit={submit}>
+        {saved ? <div><p role="status" className="text-sm leading-6">Transfer saved. The selected work and recipient access passed the save checks.</p><Button className="mt-4" onClick={onDone}>Done — refresh service</Button></div> : <form onSubmit={submit}>
             {recoveryOnly ? <p className="mb-3 text-sm leading-6 text-neutral-300">This service no longer accepts a new transfer. Review a saved request to check whether it completed. Its original details stay unchanged when you retry.</p> : null}
             {recoveryAvailable && !frozen ? <div className="mb-3 text-sm"><button type="button" className="min-h-11 underline" onClick={() => void reviewRecovery()}>Review saved transfer requests</button>{recoveries.length ? <List ariaLabel="Saved transfer requests">{recoveries.map(record => <ListItem key={record.id}><ListPrimaryRow><button type="button" className="min-h-11 text-left" onClick={() => recover(record)}>Recover transfer: {record.input.reason}</button></ListPrimaryRow><ListSecondaryRow>{record.input.workIds.length} selected work items. Recovery requires an explicit retry.</ListSecondaryRow></ListItem>)}</List> : null}</div> : null}
             {recoveryOnly && !recoveryAvailable ? <p className="text-sm text-neutral-400">No saved transfer requests were found on this device.</p> : null}
@@ -167,8 +167,8 @@ export function ServiceTransferDialog({ row, endpoint, workspaceSlug, relationsh
                 <label className="mt-3 flex min-h-11 items-center gap-3 text-sm"><input type="checkbox" disabled={frozen} checked={acknowledged} onChange={event => setAcknowledged(event.target.checked)} />I reviewed the work that moves and the ownership and access that remain.</label>
             </> : null}
             {error ? <p role="alert" className="mt-3 text-sm text-red-300">{error}</p> : null}
-            {!reviewing && !recoveryOnly ? <button type="button" disabled={!recipient} onClick={() => setReviewing(true)} className="min-h-11 w-full rounded-lg bg-white px-4 text-sm font-medium text-black disabled:opacity-30">Confirm</button> : null}
-            <div className="mt-4 flex flex-wrap justify-end gap-3"><button type="button" disabled={frozen} onClick={onClose} className="min-h-11 px-3 text-sm">Close</button>{error && !uncertain && !recoveryOnly ? <button type="button" disabled={pending} onClick={reloadPreview} className="min-h-11 px-3 text-sm underline">Reload preview</button> : null}{reviewing && (!recoveryOnly || preview) ? <button disabled={pending || !preview || !reason.trim() || !acknowledged || !preview.bookingEnabled} className="min-h-11 rounded-lg bg-white px-4 text-sm text-black disabled:opacity-50">{pending ? "Saving transfer…" : uncertain || recoveryOnly ? "Retry same transfer" : "Transfer assignee"}</button> : null}</div>
+            {!reviewing && !recoveryOnly ? <Button className="w-full" disabled={!recipient} onClick={() => setReviewing(true)}>Confirm</Button> : null}
+            <div className="mt-4 flex flex-wrap justify-end gap-3"><Button variant="ghost" disabled={frozen} onClick={onClose}>Close</Button>{error && !uncertain && !recoveryOnly ? <button type="button" disabled={pending} onClick={reloadPreview} className="min-h-11 px-3 text-sm underline">Reload preview</button> : null}{reviewing && (!recoveryOnly || preview) ? <Button type="submit" disabled={pending || !preview || !reason.trim() || !acknowledged || !preview.bookingEnabled}>{pending ? "Saving transfer…" : uncertain || recoveryOnly ? "Retry same transfer" : "Transfer assignee"}</Button> : null}</div>
         </form>}
     </CenteredDialog>
 }

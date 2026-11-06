@@ -1,6 +1,5 @@
 "use client"
 
-import Link from "@/components/workspace/WorkspaceLink"
 import { archiveRelationshipForNativePanel } from "@/app/[workspaceSlug]/relationships/actions"
 import { ArchiveRelationshipForm } from "@/app/[workspaceSlug]/relationships/[relationshipId]/ArchiveRelationshipForm"
 import { RelationshipServicesWorkspace } from "@/components/relationships/RelationshipServicesWorkspace"
@@ -17,7 +16,7 @@ import { MobileAssignedServices } from "@/components/list/MobileAssignedServices
 import { FilterRail, FilterRailCount, FilterRailLink } from "@/components/panel/FilterRail"
 import { PanelTabHeader } from "@/components/panel/PanelTabHeader"
 import { RelationshipValues } from "@/components/relationships/RelationshipValues"
-import { RoundPill, SquarePill, Status } from "@/components/ui"
+import { Button, RoundPill, SquarePill, Status } from "@/components/ui"
 import { SERVICE_STAGES } from "@/lib/service-stages"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import type { NativeRelationshipsSnapshot } from "@/lib/workspace-native-relationships"
@@ -68,7 +67,7 @@ function RelationshipList({ data }: { data: ListSnapshot }) {
     const rows = selected ? data.rows.filter((row) => row.serviceStages.includes(selected as typeof row.serviceStages[number])) : data.rows
     const href = `/${data.workspaceSlug}/relationships`
     return <main className="min-h-full bg-neutral-950 px-4 pb-7 text-white sm:px-6"><div className="mx-auto max-w-7xl">
-        <PanelTabHeader title="Relationships" description="People, businesses and the services you deliver together." actions={<Link href={`${href}?create=relationship`} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-4 py-2 text-center text-sm font-medium leading-none text-black sm:min-h-10 sm:px-3">New relationship</Link>} />
+        <PanelTabHeader title="Relationships" description="People, businesses and the services you deliver together." actions={<Button href={`${href}?create=relationship`}>New relationship</Button>} />
         <FilterRail ariaLabel="Filter relationships by service stage">
             <FilterRailLink href={href} selected={!selected} instant={{ param: "serviceStage", value: null }}>All <FilterRailCount>{data.rows.length}</FilterRailCount></FilterRailLink>
             {SERVICE_STAGES.filter(phase => phase.key !== "for_later").map((phase) => <FilterRailLink key={phase.key} href={`${href}?serviceStage=${phase.key}`} selected={selected === phase.key} instant={{ param: "serviceStage", value: phase.key }}>{phase.label} <FilterRailCount>{data.rows.filter((row) => row.serviceStages.includes(phase.key)).length}</FilterRailCount></FilterRailLink>)}

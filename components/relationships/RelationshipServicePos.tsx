@@ -6,7 +6,7 @@ import { useRouter } from "@/components/workspace/WorkspaceNavigation"
 import { ServicePriceSummary } from "@/components/services/ServicePriceSummary"
 import { billingCadence, servicePricingText } from "@/lib/service-pricing"
 import { DetailField, DetailFields } from "@/components/detail"
-import { AssignmentSelector, Status, AttachmentCard, AttachmentCards, RoundPill } from "@/components/ui"
+import { AssignmentSelector, Button, Status, AttachmentCard, AttachmentCards, RoundPill } from "@/components/ui"
 import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle } from "@/components/list/List"
 import {
     sellRelationshipServices,
@@ -34,11 +34,6 @@ const Preview = dynamic(() => import("@/components/onboarding-builder/BuilderPre
 const PreviewOverlay = dynamic(() =>
     import("@/components/onboarding-builder/OnboardingPreviewOverlay").then((m) => m.OnboardingPreviewOverlay),
 )
-const button =
-    "inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-40"
-const secondary =
-    "inline-flex min-h-11 items-center justify-center rounded-lg border border-neutral-700 px-3 py-2 text-sm text-neutral-200 disabled:opacity-40"
-
 const money = (cents: number, currency: string) =>
     new Intl.NumberFormat(undefined, { style: "currency", currency }).format(cents / 100)
 const recoveryEvent = "be:service-pos:recovery-changed"
@@ -373,7 +368,7 @@ export function RelationshipServicePos(props: Props) {
             {restoredDraft.notice ? <p role="status" className="mb-4 text-sm text-amber-200">{restoredDraft.notice}</p> : null}
             {draftStorageError ? <p role="alert" className="mb-4 text-sm text-red-300">{draftStorageError}</p> : null}
             <ol aria-label="Sale steps" className="mb-5 flex gap-3 border-b border-neutral-800 pb-4 text-xs sm:gap-6 sm:text-sm">{["Services", "Onboarding", "Send link"].map((label, index) => <li key={label} aria-current={step === index + 1 ? "step" : undefined} className={step === index + 1 ? "font-semibold text-white" : "text-neutral-500"}>{index + 1}. {label}</li>)}</ol>
-            {recovery ? <div className="mb-4 space-y-3 text-sm text-amber-200"><p>A sale submission is pending. Recover the same sale before making changes.</p><button disabled={pending || !ready} className={button} onClick={sell}>{pending ? "Recovering…" : "Retry same sale"}</button></div> : null}
+            {recovery ? <div className="mb-4 space-y-3 text-sm text-amber-200"><p>A sale submission is pending. Recover the same sale before making changes.</p><Button disabled={pending || !ready} onClick={sell}>{pending ? "Recovering…" : "Retry same sale"}</Button></div> : null}
             {step === 1 ? <>
                 <p className="mb-4 text-sm text-neutral-400">Choose the services to sell together. Unchecked services become Declined only when the sale is saved, and can still be sold later.</p>
                 <AttachmentCards label="Services to sell" selection>{page.items.map(row => {
@@ -383,15 +378,15 @@ export function RelationshipServicePos(props: Props) {
                     </AttachmentCard>
                 })}</AttachmentCards>
                 {!page.items.length ? <p className="py-4 text-sm text-neutral-400">Add a service from the relationship’s catalogue before selling.</p> : null}
-                {page.hasMore ? <button className={`${secondary} mt-4`} disabled={locked || page.items.length >= 300} onClick={async () => {
+                {page.hasMore ? <Button variant="secondary" className="mt-4" disabled={locked || page.items.length >= 300} onClick={async () => {
                     setReading(true)
                     try { const response = await fetch(`${endpoint}?offset=${page.items.length}`, { headers: { "x-workspace-user": userId }, cache: "no-store", signal: AbortSignal.timeout(30000) }); const data = await response.json(); if (!response.ok) throw new Error(data.error); setPage(current => ({ ...current, items: [...current.items, ...data.items], hasMore: data.hasMore })); change({ ...input, offered: [...(input.offered ?? []), ...data.items.map((row: ServicePosRow) => ({ id: row.id, version: row.version }))] }) } catch { setError("Could not load the remaining services. Retry before continuing.") } finally { setReading(false) }
-                }}>Load remaining services</button> : null}
+                }}>Load remaining services</Button> : null}
                 <DetailFields columns={1}><DetailField label="Manager" icon="person"><AssignmentSelector value={input.managerId} people={page.managers} onChange={managerId => change({ ...input, managerId })} disabled={locked} ariaLabel="Sale manager" placeholder="Choose manager" /></DetailField><DetailField label="Billing email" icon="contact">{relationship.email ?? "Add a billing email in Contact before selling"}</DetailField></DetailFields>
             </> : step === 2 ? <>
                 <h3 className="mb-2 font-semibold">Review onboarding</h3><p className="text-sm leading-6 text-neutral-400">One link will include checkout and the onboarding modules required by these services.</p>
                 <div role="list" aria-label="Included onboarding modules" className="mt-4 flex flex-wrap gap-2">{quote?.modules.map(module => <span role="listitem" key={module.module_id} title={module.mandatory ? "Shared information" : "Selected service"}><RoundPill tone="sky">{String(module.definition.name ?? module.code)}</RoundPill></span>)}</div>
-                <button className={`${secondary} mt-4`} disabled={locked} onClick={() => void readReview(true)}>{reading ? "Opening preview…" : "Preview onboarding"}</button>
+                <Button variant="secondary" className="mt-4" disabled={locked} onClick={() => void readReview(true)}>{reading ? "Opening preview…" : "Preview onboarding"}</Button>
             </> : <>
                 <h3 className="mb-2 font-semibold">Send their onboarding link</h3><p className="mb-4 text-sm leading-6 text-neutral-400">Choose the contact methods that will receive the onboarding link. An approved WhatsApp Utility template can be sent without a client reply.</p>
                 <AttachmentCards label="Onboarding delivery methods">{(page.contacts ?? []).filter(choice => choice.added).map(choice => {
@@ -405,7 +400,7 @@ export function RelationshipServicePos(props: Props) {
             {totals.currency && input.lines.length ? <ServicePriceSummary pricing={{ upfrontCents: quote?.upfrontTotal ?? totals.upfront, recurringCents: quote?.recurringTotal ?? totals.recurring, currency: quote?.currency ?? totals.currency, billingInterval: quote?.billingInterval ?? input.billingInterval, billingIntervalCount: quote?.billingIntervalCount ?? input.billingIntervalCount }} /> : null}
             {step === 3 && quote && !recovery ? <label className="mt-4 flex items-start gap-3 text-sm leading-6"><input type="checkbox" className="mt-1 h-5 w-5 shrink-0" disabled={locked} checked={acceptedQuote === quote.hash} onChange={event => setAcceptedQuote(event.target.checked ? quote.hash : null)} /><span>I reviewed {money(quote.upfrontTotal + quote.recurringTotal, quote.currency)} due at checkout{quote.recurringTotal ? ` and ${money(quote.recurringTotal, quote.currency)} ${billingCadence(quote.billingInterval, quote.billingIntervalCount)} afterward` : ", with no recurring payments"}. These are the agreed client prices.</span></label> : null}
             {totals.mixedCurrencies ? <p className="mt-3 text-sm text-amber-300">Sell services in different currencies separately.</p> : null}
-            {!recovery ? <div className="mt-4 flex items-center justify-between gap-3">{step > 1 ? <button className={secondary} disabled={locked} onClick={() => setStep(step - 1)}>Back</button> : <span />}{step === 1 ? <button className={button} disabled={locked || !ready || !input.lines.length || page.hasMore || totals.mixedCurrencies} onClick={() => void readReview()}>{reading ? "Reviewing…" : "Review onboarding"}</button> : step === 2 ? <button className={button} disabled={locked || !quote} onClick={() => setStep(3)}>Choose contact methods</button> : <button className={button} disabled={locked || !quote || acceptedQuote !== quote.hash || !input.delivery?.length} onClick={sell}>{pending ? "Saving sale…" : `Sell ${input.lines.length === 1 ? "service" : `${input.lines.length} services`} & send link`}</button>}</div> : null}
+            {!recovery ? <div className="mt-4 flex items-center justify-between gap-3">{step > 1 ? <Button variant="secondary" disabled={locked} onClick={() => setStep(step - 1)}>Back</Button> : <span />}{step === 1 ? <Button disabled={locked || !ready || !input.lines.length || page.hasMore || totals.mixedCurrencies} onClick={() => void readReview()}>{reading ? "Reviewing…" : "Review onboarding"}</Button> : step === 2 ? <Button disabled={locked || !quote} onClick={() => setStep(3)}>Choose contact methods</Button> : <Button disabled={locked || !quote || acceptedQuote !== quote.hash || !input.delivery?.length} onClick={sell}>{pending ? "Saving sale…" : `Sell ${input.lines.length === 1 ? "service" : `${input.lines.length} services`} & send link`}</Button>}</div> : null}
             {error || storedRecovery.error ? (
                 <p role="alert" className="mt-4 text-sm text-red-300">
                     {error || storedRecovery.error}

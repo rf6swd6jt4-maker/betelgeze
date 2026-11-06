@@ -16,7 +16,7 @@ import { getOnboardingStepsForModules, type CanonicalSessionStep } from "@/lib/o
 import { MODULES } from "@/lib/onboarding/modules"
 import { relationshipServiceDisplayName } from "@/lib/onboarding/service-display"
 import { loadOnboardingServiceRevisionDisplays } from "@/lib/onboarding/service-revisions"
-import { RoundPill, SquarePill, Status } from "@/components/ui"
+import { Card, RoundPill, SquarePill, Status } from "@/components/ui"
 import {
     assetHref,
     getRelationship,
@@ -695,7 +695,7 @@ async function OnboardingActivity({ data, workspaceSlug, relationshipId }: { dat
         <RelationshipOnboardingPreview workspaceSlug={workspaceSlug} relationshipId={relationshipId} sessionId={activity.session?.id} />
     </Suspense> : null
     return <>
-        <section className="mt-4 overflow-hidden rounded-xl border border-neutral-800 bg-black sm:mt-6">
+        <Card padding="none" className="mt-4 overflow-hidden sm:mt-6">
                             <div className="border-b border-neutral-900 px-5 py-4">
                                 <div>
                                     <h2 className="text-lg font-semibold">Onboarding timeline</h2>
@@ -713,9 +713,9 @@ async function OnboardingActivity({ data, workspaceSlug, relationshipId }: { dat
                                     </div>
                                 </div>
                             </div>
-        </section>
+        </Card>
 
-        <section className="mt-6 rounded-xl border border-neutral-800 bg-black p-5">
+        <Card className="mt-6">
                             <div className="flex flex-col gap-3">
                                 <div>
                                     <h2 className="text-base font-semibold">Onboarding link</h2>
@@ -739,9 +739,9 @@ async function OnboardingActivity({ data, workspaceSlug, relationshipId }: { dat
                                     <span className="text-sm text-neutral-500">{activity.session && !activity.canOpenCompleteClientSession ? "The complete client session is restricted because this relationship includes other services." : "No active session"}</span>
                                 )}
                             </div>
-        </section>
+        </Card>
 
-        <section className="mt-6 overflow-hidden rounded-xl border border-neutral-800 bg-black">
+        <Card padding="none" className="mt-6 overflow-hidden">
                             <div className="border-b border-neutral-900 px-5 py-4">
                                 <h2 className="text-lg font-semibold">Client information</h2>
                                 <p className="mt-1 text-sm text-neutral-500">Information submitted during onboarding stays available here after fulfilment starts.</p>
@@ -754,7 +754,7 @@ async function OnboardingActivity({ data, workspaceSlug, relationshipId }: { dat
                                     <p className="mt-2 text-sm leading-6 text-neutral-500">Start onboarding from the relationship page to generate the client-facing session and step work items.</p>
                                 </div>
                             )}
-        </section>
+        </Card>
 
         {activity.canManage ? (
             <OnboardingDangerZone

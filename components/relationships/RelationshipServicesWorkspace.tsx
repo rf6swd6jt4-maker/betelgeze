@@ -4,7 +4,7 @@ import { servicePricingText } from "@/lib/service-pricing"
 import { useEffect, useRef, useState, useTransition, type FormEvent } from "react"
 import dynamic from "next/dynamic"
 import { useRouter, useSearchParams, useWorkspaceNavigation } from "@/components/workspace/WorkspaceNavigation"
-import { AssignmentSelector, Selector, AttachmentCards, AttachmentCard, AddAttachmentCard, CenteredDialog, ServiceStage, RoundPill, Status } from "@/components/ui"
+import { AssignmentSelector, Button, Selector, AttachmentCards, AttachmentCard, AddAttachmentCard, CenteredDialog, ServiceStage, RoundPill, Status } from "@/components/ui"
 import { List, ListItem, ListPrimaryRow, ListSecondaryRow } from "@/components/list/List"
 import { SopWorkProgress } from "@/components/sops/SopWorkProgress"
 import type { RelationshipQueuePage } from "@/lib/relationship-service-plan"
@@ -27,7 +27,6 @@ const ServiceTeam = dynamic(() => import("./ServiceTeam").then(module => module.
 const ServiceTransferDialog = dynamic(() => import("./ServiceTransferDialog").then(module => module.ServiceTransferDialog), { ssr: false })
 
 type Props = { workspaceSlug: string; relationshipId: string; userId: string; initial: RelationshipServicePage; canAdd: boolean; canImport: boolean; canSeeHistory: boolean; legacy: boolean }
-const buttonClass = "inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-medium text-black disabled:opacity-50"
 const inputClass = "min-h-11 w-full rounded-lg border border-neutral-700 bg-black px-3 py-2 text-base text-white sm:text-sm"
 async function read<T>(url: string, signal?: AbortSignal, userId?: string): Promise<T> {
     const response = await fetch(url, { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000), cache: "no-store", credentials: "same-origin", headers: userId ? { "x-workspace-user": userId } : undefined })
@@ -139,7 +138,7 @@ function ServiceForm({ endpoint, props, row, onDone, onClose, onBusyChange, onGe
         {origin === "already_onboarded" && !row ? <p className="my-3 text-sm leading-6 text-neutral-400">Records existing work. No checkout or onboarding link is sent. {stage === "completed" ? "This service has no unfinished setup work." : stage === "maintenance" ? "Historical setup is not repeated." : "The service is ready for setup work."}</p> : null}
         {peopleError || responsibilityError || cashError ? <p role="alert" className="py-2 text-sm text-red-200">{peopleError || responsibilityError || cashError}<button type="button" onClick={() => { setPeopleError(""); setResponsibilityError(""); setCashError(""); setCashRecord(null); setRetry(retry + 1) }} className="ml-2 min-h-11 underline">Retry choices</button></p> : null}
         {error ? <p role="alert" className="py-3 text-sm text-red-200">{error}</p> : null}
-        <div className="mt-3 flex flex-wrap justify-end gap-3"><button type="button" disabled={pending || uncertain} onClick={onClose} className="min-h-11 px-3 text-sm text-neutral-400">Close</button><button disabled={pending || !serviceId || !people || Boolean(peopleError) || (completedImport && (!responsibility || !seller || !manager || Boolean(responsibilityError))) || (cashEdit && (!cashRecord || Boolean(cashError)))} className={buttonClass}>{pending ? "Saving…" : uncertain ? "Retry same change" : row ? "Save change" : "Add service"}</button></div>
+        <div className="mt-3 flex flex-wrap justify-end gap-3"><Button variant="ghost" disabled={pending || uncertain} onClick={onClose}>Close</Button><Button type="submit" disabled={pending || !serviceId || !people || Boolean(peopleError) || (completedImport && (!responsibility || !seller || !manager || Boolean(responsibilityError))) || (cashEdit && (!cashRecord || Boolean(cashError)))}>{pending ? "Saving…" : uncertain ? "Retry same change" : row ? "Save change" : "Add service"}</Button></div>
     </form>
 }
 
@@ -177,7 +176,7 @@ function CancelServiceDialog({ row, props, onDone, onClose }: { row: ServiceCard
                 <input autoFocus required disabled={pending || uncertain} maxLength={1000} value={reason} onChange={event => { setReason(event.target.value); requestId.current = null }} className={`mt-2 ${inputClass}`} />
             </label>
             {error ? <p role="alert" className="mt-3 text-sm text-red-300">{error}</p> : null}
-            <div className="mt-4 flex justify-end gap-3"><button type="button" disabled={pending || uncertain} onClick={onClose} className="min-h-11 px-3 text-sm text-neutral-300">Close</button><button disabled={pending || !reason.trim()} className="min-h-11 rounded-lg bg-red-900 px-4 py-2 text-sm font-medium text-red-100 disabled:opacity-50">{pending ? "Cancelling…" : uncertain ? "Retry same cancellation" : "Cancel service"}</button></div>
+            <div className="mt-4 flex justify-end gap-3"><Button variant="ghost" disabled={pending || uncertain} onClick={onClose}>Close</Button><Button type="submit" variant="destructive" disabled={pending || !reason.trim()}>{pending ? "Cancelling…" : uncertain ? "Retry same cancellation" : "Cancel service"}</Button></div>
         </form>
     </CenteredDialog>
 }
@@ -244,7 +243,7 @@ function ServiceDetailDialog({ row, endpoint, workspaceSlug, relationshipId, use
         return () => controller.abort()
     }, [endpoint, row, userId])
     const showCataloguePrices = !(data.origin === "already_onboarded" && data.stage === "completed")
-    return <CenteredDialog title={row.name} onClose={onClose} footer={onSell || onEdit || onCancel || onTransfer ? <div className="flex flex-wrap justify-end gap-3">{onCancel ? <button className="min-h-11 px-3 text-sm text-red-300" onClick={onCancel}>Cancel service</button> : null}{onTransfer ? <button className="min-h-11 px-3 text-sm text-neutral-300" onClick={() => onTransfer(data)}>{data.disposition === "active" && ["onboarding", "setup", "maintenance"].includes(data.stage ?? "") ? "Transfer assignee" : "Review saved transfers"}</button> : null}{onEdit ? <button className="min-h-11 px-3 text-sm text-neutral-300" onClick={onEdit}>Edit service</button> : null}{onSell ? <button className={buttonClass} onClick={onSell}>Sell service</button> : null}</div> : undefined}>
+    return <CenteredDialog title={row.name} onClose={onClose} footer={onSell || onEdit || onCancel || onTransfer ? <div className="flex flex-wrap justify-end gap-3">{onCancel ? <button className="min-h-11 px-3 text-sm text-red-300" onClick={onCancel}>Cancel service</button> : null}{onTransfer ? <button className="min-h-11 px-3 text-sm text-neutral-300" onClick={() => onTransfer(data)}>{data.disposition === "active" && ["onboarding", "setup", "maintenance"].includes(data.stage ?? "") ? "Transfer assignee" : "Review saved transfers"}</button> : null}{onEdit ? <button className="min-h-11 px-3 text-sm text-neutral-300" onClick={onEdit}>Edit service</button> : null}{onSell ? <Button onClick={onSell}>Sell service</Button> : null}</div> : undefined}>
         {data.disposition === "cancelled" ? <Status label="Cancelled" tone="red" /> : <ServiceStage stage={data.stage} />}
         {data.description ? <p className="mt-3 text-sm leading-6 text-neutral-400">{data.description}</p> : null}
         {showCataloguePrices ? <ServicePriceSummary estimate={data.sold_upfront_cents == null} pricing={{ upfrontCents: data.sold_upfront_cents ?? data.upfront_cents, recurringCents: data.sold_recurring_cents ?? data.recurring_cents, currency: data.sold_currency ?? data.currency, billingInterval: data.billing_interval, billingIntervalCount: data.billing_interval_count }} /> : null}<DetailFields columns={1}>{!onTransfer ? <DetailField label={data.legacy ? "Assigned to" : "Primary assignee"} icon="person">{data.assignee_name}</DetailField> : null}{data.manager ? <DetailField label="Manager" icon="person">{data.manager}</DetailField> : null}{data.seller ? <DetailField label="Seller" icon="person">{data.seller}</DetailField> : null}<DetailField label="Notes" icon="description">{data.notes || "No notes"}</DetailField></DetailFields>

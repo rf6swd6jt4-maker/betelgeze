@@ -15,7 +15,7 @@ import { FilterRail, FilterRailCount, FilterRailLink } from "@/components/panel/
 import { InstantFilterResults } from "@/components/panel/InstantFilterResults"
 import { PanelTabHeader } from "@/components/panel/PanelTabHeader"
 import { QuickStats } from "@/components/panel/QuickStats"
-import { RelationshipStage, SquarePill, RoundPill, Status } from "@/components/ui"
+import { Button, RelationshipStage, SquarePill, RoundPill, Status } from "@/components/ui"
 import { DetailDangerAction, DetailDangerButton, DetailDangerZone, DetailField, DetailPageHeader } from "@/components/detail"
 import { AssetFieldsEditor } from "@/app/[workspaceSlug]/assets/[id]/AssetFieldsEditor"
 import { InlineWorkItemFields } from "@/app/[workspaceSlug]/work-items/[id]/InlineWorkItemFields"
@@ -171,7 +171,7 @@ function WorkItems({ data }: { data: Extract<NativeLibrarySnapshot, { kind: "wor
                 <PanelTabHeader
                     title="Work Items"
                     description="Workspace tasks ordered by their most recent update."
-                    actions={<Link href={workspaceHref(data.workspaceSlug, "work-items?create=work-item")} className="inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-4 py-2 text-center text-sm font-medium leading-none text-black sm:min-h-10 sm:px-3">New work item</Link>}
+                    actions={<Button href={workspaceHref(data.workspaceSlug, "work-items?create=work-item")}>New work item</Button>}
                     tabs={<LibraryTabs workspaceSlug={data.workspaceSlug} active="work-items" />}
                 />
 

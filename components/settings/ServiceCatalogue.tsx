@@ -10,7 +10,7 @@ import { bindPortalOwnerLifetime } from "@/components/ui/portal-owner-lifetime"
 import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { saveOnboardingService, setOnboardingServiceState } from "@/app/[workspaceSlug]/settings/service-actions"
-import { SquarePill, Status, StatusStat, type StatusTone } from "@/components/ui"
+import { Button, Card, SquarePill, Status, StatusStat, type StatusTone } from "@/components/ui"
 import type { OnboardingAssigneeOption, OnboardingModuleSummary, OnboardingServiceDefinition, OnboardingServiceState, OnboardingServiceType } from "@/lib/onboarding/configuration-types"
 import { SERVICE_TEMPLATES, type ServiceTemplateDefinition } from "@/lib/onboarding/service-templates"
 import { sendServiceOrder } from "@/lib/onboarding/service-order"
@@ -346,8 +346,8 @@ function ServiceEditor({ workspaceSlug, service, assignees, eligibleUsers, schem
                 {service.id && service.state === "active" ? <button type="button" disabled={pending || dirty} onClick={() => changeState("retired")} className="h-9 px-2 text-sm text-neutral-400 hover:text-white disabled:opacity-30">Retire</button> : null}
                 {service.id && service.state === "retired" ? <button type="button" disabled={pending || dirty || Boolean(service.archiveBlockers.length)} onClick={() => changeState("archived")} className="h-9 px-2 text-sm text-red-300 hover:text-red-200 disabled:opacity-30">Archive</button> : null}
                 {service.id && service.state === "archived" ? <button type="button" disabled={pending} onClick={() => changeState("retired")} className="h-9 px-2 text-sm text-neutral-300 hover:text-white disabled:opacity-30">Restore as Retired</button> : null}
-                <button type="button" onClick={onClose} className="ml-auto h-9 px-3 text-sm text-neutral-400 hover:text-white">Cancel</button>
-                <button type="button" disabled={saveDisabled} onClick={save} className="h-9 rounded-lg bg-white px-4 text-sm font-medium text-black disabled:cursor-not-allowed disabled:opacity-40">{pending ? "Saving…" : !service.id ? "Create service" : service.state === "retired" ? "Save and reactivate" : "Save new revision"}</button>
+                <Button variant="ghost" className="ml-auto" onClick={onClose}>Cancel</Button>
+                <Button disabled={saveDisabled} onClick={save}>{pending ? "Saving…" : !service.id ? "Create service" : service.state === "retired" ? "Save and reactivate" : "Save new revision"}</Button>
             </footer>
         </section>
     </div>
@@ -638,7 +638,7 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
     }
 
     return <>
-        <section className="overflow-hidden rounded-xl border border-neutral-800 bg-neutral-900 text-white">
+        <Card padding="none" className="overflow-hidden text-white">
             <div className="border-b border-neutral-800 bg-neutral-900 px-3 py-3 sm:px-5 sm:py-4">
                 <div className="flex min-w-0 flex-col justify-between gap-3 sm:flex-row sm:items-start">
                     <div className="min-w-0">
@@ -648,7 +648,7 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
                     </div>
                     <div className="flex shrink-0 flex-col gap-3 sm:items-end">
                         <ServiceStatusSummary services={services} />
-                        <button type="button" onClick={() => setTemplatesOpen(true)} className="inline-flex h-9 w-full shrink-0 items-center justify-center rounded-lg bg-white px-4 text-sm font-medium text-black transition hover:bg-neutral-200 sm:w-auto">New service</button>
+                        <Button className="w-full sm:w-auto" onClick={() => setTemplatesOpen(true)}>New service</Button>
                     </div>
                 </div>
             </div>
@@ -683,7 +683,7 @@ export function ServiceCatalogue({ workspaceSlug, services, assignees, schemaRea
             {!services.length ? <div className="bg-neutral-950 px-4 py-5"><p className="font-medium">No services yet.</p><p className="mt-1 text-sm text-neutral-500">Create the first service to make it available in the POS.</p></div> : null}
             <p className="sr-only" aria-live="polite">{orderAnnouncement}</p>
             </div>
-        </section>
+        </Card>
         {dragPreview ? <div ref={dragPreviewRef} aria-hidden="true" className="pointer-events-none fixed z-[120] flex items-center gap-3 rounded-xl border border-neutral-600 bg-neutral-900/95 px-4 shadow-2xl shadow-black/70 backdrop-blur" style={{ left: dragPreview.left, top: dragPreview.top, width: dragPreview.width, height: dragPreview.height, willChange: "transform" }}><span className="text-lg leading-none text-neutral-400">⠿</span>{(() => { const service = serviceById.get(dragPreview.id); return service ? <><div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-neutral-700 bg-black text-[7px] uppercase tracking-wide text-neutral-600">{service.thumbnailUrl ? <Image src={service.thumbnailUrl} alt="" width={40} height={40} unoptimized className="h-full w-full object-cover" /> : "Service"}</div><p className="min-w-0 truncate text-sm font-medium text-white">{service.name}</p></> : null })()}</div> : null}
         {ownerActive && templatesOpen && portalTarget ? createPortal(<ServiceTemplatesModal onClose={() => setTemplatesOpen(false)} onCreateCustom={() => { setTemplatesOpen(false); setSelectedId("new"); setEditorOpen(true) }} onSelectTemplate={(template) => { setTemplatesOpen(false); setSelectedId(`template:${template.id}`); setEditorOpen(true) }} />, portalTarget) : null}
         {selected && portalTarget ? createPortal(<ServiceEditor visible={ownerActive && editorOpen} key={selectedId ?? "new"} workspaceSlug={workspaceSlug} service={selected} assignees={assignees} eligibleUsers={eligibleUsers[selected.id] ?? []} schemaReady={schemaReady} onClose={closeEditor} onSuspend={suspendEditor} />, portalTarget) : null}

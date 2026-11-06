@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { DetailField, DetailFields } from "@/components/detail"
 import { ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle, ListTrailing } from "@/components/list/List"
-import { CenteredDialog, Status } from "@/components/ui"
+import { Button, CenteredDialog, Status } from "@/components/ui"
 import type { AdvertisingConnectionCursor, AdvertisingConnectionsPage, ClientAdvertisingConnection } from "@/lib/client-advertising-connections"
 
 const providerNames = { google_ads: "Google Ads", meta_ads: "Meta Ads", windsor: "Meta Ads" }
@@ -94,7 +94,7 @@ export function AdvertisingConnectionRows({ workspaceSlug, relationshipId, refre
                 {selected.connectedAt ? <DetailField label="Connected" icon="time">{new Date(selected.connectedAt).toLocaleString()}</DetailField> : null}
                 {selected.verifiedAt ? <DetailField label="Last verified" icon="time">{new Date(selected.verifiedAt).toLocaleString()}</DetailField> : null}
             </DetailFields>
-            {selected.provider === "google_ads" ? <button type="button" onClick={() => { setSelectedKey(null); onManageGoogle(selected) }} className="mt-4 min-h-11 rounded-lg bg-white px-4 text-sm font-semibold text-black">Manage connection</button> : null}
+            {selected.provider === "google_ads" ? <Button className="mt-4" onClick={() => { setSelectedKey(null); onManageGoogle(selected) }}>Manage connection</Button> : null}
             <p className="mt-4 text-sm leading-6 text-neutral-400">{selected.status === "pending" ? "Authorization has started. Complete the provider’s approval and check the connection again." : "This is the saved authorization status. It does not confirm that a report can be loaded now."}</p>
             <button type="button" disabled={loading} onClick={() => reload(undefined, selected.relationshipId)} className="mt-3 min-h-11 text-sm underline underline-offset-4 disabled:opacity-40">{loading ? "Refreshing…" : "Refresh saved status"}</button>
             {error ? <p role="alert" className="mt-2 text-sm text-red-200">{error}</p> : null}

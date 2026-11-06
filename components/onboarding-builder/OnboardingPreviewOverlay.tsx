@@ -3,6 +3,7 @@
 import { type ComponentProps, type ReactNode, useState } from "react"
 import { createPortal } from "react-dom"
 import { useModalDialog, useModalOwnerActive } from "@/components/ui/useModalDialog"
+import { Button } from "@/components/ui"
 import { BuilderPreview } from "./BuilderPreview"
 
 // The POS preview surface is shared by every relationship preview entry point.
@@ -22,7 +23,7 @@ export function OnboardingPreviewOverlay({ open, onClose, children }: { open: bo
 export function OnboardingPreviewButton(props: ComponentProps<typeof BuilderPreview>) {
     const [open, setOpen] = useState(false)
     return <>
-        <button type="button" onClick={() => setOpen(true)} className="inline-flex min-h-11 shrink-0 sm:min-h-9 items-center justify-center whitespace-nowrap rounded-lg bg-white px-3 text-sm font-medium text-black">Preview</button>
+        <Button size="sm" onClick={() => setOpen(true)}>Preview</Button>
         <OnboardingPreviewOverlay open={open} onClose={() => setOpen(false)}><BuilderPreview {...props} fullWindow /></OnboardingPreviewOverlay>
     </>
 }

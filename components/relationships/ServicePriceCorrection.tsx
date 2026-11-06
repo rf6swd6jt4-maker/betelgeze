@@ -1,6 +1,6 @@
 "use client"
 import { useEffect, useRef, useState } from "react"
-import { CenteredDialog, Selector } from "@/components/ui"
+import { Button, CenteredDialog, Selector } from "@/components/ui"
 import { ServicePriceSummary } from "@/components/services/ServicePriceSummary"
 import { MoneyField } from "./ServicePriceInput"
 import { correctUnpaidServiceSale } from "@/app/[workspaceSlug]/relationships/price-correction-actions"
@@ -46,7 +46,7 @@ export function ServicePriceCorrection({ workspaceSlug, relationshipId, userId, 
         finally{gate.current=false;setPending(false)}
     }
     const locked=pending||Boolean(recovery)
-    return <CenteredDialog title="Correct unpaid prices" short onClose={pending?()=>{}:onClose} footer={<div className="flex justify-end gap-3"><button className="min-h-11 px-3 text-sm" disabled={pending} onClick={onClose}>Close</button><button className="min-h-11 rounded-lg bg-white px-4 text-sm font-semibold text-black disabled:opacity-40" disabled={pending||!page||!terms||(!recovery&&(!accepted||reason.trim().length<10))} onClick={()=>void save()}>{pending?"Confirming correction…":recovery?"Retry same correction":"Save corrected prices"}</button></div>}>
+    return <CenteredDialog title="Correct unpaid prices" short onClose={pending?()=>{}:onClose} footer={<div className="flex justify-end gap-3"><Button variant="ghost" disabled={pending} onClick={onClose}>Close</Button><Button disabled={pending||!page||!terms||(!recovery&&(!accepted||reason.trim().length<10))} onClick={()=>void save()}>{pending?"Confirming correction…":recovery?"Retry same correction":"Save corrected prices"}</Button></div>}>
         <p className="text-sm leading-6 text-neutral-400">The client’s existing onboarding link stays the same. Any open Stripe checkout will be expired before these prices take effect. Completed or processing payments cannot be corrected here.</p>
         {recovery?<p role="status" className="mt-3 text-sm text-amber-200">A correction needs confirmation. Retry it to recover the result before making further changes.</p>:null}
         {!page||!terms ? <p role="status" className="py-5 text-sm">{error?"Prices are unavailable.":"Loading saved prices…"}</p> : <>

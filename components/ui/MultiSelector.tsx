@@ -33,7 +33,7 @@ export function MultiSelector({ name, label, placeholder, description = "Choose 
         <SelectorTrigger open={Boolean(anchor)} appearance="input" disabled={disabled} aria-label={label} onClick={(event) => { setQuery(""); setAnchor((current) => current ? null : event.currentTarget) }}>
             {selected.length ? `${selected.length} selected` : <span className="text-neutral-600">{placeholder}</span>}
         </SelectorTrigger>
-        {anchor ? <SelectorDrawer anchor={anchor} ariaLabel={label} title={label} description={description} search={query} onSearch={options.length >= 7 ? setQuery : undefined} onDismiss={() => { setAnchor(null); setQuery("") }} footer={<button type="button" onClick={() => setAnchor(null)} className="min-h-9 w-full rounded-lg px-2 text-sm text-neutral-300 hover:bg-neutral-900">Done</button>}>
+        {anchor ? <SelectorDrawer anchor={anchor} ariaLabel={label} title={label} description={description} search={query} onSearch={options.length >= 7 ? setQuery : undefined} onDismiss={() => { setAnchor(null); setQuery("") }} footer={<button type="button" onClick={() => setAnchor(null)} className="min-h-9 w-full rounded-lg px-2 text-sm text-neutral-300 hover:bg-[var(--color-surface-hover)]">Done</button>}>
             {visible.map((option) => {
                 const selectedOption = selectedSet.has(option.id)
                 const limitReached = !selectedOption && maxSelections !== undefined && selected.length >= maxSelections

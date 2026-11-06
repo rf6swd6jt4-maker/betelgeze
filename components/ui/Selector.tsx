@@ -15,9 +15,9 @@ export type SelectorOptionDefinition = {
 }
 
 const triggerClasses: Record<SelectorAppearance, string> = {
-    field: "-mx-1.5 min-h-8 w-[calc(100%+0.75rem)] rounded-md px-1.5 py-1 hover:bg-neutral-900/70",
+    field: "-mx-1.5 min-h-8 w-[calc(100%+0.75rem)] rounded-md px-1.5 py-1 hover:bg-[var(--color-surface-hover)]",
     input: "h-10 w-full rounded-lg border border-neutral-700 bg-black px-3 hover:border-neutral-500",
-    compact: "min-h-8 max-w-full rounded-md border border-neutral-800 bg-neutral-950 px-2 hover:border-neutral-600",
+    compact: "min-h-8 max-w-full rounded-md border border-card-border bg-[var(--color-surface-1)] px-2 hover:border-white/20",
 }
 
 function SelectorChevron({ open }: { open: boolean }) {
@@ -78,17 +78,17 @@ export function SelectorDrawer({ anchor, ariaLabel, title, description, search, 
         choices[(current < 0 ? offset > 0 ? 0 : choices.length - 1 : (current + offset + choices.length) % choices.length)]?.focus()
     }
 
-    return <AnchoredPopup anchor={anchor} onDismiss={onDismiss} workItemPopup={workItemPopup} className={`w-[min(18rem,calc(100vw-1rem))] overflow-hidden rounded-xl border border-neutral-700 bg-neutral-950 shadow-2xl shadow-black/60 ${className}`}>
-        {title || description ? <header className="border-b border-neutral-800 px-3 py-2.5">
+    return <AnchoredPopup anchor={anchor} onDismiss={onDismiss} workItemPopup={workItemPopup} className={`w-[min(18rem,calc(100vw-1rem))] overflow-hidden rounded-xl border border-card-border bg-[var(--color-surface-1)] shadow-card ${className}`}>
+        {title || description ? <header className="border-b border-card-border px-3 py-2.5">
             {title ? <p className="text-xs font-medium text-neutral-200">{title}</p> : null}
             {description ? <p className={`${title ? "mt-0.5" : ""} text-xs leading-4 text-neutral-500`}>{description}</p> : null}
         </header> : null}
-        {onSearch ? <input autoFocus aria-label={`Search ${ariaLabel.toLowerCase()}`} value={search ?? ""} onChange={(event) => onSearch(event.target.value)} onKeyDown={(event) => { if (event.key === "ArrowDown") { event.preventDefault(); focusOption("selected") } else if (event.key === "ArrowUp") { event.preventDefault(); focusOption("last") } }} placeholder={searchPlaceholder} className="h-9 w-full border-b border-neutral-800 bg-black/30 px-3 text-sm text-white outline-none placeholder:text-neutral-600" /> : null}
+        {onSearch ? <input autoFocus aria-label={`Search ${ariaLabel.toLowerCase()}`} value={search ?? ""} onChange={(event) => onSearch(event.target.value)} onKeyDown={(event) => { if (event.key === "ArrowDown") { event.preventDefault(); focusOption("selected") } else if (event.key === "ArrowUp") { event.preventDefault(); focusOption("last") } }} placeholder={searchPlaceholder} className="h-9 w-full border-b border-white/[0.06] bg-white/[0.02] px-3 text-sm text-white outline-none placeholder:text-neutral-600" /> : null}
         <div ref={optionsRef} role="listbox" aria-label={ariaLabel} aria-multiselectable={multiselectable || undefined} onKeyDown={moveFocus} className="max-h-[min(16rem,45dvh)] overflow-y-auto overscroll-contain p-1">
             {children}
             {empty}
         </div>
-        {footer ? <footer className="border-t border-neutral-800 p-1.5">{footer}</footer> : null}
+        {footer ? <footer className="border-t border-card-border p-1.5">{footer}</footer> : null}
     </AnchoredPopup>
 }
 
@@ -101,7 +101,7 @@ export function SelectorOption({ selected = false, active = false, showCheck = t
     action?: ReactNode
     className?: string
 } & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "children">) {
-    return <div className={`flex min-w-0 items-center rounded-lg ${selected || active ? "bg-neutral-900" : "hover:bg-neutral-900/70"} ${className}`}>
+    return <div className={`flex min-w-0 items-center rounded-lg ${selected || active ? "bg-white/[0.06]" : "hover:bg-[var(--color-surface-hover)]"} ${className}`}>
         <button {...props} type="button" role="option" aria-selected={selected} className="flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-neutral-200 data-[surface=light]:text-[var(--onboarding-text,#0F172A)] data-[surface=light]:border-black/15 data-[surface=light]:bg-transparent data-[surface=light]:hover:bg-black/5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-35">
             <span className="min-w-0 flex-1">
                 <span className="block min-w-0 truncate">{children}</span>

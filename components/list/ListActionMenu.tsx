@@ -69,10 +69,10 @@ export function ListActionMenu({ actions, label = "Open item actions", className
                 <span className="h-1 w-1 rounded-full bg-current" />
             </span>
         </button>
-        {open && <AnchoredPopup anchor={anchor} align="end" role="menu" onDismiss={() => setOpen(false)} className="w-52 rounded-lg border border-neutral-800 bg-neutral-950 shadow-2xl shadow-black/60">
+        {open && <AnchoredPopup anchor={anchor} align="end" role="menu" onDismiss={() => setOpen(false)} className="w-52 rounded-lg border border-card-border bg-[var(--color-surface-1)] shadow-card">
             {actionError ? <p role="alert" className="border-b border-red-500/20 px-3 py-2 text-xs text-red-300">{actionError}</p> : null}
             {visibleActions.map((item) => {
-                const className = `block min-h-9 w-full px-3 py-2 text-left text-sm ${item.danger ? "text-red-300 hover:bg-red-950/40" : "text-neutral-200 hover:bg-neutral-900"}`
+                const className = `block min-h-9 w-full px-3 py-2 text-left text-sm ${item.danger ? "text-red-300 hover:bg-red-950/40" : "text-neutral-200 hover:bg-[var(--color-surface-hover)]"}`
                 if (item.href) {
                     if (item.href.startsWith("#")) {
                         return <a key={item.label} href={item.href} className={className} role="menuitem" onClick={() => setOpen(false)}>

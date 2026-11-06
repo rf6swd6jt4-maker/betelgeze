@@ -52,7 +52,7 @@ export function SideDrawer({ label, onClose, children, modal = false }: { label:
         onCancel={event => { event.preventDefault(); dismiss() }}
         onClick={event => { if (event.target === event.currentTarget) dismiss() }}
         className="fixed inset-x-0 top-0 z-50 m-0 h-dvh max-h-none w-full max-w-none overflow-clip border-0 bg-black/60 p-0 text-white backdrop:bg-transparent open:flex open:justify-end">
-        <section data-side-drawer className={`betelgeze-drawer-right flex h-full w-[min(22rem,calc(100%-3rem))] min-w-0 flex-col overflow-hidden border-l border-neutral-800 bg-neutral-950 pb-[env(safe-area-inset-bottom)] shadow-2xl shadow-black/40 ${modal ? "pt-[env(safe-area-inset-top)]" : ""}`}>
+        <section data-side-drawer className={`betelgeze-drawer-right flex h-full w-[min(22rem,calc(100%-3rem))] min-w-0 flex-col overflow-hidden border-l border-card-border bg-[var(--color-surface-1)] pb-[env(safe-area-inset-bottom)] shadow-card ${modal ? "pt-[env(safe-area-inset-top)]" : ""}`}>
             {content}
         </section>
     </dialog>

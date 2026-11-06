@@ -14,13 +14,13 @@ const variantClasses: Record<ButtonVariant, string> = {
     destructive: "border border-red-900/60 bg-red-950/40 text-red-200 hover:bg-red-950/60",
 }
 
-// md matches Selector's existing "input" surface height (40px); the mobile
-// min-h-11 floor applies regardless of render target (button or anchor) so
-// it holds even outside `main nav`, which is the only selector the global
-// 44px mobile rule in globals.css covers for anchors.
+// Desktop heights are deliberately compact (32/36px); the mobile min-h-11
+// floor applies regardless of render target (button or anchor) so it holds
+// even outside `main nav`, which is the only selector the global 44px
+// mobile rule in globals.css covers for anchors.
 const sizeClasses: Record<ButtonSize, string> = {
-    sm: "min-h-11 gap-1.5 px-3 text-sm sm:min-h-9",
-    md: "min-h-11 gap-2 px-4 text-sm sm:min-h-10",
+    sm: "min-h-11 gap-1.5 px-3 text-sm sm:min-h-8",
+    md: "min-h-11 gap-2 px-4 text-sm sm:min-h-9",
 }
 
 type CommonProps = {

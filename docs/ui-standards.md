@@ -234,7 +234,7 @@ Do not use this shape for statuses, tests, warnings, services, modules, or arbit
 - When the design changes, update `components/ui`, this document, and existing uses together.
 - A local exception must include a code comment explaining why the shared primitive cannot represent it.
 - Use `Button` (`components/ui/Button.tsx`) for every actionable control instead of a page-local `<button>`/`<a>` with hand-rolled classes. Variants: `primary` (the filled white action), `secondary` (bordered), `ghost` (borderless), `destructive` (for a non-final destructive action — the final, irreversible delete control in a danger zone still uses `DetailDangerZone`'s own treatment, not this variant). Sizes: `sm`/`md` (default). Pass `href` for a navigation control; it renders through the app's internal link component, or a plain external anchor when `external` is set.
-- Use `Card` (`components/ui/Card.tsx`) for a generic bordered container ("a box inside a page") instead of a page-local `rounded-xl/2xl border ... p-*` wrapper. `padding` is `none`/`sm`/`md` (default)/`lg`. It has no header slot — compose a heading above its children using the standard `mt-2`/`mt-5` rhythm, not a prop.
+- Use `Card` (`components/ui/Card.tsx`) for a generic bordered container ("a box inside a page") instead of a page-local `rounded-xl/2xl border ... p-*` wrapper. `padding` is `none`/`sm` (default)/`md`/`lg`. It has no header slot — compose a heading above its children using the standard `mt-2`/`mt-5` rhythm, not a prop.
 
 ## Selectors and compact choice drawers
 

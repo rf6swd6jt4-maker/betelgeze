@@ -11,12 +11,40 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* Surfaces — dark workspace only. surface="light" keeps its own
+     --onboarding-* variables untouched; these have no light counterpart. */
+  --color-surface-canvas: var(--background);
+  --color-surface-1: #171717;
+  --color-surface-hover: rgb(255 255 255 / 0.04);
+
+  /* Borders — names mirror List's two deliberately-different divider roles
+     (within-record vs between-record); see docs/ui-standards.md. */
+  --color-border-subtle: #171717;
+  --color-border-default: #262626;
+  --color-border-strong: #404040;
+
+  /* Text */
+  --color-text-primary: #f5f5f5;
+  --color-text-secondary: #d4d4d4;
+  --color-text-tertiary: #737373;
+  --color-text-disabled: #525252;
+
+  /* Chart — TrendChart only, kept in its own namespace. */
+  --color-chart-line: #ffffff;
+  --color-chart-grid: rgb(38 38 38);
+  --color-chart-axis: rgb(82 82 82);
+  --color-chart-label: rgb(82 82 82);
+  --color-chart-negative-fill: rgb(127 29 29);
+  --color-chart-tooltip-bg: rgb(15 23 42);
+  --color-chart-tooltip-border: rgb(71 85 105);
+  --color-chart-tooltip-text: rgb(203 213 225);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
 }
 
 /* Public portal routes replace the platform startup diamond before their

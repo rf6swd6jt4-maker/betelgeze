@@ -417,9 +417,9 @@ export function RelationshipServicePos(props: Props) {
                 </p>
             ) : null}
             {page.sales.length ? (
-                <section className="mt-7">
+                <section className="mt-5">
                     <h2 className="font-semibold">Recent sales</h2>
-                    <List ariaLabel="Recent service sales" className="!mt-3">
+                    <List ariaLabel="Recent service sales" className="!mt-2">
                         {page.sales.map((sale) => (
                             <ListItem key={sale.id}>
                                 <ListPrimaryRow>

@@ -90,17 +90,20 @@ export function TrendChart({
     const tooltipY = activePoint ? Math.max(plotTop, y(activePoint.value) - 58) : 0
     const hitWidth = Math.max(12, Math.min(28, (plotRight - plotLeft) / safeDomainEnd))
     const light = surface === "light"
-    const lineColour = tone === "red" ? "rgb(248 113 113)" : light ? "var(--onboarding-primary, #1E3A5F)" : "white"
-    const gridColour = light ? "rgb(15 23 42 / 0.09)" : "rgb(38 38 38)"
-    const axisColour = light ? "rgb(15 23 42 / 0.22)" : "rgb(82 82 82)"
-    const labelColour = light ? "rgb(71 85 105)" : "rgb(82 82 82)"
+    const lineColour = tone === "red" ? "rgb(248 113 113)" : light ? "var(--onboarding-primary, #1E3A5F)" : "var(--color-chart-line)"
+    const gridColour = light ? "rgb(15 23 42 / 0.09)" : "var(--color-chart-grid)"
+    const axisColour = light ? "rgb(15 23 42 / 0.22)" : "var(--color-chart-axis)"
+    const labelColour = light ? "rgb(71 85 105)" : "var(--color-chart-label)"
 
+    // Tick/label text stays at the arbitrary text-[12px]/text-[9px] sizes below rather than
+    // the standard text-xs scale: it's positioned by the fixed plotLeft/plotRight/chartWidth
+    // geometry above, and bumping the size risks overlapping adjacent tick labels.
     return <div className="min-w-0">
         <svg viewBox={`0 0 ${chartWidth} 232`} className="aspect-[2.4/1] w-full overflow-visible" role="img" aria-label={ariaLabel} onPointerLeave={(event) => { if (event.pointerType === "mouse") setActiveId(null) }}>
             <defs><linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={lineColour} stopOpacity="0.2" /><stop offset="100%" stopColor={lineColour} stopOpacity="0" /></linearGradient></defs>
             {ticks.map((tick) => <g key={tick.id}><line x1={plotLeft} x2={plotRight} y1={y(tick.value)} y2={y(tick.value)} stroke={tick.emphasized ? axisColour : gridColour} strokeWidth="1" strokeDasharray={tick.emphasized ? "4 5" : undefined} /><line x1={plotRight} x2={plotRight + 5} y1={y(tick.value)} y2={y(tick.value)} stroke={axisColour} /><text x={plotRight + 10} y={y(tick.value) + 4} fill={tick.emphasized ? (light ? "rgb(51 65 85)" : "rgb(212 212 212)") : (light ? "rgb(100 116 139)" : "rgb(115 115 115)")} className="text-[12px] sm:text-[9px]">{tick.label}</text></g>)}
             <line x1={plotRight} x2={plotRight} y1={plotTop} y2={plotBottom} stroke={gridColour} />
-            {bands.map((band) => <rect key={band.id} x={x(band.start)} y={plotTop} width={Math.max(3, x(band.end) - x(band.start))} height={plotBottom - plotTop} fill={band.tone === "red" ? "rgb(127 29 29)" : undefined} opacity="0.1" />)}
+            {bands.map((band) => <rect key={band.id} x={x(band.start)} y={plotTop} width={Math.max(3, x(band.end) - x(band.start))} height={plotBottom - plotTop} fill={band.tone === "red" ? "var(--color-chart-negative-fill)" : undefined} opacity="0.1" />)}
             {points.length ? <g className={reveal ? "trend-chart-reveal" : undefined}>{segments.map((segment, index) => <g key={index}>
                 <polygon points={`${x(segment[0].position)},${plotBottom} ${segment.map((point) => `${x(point.position)},${y(point.value)}`).join(" ")} ${x(segment.at(-1)!.position)},${plotBottom}`} fill={`url(#${gradientId})`} />
                 {segment.length === 1 ? <circle cx={x(segment[0].position)} cy={y(segment[0].value)} r="2" fill={lineColour} /> : <polyline points={segment.map((point) => `${x(point.position)},${y(point.value)}`).join(" ")} fill="none" stroke={lineColour} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />}
@@ -110,8 +113,8 @@ export function TrendChart({
             {activePoint ? <g pointerEvents="none">
                 <line x1={x(activePoint.position)} x2={x(activePoint.position)} y1={plotTop} y2={plotBottom} stroke={light ? "rgb(15 23 42 / 0.22)" : "rgb(163 163 163 / 0.45)"} strokeWidth="1" strokeDasharray="3 4" />
                 <circle cx={x(activePoint.position)} cy={y(activePoint.value)} r="4.5" fill={lineColour} stroke={light ? "white" : "black"} strokeWidth="2.5" />
-                <rect x={tooltipX} y={tooltipY} width={tooltipWidth} height={tooltipHeight} rx="8" fill="rgb(15 23 42)" stroke="rgb(71 85 105)" />
-                <text x={tooltipX + 11} y={tooltipY + 19} fill="rgb(203 213 225)" fontSize="11">{activePoint.tooltipLabel}</text>
+                <rect x={tooltipX} y={tooltipY} width={tooltipWidth} height={tooltipHeight} rx="8" fill="var(--color-chart-tooltip-bg)" stroke="var(--color-chart-tooltip-border)" />
+                <text x={tooltipX + 11} y={tooltipY + 19} fill="var(--color-chart-tooltip-text)" fontSize="11">{activePoint.tooltipLabel}</text>
                 <text x={tooltipX + 11} y={tooltipY + 39} fill="white" fontSize="13" fontWeight="700">{activePoint.tooltipValue}</text>
             </g> : null}
             {!points.length ? <text x={(plotLeft + plotRight) / 2} y="76" textAnchor="middle" fill={labelColour} fontSize="11">{emptyLabel}</text> : null}

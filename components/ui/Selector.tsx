@@ -81,7 +81,7 @@ export function SelectorDrawer({ anchor, ariaLabel, title, description, search, 
     return <AnchoredPopup anchor={anchor} onDismiss={onDismiss} workItemPopup={workItemPopup} className={`w-[min(18rem,calc(100vw-1rem))] overflow-hidden rounded-xl border border-neutral-700 bg-neutral-950 shadow-2xl shadow-black/60 ${className}`}>
         {title || description ? <header className="border-b border-neutral-800 px-3 py-2.5">
             {title ? <p className="text-xs font-medium text-neutral-200">{title}</p> : null}
-            {description ? <p className={`${title ? "mt-0.5" : ""} text-[11px] leading-4 text-neutral-500`}>{description}</p> : null}
+            {description ? <p className={`${title ? "mt-0.5" : ""} text-xs leading-4 text-neutral-500`}>{description}</p> : null}
         </header> : null}
         {onSearch ? <input autoFocus aria-label={`Search ${ariaLabel.toLowerCase()}`} value={search ?? ""} onChange={(event) => onSearch(event.target.value)} onKeyDown={(event) => { if (event.key === "ArrowDown") { event.preventDefault(); focusOption("selected") } else if (event.key === "ArrowUp") { event.preventDefault(); focusOption("last") } }} placeholder={searchPlaceholder} className="h-9 w-full border-b border-neutral-800 bg-black/30 px-3 text-sm text-white outline-none placeholder:text-neutral-600" /> : null}
         <div ref={optionsRef} role="listbox" aria-label={ariaLabel} aria-multiselectable={multiselectable || undefined} onKeyDown={moveFocus} className="max-h-[min(16rem,45dvh)] overflow-y-auto overscroll-contain p-1">
@@ -105,7 +105,7 @@ export function SelectorOption({ selected = false, active = false, showCheck = t
         <button {...props} type="button" role="option" aria-selected={selected} className="flex min-h-10 min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm text-neutral-200 data-[surface=light]:text-[var(--onboarding-text,#0F172A)] data-[surface=light]:border-black/15 data-[surface=light]:bg-transparent data-[surface=light]:hover:bg-black/5 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-neutral-500 disabled:cursor-not-allowed disabled:opacity-35">
             <span className="min-w-0 flex-1">
                 <span className="block min-w-0 truncate">{children}</span>
-                {description ? <span className="mt-0.5 block truncate text-[11px] text-neutral-500">{description}</span> : null}
+                {description ? <span className="mt-0.5 block truncate text-xs text-neutral-500">{description}</span> : null}
             </span>
             {showCheck ? <span aria-hidden="true" className={`w-4 shrink-0 text-center text-sm ${selected ? "text-white" : "text-transparent"}`}>✓</span> : null}
         </button>

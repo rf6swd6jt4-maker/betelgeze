@@ -2,6 +2,35 @@
 
 Repeated interface elements use the primitives exported from `components/ui`, `components/panel`, `components/list`, and `components/detail`. New UI must not recreate them with page-local Tailwind classes.
 
+## Design tokens
+
+Dark-workspace surface, border, and text colours are named CSS custom properties declared in `app/globals.css`'s `@theme inline` block, each exposing a matching Tailwind utility (e.g. `--color-surface-1` → `bg-surface-1`). Every value names a colour already in use elsewhere in the app; adding a new one is a decision, not a convenience, and belongs in this table alongside its rationale.
+
+| Token | Value | Use |
+|---|---|---|
+| `--color-surface-canvas` | `var(--background)` (`#0a0a0a`) | Page/body canvas |
+| `--color-surface-1` | `#171717` | Raised card/panel default |
+| `--color-surface-hover` | `rgb(255 255 255 / 0.04)` | Generic hover tint for interactive surfaces (`Button` ghost, `Card`) |
+| `--color-border-subtle` | `#171717` | Divider *within* a record/card (mirrors `List`'s inner divider) |
+| `--color-border-default` | `#262626` | Divider *between* records; card perimeter |
+| `--color-border-strong` | `#404040` | Inputs, dialogs, drawers |
+| `--color-text-primary` | `#f5f5f5` | Titles |
+| `--color-text-secondary` | `#d4d4d4` | Body text |
+| `--color-text-tertiary` | `#737373` | Meta/labels |
+| `--color-text-disabled` | `#525252` | Disabled text |
+| `--color-chart-*` | see `app/globals.css` | `TrendChart` only — its own namespace, not reused elsewhere |
+
+`components/ui/pill-styles.ts` (fixed RGB per pill tone), `components/ui/status-styles.ts` (the four `Status` tones), and the `--onboarding-*` variables used by every `surface="light"` primitive are intentionally **separate systems** and are not expressed through these tokens, even where a value happens to coincide (e.g. the pill-neutral tone's border colour is numerically the same as `--color-border-strong`). Do not refactor them to consume these tokens.
+
+Radius follows a fixed rule rather than its own token — Tailwind's default scale already produces exactly the four radii in use:
+
+| Radius | Use |
+|---|---|
+| `rounded-md` (6px) | Inline chips/badges nested in a dense row |
+| `rounded-lg` (8px) | Controls: `Button`, inputs, `Selector`'s input surface |
+| `rounded-xl` (12px) | Popovers/dialogs/drawers (matches `SelectorDrawer`), and `Card`'s default |
+| `rounded-2xl` (16px) | A page/panel's single outermost container only (`List`'s outer wrapper is the reference case) |
+
 ## Workspace shell layers
 
 Only on top-level BE app launch, before the shell arrives, `AppStartupScreen` shows a centred white Betelgeze diamond on `#171717`, using inline SVG and styles so it does not wait for assets. It disappears as soon as the shell is present and cannot reappear during navigation or retries. Client-facing loading uses the agency logo, never the BE diamond. Every panel has its own route-specific skeleton, shared between its route fallback and shell opening state. Tab loading stays inside the shell on a dark canvas; an iframe's document-load event alone must not reveal it before its app bridge is mounted.
@@ -204,6 +233,8 @@ Do not use this shape for statuses, tests, warnings, services, modules, or arbit
 - Extend a shared primitive when a new stable variant is required. Do not invent a one-off treatment in a page.
 - When the design changes, update `components/ui`, this document, and existing uses together.
 - A local exception must include a code comment explaining why the shared primitive cannot represent it.
+- Use `Button` (`components/ui/Button.tsx`) for every actionable control instead of a page-local `<button>`/`<a>` with hand-rolled classes. Variants: `primary` (the filled white action), `secondary` (bordered), `ghost` (borderless), `destructive` (for a non-final destructive action — the final, irreversible delete control in a danger zone still uses `DetailDangerZone`'s own treatment, not this variant). Sizes: `sm`/`md` (default). Pass `href` for a navigation control; it renders through the app's internal link component, or a plain external anchor when `external` is set.
+- Use `Card` (`components/ui/Card.tsx`) for a generic bordered container ("a box inside a page") instead of a page-local `rounded-xl/2xl border ... p-*` wrapper. `padding` is `none`/`sm`/`md` (default)/`lg`. It has no header slot — compose a heading above its children using the standard `mt-2`/`mt-5` rhythm, not a prop.
 
 ## Selectors and compact choice drawers
 

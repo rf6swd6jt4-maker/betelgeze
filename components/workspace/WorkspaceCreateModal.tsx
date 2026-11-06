@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useTransition, type FormEvent } from "react"
 import type { WorkspaceCreateActionState } from "@/app/[workspaceSlug]/relationships/actions"
 import { usePathname } from "@/components/workspace/WorkspaceNavigation"
-import { AssignmentSelector, AutoGrowTextarea, MultiSelector } from "@/components/ui"
+import { AssignmentSelector, AutoGrowTextarea, Button, MultiSelector } from "@/components/ui"
 import { acknowledgeRecordCreate, recoverRecordCreates, saveRecordCreate, type SavedRecordCreate } from "@/lib/assets/create-draft"
 import { runWorkspaceMutation } from "@/lib/workspace-mutations"
 
@@ -258,7 +258,7 @@ export function WorkspaceCreateModal({ target, initialAttachment, workspace, cur
                 {optionsError ? <p className="mt-4 text-xs text-amber-300">{optionsError} You can still create this item without an optional link.</p> : null}
                 {createError ? <p className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">{createError}</p> : null}
                 {uploadLabel ? <p className="mt-4 text-sm text-neutral-400">{uploadLabel}</p> : null}
-                <div className="mt-5 flex justify-end gap-3"><button disabled={!draftReady || isCreating || Boolean(uploadLabel) || hasPendingCreate} className="inline-flex min-h-11 items-center rounded-lg bg-white px-4 text-sm font-medium text-black disabled:opacity-60">{isCreating || uploadLabel ? "Creating…" : submitLabel}</button></div>
+                <div className="mt-5 flex justify-end gap-3"><Button type="submit" disabled={!draftReady || isCreating || Boolean(uploadLabel) || hasPendingCreate}>{isCreating || uploadLabel ? "Creating…" : submitLabel}</Button></div>
                 </fieldset>
             </form>
         </div>

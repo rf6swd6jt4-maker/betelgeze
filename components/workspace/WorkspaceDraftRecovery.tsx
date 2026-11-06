@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react"
-import { CenteredDialog, Status } from "@/components/ui"
+import { Button, CenteredDialog, Status } from "@/components/ui"
 import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle, ListTrailing } from "@/components/list/List"
 import type { WorkspaceDraftJournal, WorkspaceRecoveredDraft } from "@/lib/workspace-draft-journal"
 
@@ -53,7 +53,7 @@ function RecoveryDialog({ journal, current, label, onRestore }: RecoveryProps) {
                 <label className="mt-4 block text-sm">Current text<textarea readOnly value={currentText} rows={5} className="mt-2 w-full rounded-lg border border-neutral-700 bg-black p-3 text-sm" /></label>
                 <label className="mt-4 block text-sm">Saved draft<textarea readOnly value={selected.value} rows={5} className="mt-2 w-full rounded-lg border border-neutral-700 bg-black p-3 text-sm" /></label>
                 <p className="mt-2 text-xs text-neutral-400">Using this copy returns it to the editor for review. It does not save it to the server.</p>
-                <div className="mt-4 flex justify-end gap-4"><button type="button" onClick={() => setSelected(null)} className="text-sm text-neutral-300">Back</button><button type="button" onClick={() => { if (journal.active()) onRestore(selected); close() }} className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black">Use this draft</button></div>
+                <div className="mt-4 flex justify-end gap-4"><button type="button" onClick={() => setSelected(null)} className="text-sm text-neutral-300">Back</button><Button size="sm" onClick={() => { if (journal.active()) onRestore(selected); close() }}>Use this draft</Button></div>
             </> : <>
                 <List ariaLabel="Saved drafts">
                     {drafts.slice(0, limit).map((draft) => <ListItem key={draft.id}>

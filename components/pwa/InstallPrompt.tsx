@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { Card } from "@/components/ui";
 
 type Platform = "ios" | "android" | "mac" | "windows" | "desktop" | "unknown";
 
@@ -124,7 +125,7 @@ export function InstallPrompt() {
 
   return (
     <div className="grid gap-5 lg:grid-cols-[0.95fr_1.05fr] lg:items-start">
-      <section className="rounded-lg border border-neutral-800 bg-neutral-950 p-5">
+      <Card>
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">Install status</p>
         <h2 className="mt-3 text-2xl font-semibold tracking-tight">
           {installed ? "Betelgeze is running as an app." : installCopy.title}
@@ -138,7 +139,7 @@ export function InstallPrompt() {
         >
           {installed ? "Installed" : canPrompt ? "Install Betelgeze" : "Use browser install"}
         </button>
-      </section>
+      </Card>
 
       <section className="border-t border-neutral-800 pt-5 lg:border-l lg:border-t-0 lg:pl-5 lg:pt-0">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-500">This device</p>

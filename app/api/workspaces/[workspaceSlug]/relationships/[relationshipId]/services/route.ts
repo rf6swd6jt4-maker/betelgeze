@@ -31,6 +31,14 @@ export async function GET(request: Request, context: { params: Promise<{workspac
             if (error) return Response.json({ error: "All-time value could not load." }, { status: 503, headers })
             return Response.json({ values: data }, { headers })
         }
+        if (kind === "client_chat") {
+            if (request.headers.get("x-workspace-user") !== user.id) return Response.json({ error: "Your account changed." }, { status: 409, headers })
+            const relationship = await supabaseAdmin.from("relationships").select("fulfilment_manager_user_id").eq("workspace_id", workspace.id).eq("id", relationshipId).maybeSingle()
+            if (relationship.error) return Response.json({ error: "Could not load client chat access." }, { status: 503, headers })
+            const { clientConversationRosters } = await import("@/lib/communications/access")
+            const rosters = await clientConversationRosters(workspace.id, user.id)
+            return Response.json({ canManage: relationship.data?.fulfilment_manager_user_id === user.id, roster: rosters.get(relationshipId) ?? null }, { headers })
+        }
         if (kind === "historical") {
             if (request.headers.get("x-workspace-user") !== user.id) return Response.json({ error: "Your account changed." }, { status: 409, headers })
             if (access.role !== "owner" && access.role !== "admin") return Response.json({ error: "Service import access required." }, { status: 403, headers })

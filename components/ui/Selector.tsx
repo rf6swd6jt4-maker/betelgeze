@@ -78,7 +78,7 @@ export function SelectorDrawer({ anchor, ariaLabel, title, description, search, 
         choices[(current < 0 ? offset > 0 ? 0 : choices.length - 1 : (current + offset + choices.length) % choices.length)]?.focus()
     }
 
-    return <AnchoredPopup anchor={anchor} onDismiss={onDismiss} workItemPopup={workItemPopup} className={`w-[min(18rem,calc(100vw-1rem))] overflow-hidden rounded-xl border border-card-border bg-[var(--color-surface-1)] shadow-card ${className}`}>
+    return <AnchoredPopup anchor={anchor} onDismiss={onDismiss} workItemPopup={workItemPopup} className={`w-[min(18rem,calc(100vw-1rem))] overflow-hidden rounded-xl border border-card-border bg-[var(--color-surface-glass)] shadow-card backdrop-blur-lg backdrop-saturate-150 ${className}`}>
         {title || description ? <header className="border-b border-card-border px-3 py-2.5">
             {title ? <p className="text-xs font-medium text-neutral-200">{title}</p> : null}
             {description ? <p className={`${title ? "mt-0.5" : ""} text-xs leading-4 text-neutral-500`}>{description}</p> : null}

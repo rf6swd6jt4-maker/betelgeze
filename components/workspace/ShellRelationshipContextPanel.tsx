@@ -62,7 +62,7 @@ function ContextContent({ currentUrl, context, workspaceSlug, workspaceCapabilit
         && context.allowedDestinations?.includes(destination.key))
 
     return <>
-        <header className="shrink-0 border-b border-neutral-900 px-4 py-3">
+        <header className="shrink-0 border-b border-white/[0.06] px-4 py-3">
             <div className="flex items-center justify-between gap-2">
                 <p className="text-xs text-neutral-500">Relationship context <span className="ml-1 font-mono text-neutral-600">{shortId(context.id)}</span></p>
                 {onClose ? <button data-icon-button type="button" autoFocus onClick={onClose} aria-label="Close relationship context" className="inline-flex h-8 w-8 items-center justify-center text-xl text-neutral-400 hover:text-white">×</button> : null}
@@ -73,7 +73,7 @@ function ContextContent({ currentUrl, context, workspaceSlug, workspaceCapabilit
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">
-            {contacts.length ? <section className="mb-4 border-b border-neutral-900 pb-3">
+            {contacts.length ? <section className="mb-4 border-b border-white/[0.06] pb-3">
                 <h3 className="text-xs font-medium text-neutral-400">Contact</h3>
                 <dl>{contacts.map((contact) => <ContactValue key={`${context.id}-${contact.label}-${contact.value}`} label={contact.label} value={contact.value!.trim()} />)}</dl>
             </section> : null}
@@ -83,7 +83,7 @@ function ContextContent({ currentUrl, context, workspaceSlug, workspaceCapabilit
                 {context.teamUnavailable ? <p className="mt-2 text-xs text-neutral-500">Services and team could not be loaded. Reload to try again.</p> : <>
                     <div className="mt-3"><p className="mb-1.5 text-xs text-neutral-500">Fulfilment manager</p>{context.manager ? <Assignee name={context.manager.name} avatarSrc={context.manager.avatarSrc} /> : <span className="text-xs text-neutral-400">Unassigned</span>}</div>
                     {/* These are attached service/assignee field pairs, not a navigable record collection. */}
-                    <dl className="mt-3 divide-y divide-neutral-900">
+                    <dl className="mt-3 divide-y divide-white/[0.06]">
                         {context.services?.map((service) => <div key={service.id} className="py-2.5">
                             <dt className="flex min-w-0 flex-wrap gap-2"><RoundPill tone="emerald">{service.name}</RoundPill><ServiceStage stage={service.stage ?? null} /></dt>
                             <dd className="mt-1.5">{service.assignee ? <Assignee name={service.assignee.name} avatarSrc={service.assignee.avatarSrc} /> : <span className="text-xs text-neutral-400">Unassigned</span>}</dd>
@@ -94,21 +94,21 @@ function ContextContent({ currentUrl, context, workspaceSlug, workspaceCapabilit
                 </>}
             </section>
 
-            {context.notes_summary?.trim() ? <section className="mt-4 border-t border-neutral-900 pt-3">
+            {context.notes_summary?.trim() ? <section className="mt-4 border-t border-white/[0.06] pt-3">
                 <h3 className="text-xs font-medium text-neutral-400">Relationship notes</h3>
                 <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-neutral-300">{context.notes_summary.trim()}</p>
             </section> : null}
 
 
 
-            {details.length ? <details className="mt-4 border-t border-neutral-900 pt-3">
+            {details.length ? <details className="mt-4 border-t border-white/[0.06] pt-3">
                 <summary className="cursor-pointer text-xs text-neutral-400 hover:text-white">More details</summary>
                 <dl className="mt-2 space-y-2">{details.map((detail) => <div key={detail.label} className="flex gap-3 text-xs leading-5"><dt className="w-16 shrink-0 text-neutral-500">{detail.label}</dt><dd className="min-w-0 break-words text-neutral-300">{detail.value}</dd></div>)}</dl>
             </details> : null}
             {context.metrics.length ? <QuickStats items={context.metrics} ariaLabel="Current view" /> : null}
         </div>
 
-        {shortcuts.length ? <nav aria-label="Relationship shortcuts" className="grid shrink-0 grid-cols-2 gap-x-3 border-t border-neutral-800 px-4 py-2">
+        {shortcuts.length ? <nav aria-label="Relationship shortcuts" className="grid shrink-0 grid-cols-2 gap-x-3 border-t border-card-border px-4 py-2">
             {shortcuts.map((destination) => {
                 const href = relationshipContextHref(destination.key, workspaceSlug, context.id)
                 const current = Boolean(currentUrl && relationshipContextRouteKey(currentUrl).split("?")[0] === relationshipContextRouteKey(href).split("?")[0])
@@ -138,7 +138,7 @@ export function ShellRelationshipContextPanel({ desktopOpen, mobileOpen, onClose
     }, [mobileOpen])
 
     return <>
-        {desktopOpen ? <aside aria-label="Relationship context" className={`fixed right-4 z-[35] hidden w-80 flex-col overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950 text-white shadow-lg shadow-black/20 sm:right-6 lg:flex ${standalone ? "top-6 h-[calc(100dvh-3rem)]" : "top-[7.75rem] h-[calc(100dvh-9.25rem)]"}`}>
+        {desktopOpen ? <aside aria-label="Relationship context" className={`fixed right-4 z-[35] hidden w-80 flex-col overflow-hidden rounded-xl border border-card-border bg-[var(--color-surface-glass)] text-white shadow-card backdrop-blur-xl backdrop-saturate-150 sm:right-6 lg:flex ${standalone ? "top-6 h-[calc(100dvh-3rem)]" : "top-[7.75rem] h-[calc(100dvh-9.25rem)]"}`}>
             <ContextContent {...props} />
         </aside> : null}
         {mobileOpen ? <SideDrawer label="Relationship context" onClose={onClose} modal={standalone}>{dismiss => <ContextContent {...props} onClose={dismiss} onNavigate={href => { dismiss(); props.onNavigate(href) }} />}</SideDrawer> : null}

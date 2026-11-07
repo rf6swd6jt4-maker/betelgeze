@@ -3102,7 +3102,7 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
 
         {sidebarOpen && <button data-workspace-sidebar-dismiss type="button" aria-label="Close sidebar" onClick={() => setSidebarOpen(false)} className="fixed inset-x-0 bottom-0 top-14 z-[45] cursor-default md:hidden" />}
 
-        <aside data-workspace-sidebar aria-hidden={!sidebarOpen} className={`fixed left-0 top-14 z-50 h-[calc(100dvh-3.5rem)] w-72 border-r border-card-border bg-[var(--color-surface-1)] shadow-card ${sidebarTransitionEnabled ? "transition-transform duration-200 ease-out" : ""} ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
+        <aside data-workspace-sidebar aria-hidden={!sidebarOpen} className={`fixed left-0 top-14 z-50 h-[calc(100dvh-3.5rem)] w-72 border-r border-card-border bg-[var(--color-surface-1)] shadow-card ${sidebarTransitionEnabled ? "transition-transform duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)]" : ""} ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
             <nav className="flex h-full touch-pan-y flex-col gap-2 overflow-y-auto overscroll-contain px-4 py-5 md:gap-1 md:overflow-visible md:overscroll-auto md:px-3 md:py-4">
                 <div className="flex h-10 items-center border-b border-card-border pb-2 md:hidden">
                     <button data-icon-button type="button" onClick={() => { goBack(); closeSidebarAfterNavigation() }} disabled={!canGoBack} aria-label="Go back" className={navButtonClass}>

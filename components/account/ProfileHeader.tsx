@@ -14,7 +14,7 @@ export function ProfileHeader({ username, displayName, avatarSrc }: { username: 
         <Avatar src={avatarSrc} name={displayName} className="h-28 w-28 border border-neutral-700 sm:h-32 sm:w-32" />
         <h1 className="mt-5 max-w-full break-words text-3xl font-semibold tracking-tight">{displayName}</h1>
         <p className="mt-2 max-w-full break-all text-sm text-neutral-500">@{username}</p>
-        {anchor ? <AnchoredPopup anchor={anchor} anchorPoint={{ x: anchor.offsetWidth, y: anchor.offsetHeight }} align="end" role="menu" onDismiss={() => setAnchor(null)} className="w-52 overflow-hidden rounded-xl border border-neutral-700 bg-neutral-950 p-1.5 text-left shadow-2xl">
+        {anchor ? <AnchoredPopup anchor={anchor} anchorPoint={{ x: anchor.offsetWidth, y: anchor.offsetHeight }} align="end" role="menu" onDismiss={() => setAnchor(null)} dismissOnScroll className="w-52 overflow-hidden rounded-xl border border-neutral-700 bg-neutral-950 p-1.5 text-left shadow-2xl">
             <Link role="menuitem" href={`/users/${username}/edit`} onClick={() => setAnchor(null)} className="flex min-h-11 items-center rounded-lg px-3 text-sm hover:bg-neutral-800">Edit profile</Link>
             <Link role="menuitem" href={`/users/${username}/security`} onClick={() => setAnchor(null)} className="flex min-h-11 items-center rounded-lg px-3 text-sm hover:bg-neutral-800">Security</Link>
             <form action="/logout" method="post" className="mt-1 border-t border-neutral-800 pt-1"><button role="menuitem" className="flex min-h-11 w-full items-center rounded-lg px-3 text-sm text-red-400 hover:bg-red-950/40">Log out</button></form>

@@ -52,6 +52,7 @@ export function AnchoredPopup({
     onDismiss,
     workItemPopup = false,
     anchorPoint,
+    dismissOnScroll = false,
 }: {
     anchor: HTMLElement | null
     children: ReactNode
@@ -62,6 +63,8 @@ export function AnchoredPopup({
     role?: string
     onDismiss?: () => void
     workItemPopup?: boolean
+    /** Close instead of tracking the anchor when the page scrolls underneath it, for short-lived action menus that should not visually chase their trigger. Resize and visual-viewport changes still reposition. */
+    dismissOnScroll?: boolean
 }) {
     const navigation = useWorkspaceNavigation()
     const active = navigation?.active !== false
@@ -136,18 +139,21 @@ export function AnchoredPopup({
             if (sourceDocument.body.dataset.workspaceTabActive === "false") onDismiss?.()
         }
         const dismissForOwnerNavigation = () => onDismiss?.()
+        // A dismiss-on-scroll popup is short-lived by design: it closes the
+        // instant the page moves under it rather than chasing the anchor.
+        const handleScroll = dismissOnScroll ? () => onDismiss?.() : updatePosition
 
         for (const document of documents) {
             document.addEventListener(anchorPoint ? "pointerdown" : "mousedown", dismiss)
             document.addEventListener("keydown", escape)
         }
-        sourceWindow?.addEventListener("scroll", updatePosition, true)
+        sourceWindow?.addEventListener("scroll", handleScroll, true)
         sourceWindow?.addEventListener("resize", updatePosition)
         sourceWindow?.addEventListener(WORKSPACE_TAB_VISIBILITY_EVENT, dismissWhenOwnerBecomesInactive)
         sourceWindow?.addEventListener("betelgeze:workspace-navigation-start", dismissForOwnerNavigation)
         if (popup.ownerDocument === document) sourceWindow?.addEventListener("pagehide", dismissForOwnerNavigation)
         if (host.window !== sourceWindow) {
-            host.window.addEventListener("scroll", updatePosition, true)
+            host.window.addEventListener("scroll", handleScroll, true)
             host.window.addEventListener("resize", updatePosition)
         }
         visualViewport?.addEventListener("resize", updatePosition)
@@ -157,13 +163,13 @@ export function AnchoredPopup({
                 document.removeEventListener(anchorPoint ? "pointerdown" : "mousedown", dismiss)
                 document.removeEventListener("keydown", escape)
             }
-            sourceWindow?.removeEventListener("scroll", updatePosition, true)
+            sourceWindow?.removeEventListener("scroll", handleScroll, true)
             sourceWindow?.removeEventListener("resize", updatePosition)
             sourceWindow?.removeEventListener(WORKSPACE_TAB_VISIBILITY_EVENT, dismissWhenOwnerBecomesInactive)
             sourceWindow?.removeEventListener("betelgeze:workspace-navigation-start", dismissForOwnerNavigation)
             sourceWindow?.removeEventListener("pagehide", dismissForOwnerNavigation)
             if (host.window !== sourceWindow) {
-                host.window.removeEventListener("scroll", updatePosition, true)
+                host.window.removeEventListener("scroll", handleScroll, true)
                 host.window.removeEventListener("resize", updatePosition)
             }
             visualViewport?.removeEventListener("resize", updatePosition)
@@ -179,7 +185,7 @@ export function AnchoredPopup({
             },
         })
         return () => { owner.dispose(); releaseListeners() }
-    }, [active, anchor, anchorPoint, host, onDismiss, updatePosition])
+    }, [active, anchor, anchorPoint, dismissOnScroll, host, onDismiss, updatePosition])
 
     if (!active || !anchor || !host) return null
     return createPortal(<div

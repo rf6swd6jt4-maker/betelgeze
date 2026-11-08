@@ -3,7 +3,7 @@
 :root {
   --background: #0a0a0a;
   --foreground: #ededed;
-  --workspace-sidebar-width: 0px;
+  --workspace-sidebar-width: 5rem;
 }
 
 @theme inline {
@@ -17,10 +17,11 @@
   --color-surface-canvas: var(--background);
   --color-surface-1: #171717;
   --color-surface-hover: rgb(255 255 255 / 0.04);
-  /* Frosted surface for floating popups/the relationship context panel only —
-     never the dialog/backdrop host element or workspace nav chrome, which
-     app/globals.css forces opaque further down (see the backdrop-filter:none
-     rule) to avoid a stale blur layer recomposing over hidden chrome. */
+  /* Frosted surface for floating popups, the relationship context panel and the
+     floating sidebar box — never the dialog/backdrop host element or the top
+     bar/tab bar, which app/globals.css forces opaque further down (see the
+     backdrop-filter:none rule) to avoid a stale blur layer recomposing over
+     hidden chrome. */
   --color-surface-glass: rgb(23 23 23 / 0.72);
 
   /* Borders — names mirror List's two deliberately-different divider roles
@@ -153,15 +154,27 @@ html[data-workspace-viewport-locked="true"] [data-mobile-comms-viewport="true"] 
 /* Navigation drawers share the shell's existing viewport measurements. They
    start below the header and never create another visual-viewport owner. */
 @media (max-width: 1023px) {
-  [data-workspace-shell-root] :is([data-workspace-side-drawer], [data-workspace-sidebar], [data-workspace-sidebar-dismiss]) {
+  [data-workspace-shell-root] :is([data-workspace-side-drawer], [data-workspace-sidebar-dismiss]) {
     top: calc(3.5rem + var(--workspace-visual-origin-offset, 0px));
     bottom: auto;
     height: max(0px, calc(var(--workspace-visual-viewport-bottom, 100dvh) - 3.5rem));
   }
 
-  [data-workspace-shell-root][data-mobile-comms-viewport="true"] :is([data-workspace-side-drawer], [data-workspace-sidebar], [data-workspace-sidebar-dismiss]) {
+  /* The sidebar is an inset floating box: 0.5rem below the header and above the bottom. */
+  [data-workspace-shell-root] [data-workspace-sidebar] {
+    top: calc(4rem + var(--workspace-visual-origin-offset, 0px));
+    bottom: auto;
+    height: max(0px, calc(var(--workspace-visual-viewport-bottom, 100dvh) - 4.5rem));
+  }
+
+  [data-workspace-shell-root][data-mobile-comms-viewport="true"] :is([data-workspace-side-drawer], [data-workspace-sidebar-dismiss]) {
     top: calc(var(--mobile-workspace-top) + var(--mobile-workspace-header-height));
     height: max(0px, calc(var(--mobile-workspace-height) - var(--mobile-workspace-header-height)));
+  }
+
+  [data-workspace-shell-root][data-mobile-comms-viewport="true"] [data-workspace-sidebar] {
+    top: calc(var(--mobile-workspace-top) + var(--mobile-workspace-header-height) + 0.5rem);
+    height: max(0px, calc(var(--mobile-workspace-height) - var(--mobile-workspace-header-height) - 1rem));
   }
 }
 
@@ -332,39 +345,19 @@ html:is([data-mobile-conversation-phase="open"], [data-mobile-conversation-phase
 }
 
 @media (min-width: 768px) {
-  body[data-workspace-sidebar-open="true"] [data-workspace-tabbar] {
+  /* From md up the sidebar is always present: expanded (18rem incl. gutters)
+     or collapsed to an icon rail (5rem). --workspace-sidebar-width tracks it. */
+  [data-workspace-tabbar],
+  [data-workspace-tab-panels] {
     left: var(--workspace-sidebar-width);
     width: calc(100% - var(--workspace-sidebar-width));
-  }
-
-  body[data-workspace-sidebar-open="true"] [data-workspace-tab-panels] {
-    left: var(--workspace-sidebar-width);
-    width: calc(100% - var(--workspace-sidebar-width));
-  }
-
-  body[data-workspace-sidebar-open="false"] [data-workspace-tabbar],
-  body:not([data-workspace-sidebar-open]) [data-workspace-tabbar] {
-    left: 0;
-    width: 100%;
-  }
-
-  body[data-workspace-sidebar-open="false"] [data-workspace-tab-panels],
-  body:not([data-workspace-sidebar-open]) [data-workspace-tab-panels] {
-    left: 0;
-    width: 100%;
   }
 
   /* Native panels already sit inside the inset tab container. Only legacy
      document pages need a separate main-content sidebar inset. */
-  body[data-workspace-sidebar-open="true"] main:not([data-onboarding-full-window-preview]):not([data-workspace-loading-root]):not([data-client-portal-main]):not([data-native-workspace-tab] main) {
+  body[data-workspace-sidebar-open] main:not([data-onboarding-full-window-preview]):not([data-workspace-loading-root]):not([data-client-portal-main]):not([data-native-workspace-tab] main) {
     margin-left: var(--workspace-sidebar-width);
     width: calc(100% - var(--workspace-sidebar-width));
-  }
-
-  body[data-workspace-sidebar-open="false"] main:not([data-onboarding-full-window-preview]):not([data-workspace-loading-root]):not([data-client-portal-main]):not([data-native-workspace-tab] main),
-  body:not([data-workspace-sidebar-open]) main:not([data-onboarding-full-window-preview]):not([data-workspace-loading-root]):not([data-client-portal-main]):not([data-native-workspace-tab] main) {
-    margin-left: 0;
-    width: 100%;
   }
 
   body[data-workspace-sidebar-transition="true"] main:not([data-onboarding-full-window-preview]):not([data-workspace-loading-root]):not([data-client-portal-main]):not([data-native-workspace-tab] main) {

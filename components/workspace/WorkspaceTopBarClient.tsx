@@ -20,7 +20,7 @@ import { MOBILE_CONVERSATION_VISIBILITY_EVENT, mobileConversationIsOpen } from "
 import Link from "next/link"
 import { beginWorkspaceTabGesture } from "@/lib/workspace-tab-gesture"
 import dynamic from "next/dynamic"
-import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react"
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react"
 import { usePathname, useSearchParams } from "next/navigation"
 import { flushSync } from "react-dom"
 import { NativeWorkspaceTab, nativePanelCacheKey, type NativePanelSnapshot, type NativeTabHandle, type NativeTabNavigationRequest, type NativeTabNavigationCommit } from "@/components/workspace/NativeWorkspaceTab"
@@ -106,6 +106,14 @@ const WorkspaceCreateModal = dynamic(() => import("@/components/workspace/Worksp
 const ShellRelationshipContextPanel = dynamic(() => import("@/components/workspace/ShellRelationshipContextPanel").then((module) => module.ShellRelationshipContextPanel))
 
 const sidebarStorageKey = "betelgeze:workspace-sidebar-open"
+const sidebarDrawerQuery = "(max-width: 767px)"
+function subscribeSidebarDrawerQuery(onChange: () => void) {
+    const query = window.matchMedia(sidebarDrawerQuery)
+    query.addEventListener("change", onChange)
+    return () => query.removeEventListener("change", onChange)
+}
+function getSidebarDrawerSnapshot() { return window.matchMedia(sidebarDrawerQuery).matches }
+function getSidebarDrawerServerSnapshot() { return false }
 const MAX_RESIDENT_WORKSPACE_FRAMES = 3
 const WORKSPACE_NAVIGATION_PROBE_MS = 8_000
 type WorkspacePresenceChannel = ReturnType<ReturnType<typeof createSupabaseBrowserClient>["channel"]>
@@ -445,6 +453,9 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
     ])
     const presenceIdentityRef = useRef({ name: username, avatarSrc: avatarSrc ?? null })
     const [sidebarOpen, setSidebarOpen] = useState(false)
+    // Below md the sidebar is a slide-in drawer (hidden when closed); from md up
+    // it is a persistent rail that collapses to icons only.
+    const sidebarIsDrawer = useSyncExternalStore(subscribeSidebarDrawerQuery, getSidebarDrawerSnapshot, getSidebarDrawerServerSnapshot)
     const [sidebarHydrated, setSidebarHydrated] = useState(false)
     const [sidebarTransitionEnabled, setSidebarTransitionEnabled] = useState(false)
     const [tabsHydrated, setTabsHydrated] = useState(false)
@@ -2024,7 +2035,7 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
     useEffect(() => {
         document.body.dataset.workspaceSidebarOpen = sidebarOpen ? "true" : "false"
         document.body.dataset.workspaceSidebarTransition = sidebarTransitionEnabled ? "true" : "false"
-        document.documentElement.style.setProperty("--workspace-sidebar-width", sidebarOpen ? "18rem" : "0px")
+        document.documentElement.style.setProperty("--workspace-sidebar-width", sidebarOpen ? "18rem" : "5rem")
         if (sidebarHydrated) shellStorage.set(sidebarStorageKey, sidebarOpen ? "true" : "false")
 
         return () => {
@@ -3102,8 +3113,8 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
 
         {sidebarOpen && <button data-workspace-sidebar-dismiss type="button" aria-label="Close sidebar" onClick={() => setSidebarOpen(false)} className="fixed inset-x-0 bottom-0 top-14 z-[45] cursor-default md:hidden" />}
 
-        <aside data-workspace-sidebar aria-hidden={!sidebarOpen} className={`fixed left-0 top-14 z-50 h-[calc(100dvh-3.5rem)] w-72 border-r border-card-border bg-[var(--color-surface-1)] shadow-card ${sidebarTransitionEnabled ? "transition-transform duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)]" : ""} ${sidebarOpen ? "translate-x-0" : "-translate-x-full"}`}>
-            <nav className="flex h-full touch-pan-y flex-col gap-2 overflow-y-auto overscroll-contain px-4 py-5 md:gap-1 md:overflow-visible md:overscroll-auto md:px-3 md:py-4">
+        <aside data-workspace-sidebar data-collapsed={!sidebarIsDrawer && !sidebarOpen ? "true" : "false"} aria-hidden={sidebarIsDrawer && !sidebarOpen} className={`fixed left-2 top-16 z-50 h-[calc(100dvh-4.5rem)] w-[17rem] overflow-hidden rounded-2xl border border-card-border bg-[var(--color-surface-glass)] shadow-card backdrop-blur-xl backdrop-saturate-150 ${sidebarOpen ? "" : "md:w-16"} ${sidebarTransitionEnabled ? "transition-[transform,visibility,width] duration-200 ease-out max-md:duration-[240ms] max-md:ease-[cubic-bezier(0.22,1,0.36,1)]" : ""} ${sidebarOpen ? "translate-x-0" : "max-md:invisible max-md:-translate-x-[calc(100%+1rem)]"}`}>
+            <nav className={`flex h-full touch-pan-y flex-col gap-2 overflow-y-auto overscroll-contain px-4 py-5 md:gap-1 md:overflow-visible md:overscroll-auto md:py-4 ${sidebarOpen ? "md:px-3" : "md:px-2"}`}>
                 <div className="flex h-10 items-center border-b border-card-border pb-2 md:hidden">
                     <button data-icon-button type="button" onClick={() => { goBack(); closeSidebarAfterNavigation() }} disabled={!canGoBack} aria-label="Go back" className={navButtonClass}>
                         <ArrowLeftIcon />
@@ -3121,13 +3132,13 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
                         ?? (item.href === defaultWorkspaceUrl
                         ? activePathname === defaultWorkspaceUrl
                         : activePathname === item.href || activePathname.startsWith(`${item.href}/`))
-                    const itemClassName = `flex min-h-12 items-center gap-3 rounded-lg px-4 text-base transition md:min-h-10 md:px-3 md:text-sm ${active ? "bg-white/[0.06] text-white" : "text-neutral-400 hover:bg-[var(--color-surface-hover)] hover:text-white"}`
+                    const itemClassName = `relative flex min-h-12 items-center gap-3 rounded-lg px-4 text-base transition md:min-h-10 md:text-sm ${sidebarOpen ? "md:px-3" : "md:justify-center md:px-0"} ${active ? "bg-white/[0.06] text-white" : "text-neutral-400 hover:bg-[var(--color-surface-hover)] hover:text-white"}`
 
                     return (
-                        <Link key={item.key} aria-disabled={offlineBlocked} title={offlineBlocked ? "Connect to open this panel" : undefined} href={item.href} target={item.standalone ? "_blank" : undefined} rel={item.standalone ? "noopener noreferrer" : undefined} data-global-loading="false" onClick={(event) => { if (offlineBlocked) { event.preventDefault(); return }; if (!online) { event.preventDefault(); if (!activePathname.includes("/communications")) window.location.assign("/offline.html"); closeSidebarAfterNavigation(); return }; if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); navigateWorkspaceDestination(item.href); closeSidebarAfterNavigation() }} className={`${itemClassName} ${offlineBlocked ? "opacity-40 cursor-not-allowed" : ""}`}>
+                        <Link key={item.key} aria-disabled={offlineBlocked} title={offlineBlocked ? "Connect to open this panel" : !sidebarIsDrawer && !sidebarOpen ? item.label : undefined} href={item.href} target={item.standalone ? "_blank" : undefined} rel={item.standalone ? "noopener noreferrer" : undefined} data-global-loading="false" onClick={(event) => { if (offlineBlocked) { event.preventDefault(); return }; if (!online) { event.preventDefault(); if (!activePathname.includes("/communications")) window.location.assign("/offline.html"); closeSidebarAfterNavigation(); return }; if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); navigateWorkspaceDestination(item.href); closeSidebarAfterNavigation() }} className={`${itemClassName} ${offlineBlocked ? "opacity-40 cursor-not-allowed" : ""}`}>
                             <span className="shrink-0">{item.icon}</span>
-                            <span className="min-w-0 flex-1 truncate">{item.label}</span>
-                            {item.key === "communications" && !visibleTabs.some(tab => workspaceTabIsCommunications(tab.url, workspace.slug, "http://localhost")) ? <span title={communicationsUnreadStale ? "Unread count may be out of date; reconnect to update." : undefined}><UnreadMessageCount count={communicationsUnreadCount} loading={readProtocol === "device-v1" && !communicationsUnreadLoaded} label="unread Communications messages" /></span> : null}
+                            <span className={`min-w-0 flex-1 truncate ${sidebarOpen ? "" : "md:sr-only"}`}>{item.label}</span>
+                            {item.key === "communications" && !visibleTabs.some(tab => workspaceTabIsCommunications(tab.url, workspace.slug, "http://localhost")) ? <span className={sidebarOpen ? undefined : "md:absolute md:right-0.5 md:top-0.5"} title={communicationsUnreadStale ? "Unread count may be out of date; reconnect to update." : undefined}><UnreadMessageCount count={communicationsUnreadCount} loading={readProtocol === "device-v1" && !communicationsUnreadLoaded} label="unread Communications messages" /></span> : null}
                         </Link>
                     )
                 })}

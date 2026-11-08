@@ -14,15 +14,37 @@ export function SettingsSectionNav({ sections }: { sections: SettingsSectionNavI
     const activeRef = useRef(active)
 
     useEffect(() => {
-        const nodes = sections
-            .map((section) => document.getElementById(section.id))
-            .filter((node): node is HTMLElement => Boolean(node))
-        if (!nodes.length) return
-
+        // Suspense swaps each section's fallback element for the streamed
+        // one with the same id, which detaches any node captured earlier
+        // (its rect reads 0 and the highlight jumps). Resolve nodes by id on
+        // every update and observe any newly attached ones.
+        const observed = new Set<HTMLElement>()
         let frame = 0
+        let resizeObserver: ResizeObserver | null = null
+
+        function currentNodes() {
+            const nodes = sections
+                .map((section) => document.getElementById(section.id))
+                .filter((node): node is HTMLElement => Boolean(node))
+            observed.forEach((node) => {
+                if (!node.isConnected) {
+                    resizeObserver?.unobserve(node)
+                    observed.delete(node)
+                }
+            })
+            nodes.forEach((node) => {
+                if (!observed.has(node)) {
+                    observed.add(node)
+                    resizeObserver?.observe(node)
+                }
+            })
+            return nodes
+        }
 
         function updateActiveSection() {
             frame = 0
+            const nodes = currentNodes()
+            if (!nodes.length) return
             const scrollingElement = document.scrollingElement
             const scrollTop = scrollingElement?.scrollTop ?? window.scrollY
             const viewportHeight = scrollingElement?.clientHeight || window.innerHeight
@@ -48,8 +70,10 @@ export function SettingsSectionNav({ sections }: { sections: SettingsSectionNavI
             frame = window.requestAnimationFrame(updateActiveSection)
         }
 
-        const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleUpdate)
-        nodes.forEach((node) => resizeObserver?.observe(node))
+        resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleUpdate)
+        const container = document.getElementById("workspace-settings-scroll")
+        if (container) resizeObserver?.observe(container)
+        currentNodes()
         scheduleUpdate()
         window.addEventListener("scroll", scheduleUpdate, { passive: true })
         window.addEventListener("resize", scheduleUpdate)

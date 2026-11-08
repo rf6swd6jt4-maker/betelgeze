@@ -11,6 +11,8 @@ import { useOfflineChat } from "@/components/communications/useOfflineChat"
 import { ChatOutboxStatus } from "@/components/communications/ChatOutboxStatus"
 import { ClientChatParticipants } from "@/components/communications/ClientChatParticipants"
 import { ClientPortalActions } from "@/components/communications/ClientPortalActions"
+import { ListActionMenu } from "@/components/list/ListActionMenu"
+import { RequestCallDialog, SendReportDialog } from "@/components/communications/WhatsAppEngagementDialogs"
 import { resourceUploadAssetId } from "@/lib/communications/resource-upload"
 
 import { chatCheckboxBody } from "@/lib/chat-formatting"
@@ -292,6 +294,9 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     const [interactionError, setInteractionError] = useState<string | null>(null)
     const [reconfirmPendingId, setReconfirmPendingId] = useState<string | null>(null)
     const [reconfirmRequestedKey, setReconfirmRequestedKey] = useState<string | null>(null)
+    const [engagementDialog, setEngagementDialog] = useState<"call" | "report" | null>(null)
+    const [engagementPending, setEngagementPending] = useState(false)
+    const [engagementError, setEngagementError] = useState<string | null>(null)
     const [swipePosition, setSwipePosition] = useState<{ id: string; offset: number; active: boolean } | null>(null)
     const [previewMedia, setPreviewMedia] = useState<MessageMediaPreview | null>(null)
     const [showJumpToLatest, setShowJumpToLatest] = useState(false)
@@ -1006,6 +1011,50 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
         }
     }
 
+    async function sendCallRequest(input: { serviceName: string; requirement: string }) {
+        if (!selected?.canWrite || !schemaReady || engagementPending) return
+        setEngagementPending(true)
+        setEngagementError(null)
+        try {
+            const response = await fetch(`/api/workspaces/${bootstrap.workspaceSlug}/communications/request-call`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ relationshipId: selected.id, clientRequestId: crypto.randomUUID(), ...input }),
+            })
+            const result = await response.json().catch(() => null) as { error?: string; status?: string } | null
+            if (!response.ok || result?.status === "send_failed" || result?.status === "send_uncertain") {
+                throw new Error(result?.error ?? "Could not confirm that the call request was sent.")
+            }
+            setEngagementDialog(null)
+        } catch (error) {
+            setEngagementError(error instanceof Error ? error.message : "Could not send the call request.")
+        } finally {
+            setEngagementPending(false)
+        }
+    }
+
+    async function sendReportNotice(input: { period: string }) {
+        if (!selected?.canWrite || !schemaReady || engagementPending) return
+        setEngagementPending(true)
+        setEngagementError(null)
+        try {
+            const response = await fetch(`/api/workspaces/${bootstrap.workspaceSlug}/communications/send-report`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ relationshipId: selected.id, clientRequestId: crypto.randomUUID(), ...input }),
+            })
+            const result = await response.json().catch(() => null) as { error?: string; status?: string } | null
+            if (!response.ok || result?.status === "send_failed" || result?.status === "send_uncertain") {
+                throw new Error(result?.error ?? "Could not confirm that the report notice was sent.")
+            }
+            setEngagementDialog(null)
+        } catch (error) {
+            setEngagementError(error instanceof Error ? error.message : "Could not send the report notice.")
+        } finally {
+            setEngagementPending(false)
+        }
+    }
+
     const normalizedSearch = search.trim().toLowerCase()
     const visibleConversations = inbox.filter(({ conversation }) => !normalizedSearch || `${conversation.title} ${conversation.subtitle ?? ""} ${conversation.previewMessage?.body ?? conversation.messages.at(-1)?.body ?? ""}`.toLowerCase().includes(normalizedSearch) || Boolean(previewSearch.ids?.has(conversation.id)))
     const peopleById = new Map(bootstrap.people.map((person) => [person.id, person]))
@@ -1061,6 +1110,10 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                         <div className="hidden min-w-0 flex-1 items-center gap-3 rounded-lg [[data-mobile-conversation-surface]_&]:flex">{conversationIdentity}</div>
                         <ClientPortalActions active={interactionActive} key={`portal-actions:${selected.id}`} workspaceSlug={bootstrap.workspaceSlug} relationshipId={selected.id} />
                         <ClientChatParticipants active={interactionActive} key={selected.id} workspaceSlug={bootstrap.workspaceSlug} conversation={selected} userId={bootstrap.currentUser.id} people={bootstrap.people} onSaved={synchronize} />
+                        {selected.canWrite ? <ListActionMenu label="Reengagement actions" actions={[
+                            { label: "Request a call", onSelect: () => { setEngagementError(null); setEngagementDialog("call") } },
+                            { label: "Send weekly report", onSelect: () => { setEngagementError(null); setEngagementDialog("report") } },
+                        ]} /> : null}
                         <CommunicationsConnectionStatus state={reading.error ? "error" : connection.state} error={reading.error ?? connection.error} />
                     </header>
                     {selected.pinnedMessageId && pinnedPreview ? <PinnedMessageBar preview={pinnedPreview} onClick={() => jumpToMessage(selected.pinnedMessageId!)} /> : null}
@@ -1220,6 +1273,8 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                 </> : <div className="flex flex-1 items-center justify-center p-6 text-center"><div><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-neutral-800 bg-neutral-950 text-xl">◌</div><h2 className="mt-4 text-sm font-semibold">Select a client chat</h2><p className="mt-2 text-xs text-neutral-600">Messages update here without reloading the panel.</p></div></div>}
             </NativeChatViewport></ConversationMedia>
             {interactionActive ? <MessageMediaLightbox media={previewMedia} onClose={() => setPreviewMedia(null)} /> : null}
+            {selected && engagementDialog === "call" ? <RequestCallDialog clientTitle={selected.title} pending={engagementPending} error={engagementError} onClose={() => { if (!engagementPending) { setEngagementDialog(null); setEngagementError(null) } }} onSend={(input) => void sendCallRequest(input)} /> : null}
+            {selected && engagementDialog === "report" ? <SendReportDialog clientTitle={selected.title} pending={engagementPending} error={engagementError} onClose={() => { if (!engagementPending) { setEngagementDialog(null); setEngagementError(null) } }} onSend={(input) => void sendReportNotice(input)} /> : null}
             </MobileConversationSurface>
         </ResizableConversationColumns>
     </section>

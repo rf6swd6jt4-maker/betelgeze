@@ -1,6 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes } from "crypto"
 import { validateWhatsAppConsentTemplate } from "@/lib/client-messages/whatsapp-consent-template"
 import { validateWhatsAppLinkTemplate, type WhatsAppOnboardingTemplate } from "@/lib/client-messages/whatsapp-onboarding-template"
+import { validateWhatsAppEngagementTemplate, type WhatsAppEngagementTemplate } from "@/lib/client-messages/whatsapp-engagement-template"
 import { getRequiredEnv } from "@/lib/env"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { stripeAccountMode } from "@/lib/stripe/mode"
@@ -18,6 +19,11 @@ export type WhatsAppTemplateSettings = {
     reconfirmation: { name: string; language: string }
     onboarding: { name: string; language: string }
     clientPortal: { name: string; language: string }
+}
+
+export type WhatsAppEngagementTemplateSettings = {
+    callRequest: { name: string; language: string }
+    reportReady: { name: string; language: string }
 }
 
 export type WorkspaceConnection = {
@@ -102,6 +108,10 @@ export function integrationHint(provider: IntegrationProvider, config: Integrati
         onboarding_template_language: config.onboarding_template_language || null,
         client_portal_template: config.client_portal_template_name || null,
         client_portal_template_language: config.client_portal_template_language || null,
+        call_request_template: config.call_request_template_name || null,
+        call_request_template_language: config.call_request_template_language || null,
+        report_ready_template: config.report_ready_template_name || null,
+        report_ready_template_language: config.report_ready_template_language || null,
     }
     if (provider === "meta_ads") return {
         business_id: config.business_id || null,
@@ -479,6 +489,66 @@ export async function updateWhatsAppTemplates(workspaceId: string, templates: Wh
         capabilities: { ...hint.capabilities, reconfirmation_template_approved: true, onboarding_template_approved: true, client_portal_template_approved: true },
         connection_status: "connected",
         last_verified_at: hint.verified_at,
+        last_error: null,
+    }).eq("workspace_id", workspaceId).eq("provider", "meta_whatsapp").eq("config_encrypted", connection.config_encrypted).select("workspace_id").maybeSingle()
+    if (saved.error || !saved.data) throw new Error("The connection changed while saving. Refresh and try again.")
+}
+
+async function fetchWhatsAppEngagementTemplate(config: IntegrationConfig, name: string, language: string, purpose: string) {
+    if (!config.waba_id || !name) throw new Error(`Configure a WhatsApp Business Account ID and an approved Utility ${purpose} template in Settings.`)
+    const result = await metaGet(`${encodeURIComponent(config.waba_id)}/message_templates?name=${encodeURIComponent(name)}&fields=name,status,language,category,components`, config.access_token)
+    return validateWhatsAppEngagementTemplate(result.data, name, language, purpose)
+}
+
+function cachedWhatsAppEngagementTemplate(config: IntegrationConfig, key: string): WhatsAppEngagementTemplate | null {
+    if (!config[key]) return null
+    try {
+        const value = JSON.parse(config[key]) as WhatsAppEngagementTemplate
+        return value?.name && value?.language && Number.isInteger(value?.bodyVariableCount) ? value : null
+    } catch { return null }
+}
+
+export async function getWhatsAppCallRequestTemplate(config: IntegrationConfig) {
+    if (!config.waba_id || !config.call_request_template_name) throw new Error("Configure and verify a WhatsApp call-request Utility template in Settings before using Request a call.")
+    return cachedWhatsAppEngagementTemplate(config, "call_request_template_validation")
+        ?? fetchWhatsAppEngagementTemplate(config, config.call_request_template_name, config.call_request_template_language || "en_US", "call-request")
+}
+
+export async function getWhatsAppReportReadyTemplate(config: IntegrationConfig) {
+    if (!config.waba_id || !config.report_ready_template_name) throw new Error("Configure and verify a WhatsApp weekly-report Utility template in Settings before using Send report.")
+    return cachedWhatsAppEngagementTemplate(config, "report_ready_template_validation")
+        ?? fetchWhatsAppEngagementTemplate(config, config.report_ready_template_name, config.report_ready_template_language || "en_US", "weekly-report")
+}
+
+export async function updateWhatsAppEngagementTemplates(workspaceId: string, templates: WhatsAppEngagementTemplateSettings) {
+    if (!Object.values(templates).every(validWhatsAppTemplateSetting)) throw new Error("Enter a valid name and language for both engagement templates.")
+    const { data: connection, error } = await supabaseAdmin.from("workspace_integrations").select("config_encrypted, config_hint").eq("workspace_id", workspaceId).eq("provider", "meta_whatsapp").eq("mode", "connected").eq("enabled", true).single()
+    if (error || !connection?.config_encrypted) throw new Error("Connect WhatsApp before updating its templates.")
+    let config: IntegrationConfig = {
+        ...decryptWorkspaceIntegration(connection.config_encrypted),
+        call_request_template_name: templates.callRequest.name,
+        call_request_template_language: templates.callRequest.language,
+        report_ready_template_name: templates.reportReady.name,
+        report_ready_template_language: templates.reportReady.language,
+    }
+    if (!config.waba_id || !config.access_token) throw new Error("Reconnect WhatsApp before verifying templates.")
+    const [callRequestPayload, reportReadyPayload] = await Promise.all([
+        metaGet(`${encodeURIComponent(config.waba_id)}/message_templates?name=${encodeURIComponent(config.call_request_template_name)}&fields=name,status,language,category,components`, config.access_token),
+        metaGet(`${encodeURIComponent(config.waba_id)}/message_templates?name=${encodeURIComponent(config.report_ready_template_name)}&fields=name,status,language,category,components`, config.access_token),
+    ])
+    const callRequest = validateWhatsAppEngagementTemplate(callRequestPayload.data, config.call_request_template_name, config.call_request_template_language, "call-request")
+    const reportReady = validateWhatsAppEngagementTemplate(reportReadyPayload.data, config.report_ready_template_name, config.report_ready_template_language, "weekly-report")
+    config = {
+        ...config,
+        call_request_template_language: callRequest.language,
+        report_ready_template_language: reportReady.language,
+        call_request_template_validation: JSON.stringify(callRequest),
+        report_ready_template_validation: JSON.stringify(reportReady),
+    }
+    const existingHint = connection.config_hint && typeof connection.config_hint === "object" && !Array.isArray(connection.config_hint) ? connection.config_hint : {}
+    const saved = await supabaseAdmin.from("workspace_integrations").update({
+        config_encrypted: encrypt(config),
+        config_hint: { ...existingHint, ...integrationHint("meta_whatsapp", config) },
         last_error: null,
     }).eq("workspace_id", workspaceId).eq("provider", "meta_whatsapp").eq("config_encrypted", connection.config_encrypted).select("workspace_id").maybeSingle()
     if (saved.error || !saved.data) throw new Error("The connection changed while saving. Refresh and try again.")

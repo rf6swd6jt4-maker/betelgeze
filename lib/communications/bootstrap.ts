@@ -62,6 +62,7 @@ export async function loadClientCommunicationsBootstrap({ currentUserId, role, r
         canWrite: rosterById.get(relationship.id)?.viewOnlyIds.includes(currentUserId) === false,
         clientId: relationship.client_id,
         title: relationship.business_name ? `${relationship.primary_person_name} – ${relationship.business_name}` : relationship.primary_person_name,
+        businessName: relationship.business_name || null,
         subtitle: relationship.whatsapp_phone ?? relationship.primary_phone ?? relationship.primary_email,
         isTest: relationship.source_metadata.is_test === true,
         canSend: Boolean(

@@ -53,6 +53,7 @@ export function AnchoredPopup({
     workItemPopup = false,
     anchorPoint,
     dismissOnScroll = false,
+    allowBelow = false,
 }: {
     anchor: HTMLElement | null
     children: ReactNode
@@ -65,6 +66,8 @@ export function AnchoredPopup({
     workItemPopup?: boolean
     /** Close instead of tracking the anchor when the page scrolls underneath it, for short-lived action menus that should not visually chase their trigger. Resize and visual-viewport changes still reposition. */
     dismissOnScroll?: boolean
+    /** Flip below the trigger instead of squeezing to fit above it when there is truly no room above (e.g. a trigger flush against a fixed top edge). Default behavior keeps opening above and scrolling internally. */
+    allowBelow?: boolean
 }) {
     const navigation = useWorkspaceNavigation()
     const active = navigation?.active !== false
@@ -100,8 +103,9 @@ export function AnchoredPopup({
                 width: Math.max(0, viewportWidth - leftInset - rightInset), height: Math.max(0, viewportHeight - topInset - bottomInset) },
             align,
             fallbackBelow: Boolean(anchorPoint),
+            allowBelow,
         }))
-    }, [active, align, anchor, anchorPoint])
+    }, [active, align, anchor, anchorPoint, allowBelow])
 
     useLayoutEffect(() => {
         const popup = popupRef.current

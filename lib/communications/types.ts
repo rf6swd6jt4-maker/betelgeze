@@ -97,6 +97,8 @@ export type ClientConversation = {
     id: string
     clientId: string | null
     title: string
+    /** Raw relationship business name, distinct from `title` (which also carries the primary contact's name). Mirrors the server's own substitution for outbound template previews. */
+    businessName: string | null
     subtitle: string | null
     isTest: boolean
     canSend: boolean

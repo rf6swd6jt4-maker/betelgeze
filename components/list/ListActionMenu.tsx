@@ -18,7 +18,7 @@ export type ListAction = {
 
 const REMOVE_WARNING = "Remove this item from Betelgeze? This keeps the interface clean, but the action may not be reversible from this screen."
 
-export function ListActionMenu({ actions, label = "Open item actions", className = "" }: { actions: Array<Partial<ListAction> | null | undefined | false>; label?: string; className?: string }) {
+export function ListActionMenu({ actions, label = "Open item actions", className = "", allowBelow = false }: { actions: Array<Partial<ListAction> | null | undefined | false>; label?: string; className?: string; /** Permit this menu to open below its trigger when the trigger sits flush against the top edge with no room above (e.g. a fixed header), instead of squeezing to fit above it. */ allowBelow?: boolean }) {
     const [open, setOpen] = useState(false)
     const [anchor, setAnchor] = useState<HTMLButtonElement | null>(null)
     const [pendingAction, setPendingAction] = useState<string | null>(null)
@@ -69,7 +69,7 @@ export function ListActionMenu({ actions, label = "Open item actions", className
                 <span className="h-1 w-1 rounded-full bg-current" />
             </span>
         </button>
-        {open && <AnchoredPopup anchor={anchor} align="end" role="menu" onDismiss={() => setOpen(false)} dismissOnScroll className="w-52 rounded-lg border border-card-border bg-[var(--color-surface-glass)] shadow-card backdrop-blur-lg backdrop-saturate-150">
+        {open && <AnchoredPopup anchor={anchor} align="end" role="menu" onDismiss={() => setOpen(false)} dismissOnScroll allowBelow={allowBelow} className="w-52 rounded-lg border border-card-border bg-[var(--color-surface-glass)] shadow-card backdrop-blur-lg backdrop-saturate-150">
             {actionError ? <p role="alert" className="border-b border-red-500/20 px-3 py-2 text-xs text-red-300">{actionError}</p> : null}
             {visibleActions.map((item) => {
                 const className = `block min-h-9 w-full px-3 py-2 text-left text-sm ${item.danger ? "text-red-300 hover:bg-red-950/40" : "text-neutral-200 hover:bg-[var(--color-surface-hover)]"}`

@@ -68,6 +68,21 @@ test("portal detail navigation preserves the popup owner's close handler", async
     assert.doesNotMatch(handler, /event\.stopPropagation\(\)/)
 })
 
+test("allowBelow keeps opening above when there is room, and only flips below a trigger flush with the top edge", () => {
+    const viewport = { left: 0, top: 0, width: 390, height: 800 }
+    const roomy = anchoredPopupPosition({ trigger: { left: 320, right: 352, top: 300 }, popupWidth: 208, popupHeight: 90, viewport, align: "end", allowBelow: true })
+    assert.equal(roomy.top, 204)
+    assert.equal(roomy.maxHeight, 286)
+
+    const cramped = anchoredPopupPosition({ trigger: { left: 320, right: 352, top: 12 }, popupWidth: 208, popupHeight: 90, viewport, align: "end" })
+    assert.equal(cramped.maxHeight, 0)
+
+    const flipped = anchoredPopupPosition({ trigger: { left: 320, right: 352, top: 12 }, popupWidth: 208, popupHeight: 90, viewport, align: "end", allowBelow: true })
+    assert.equal(flipped.top, 18)
+    assert.equal(flipped.left, 144)
+    assert.equal(flipped.maxHeight, 774)
+})
+
 test("cursor popups center above the point and flip below near the top", () => {
     const input = { trigger: { left: 500, right: 500, top: 400 }, popupWidth: 280, popupHeight: 50, viewport: { left: 0, top: 0, width: 1000, height: 700 }, align: "center" as const, fallbackBelow: true }
     const above = anchoredPopupPosition(input)

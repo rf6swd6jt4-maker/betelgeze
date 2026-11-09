@@ -1110,7 +1110,7 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                         <div className="hidden min-w-0 flex-1 items-center gap-3 rounded-lg [[data-mobile-conversation-surface]_&]:flex">{conversationIdentity}</div>
                         <ClientPortalActions active={interactionActive} key={`portal-actions:${selected.id}`} workspaceSlug={bootstrap.workspaceSlug} relationshipId={selected.id} />
                         <ClientChatParticipants active={interactionActive} key={selected.id} workspaceSlug={bootstrap.workspaceSlug} conversation={selected} userId={bootstrap.currentUser.id} people={bootstrap.people} onSaved={synchronize} />
-                        {selected.canWrite ? <ListActionMenu label="Reengagement actions" actions={[
+                        {selected.canWrite ? <ListActionMenu label="Reengagement actions" allowBelow actions={[
                             { label: "Request a call", onSelect: () => { setEngagementError(null); setEngagementDialog("call") } },
                             { label: "Send weekly report", onSelect: () => { setEngagementError(null); setEngagementDialog("report") } },
                         ]} /> : null}
@@ -1273,8 +1273,8 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
                 </> : <div className="flex flex-1 items-center justify-center p-6 text-center"><div><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border border-neutral-800 bg-neutral-950 text-xl">◌</div><h2 className="mt-4 text-sm font-semibold">Select a client chat</h2><p className="mt-2 text-xs text-neutral-600">Messages update here without reloading the panel.</p></div></div>}
             </NativeChatViewport></ConversationMedia>
             {interactionActive ? <MessageMediaLightbox media={previewMedia} onClose={() => setPreviewMedia(null)} /> : null}
-            {selected && engagementDialog === "call" ? <RequestCallDialog clientTitle={selected.title} pending={engagementPending} error={engagementError} onClose={() => { if (!engagementPending) { setEngagementDialog(null); setEngagementError(null) } }} onSend={(input) => void sendCallRequest(input)} /> : null}
-            {selected && engagementDialog === "report" ? <SendReportDialog clientTitle={selected.title} pending={engagementPending} error={engagementError} onClose={() => { if (!engagementPending) { setEngagementDialog(null); setEngagementError(null) } }} onSend={(input) => void sendReportNotice(input)} /> : null}
+            {selected && engagementDialog === "call" ? <RequestCallDialog clientTitle={selected.title} businessName={selected.businessName || "your business"} pending={engagementPending} error={engagementError} onClose={() => { if (!engagementPending) { setEngagementDialog(null); setEngagementError(null) } }} onSend={(input) => void sendCallRequest(input)} /> : null}
+            {selected && engagementDialog === "report" ? <SendReportDialog clientTitle={selected.title} businessName={selected.businessName || "your business"} pending={engagementPending} error={engagementError} onClose={() => { if (!engagementPending) { setEngagementDialog(null); setEngagementError(null) } }} onSend={(input) => void sendReportNotice(input)} /> : null}
             </MobileConversationSurface>
         </ResizableConversationColumns>
     </section>

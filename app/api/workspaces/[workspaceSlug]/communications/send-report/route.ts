@@ -50,7 +50,7 @@ export async function POST(request: NextRequest, context: { params: Promise<{ wo
     if (reportReadyTemplate.bodyVariableCount !== 2) return Response.json({ error: "The configured weekly-report template no longer has 2 variables (business name, period). Re-verify it in WhatsApp Settings." }, { status: 409 })
 
     const businessName = relationship.business_name || "your business"
-    const body = `Your weekly service report for ${businessName}, covering ${period}, is ready. It includes work completed, results and next steps for your current services. Reply REPORT to receive the written report here and have it added to your client portal.`
+    const body = `Your weekly service report for ${businessName}, covering ${period}, is ready. Reply REPORT to receive the written report here and have it added to your client portal.`
     const { data: inserted, error: insertError } = await supabaseAdmin.from("client_messages").insert({
         workspace_id: workspace.id,
         relationship_id: relationshipId,

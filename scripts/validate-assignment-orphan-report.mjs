@@ -25,11 +25,12 @@ async function instance(relationship, { workspace = ws, stage = 'maintenance', d
         [instanceId, workspace, relationship, service, revision, `svc-${instanceId}`, `src-${instanceId}`, stage, disposition, id(serial++), owner, assignee, manager])
     return instanceId
 }
-async function work({ workspace = ws, status = 'todo', ownerId = null, collaborators = [], archived = false } = {}) {
+async function work({ workspace = ws, status = 'todo', ownerId = null, collaborators = [], archived = false, client = null } = {}) {
     const workId = id(serial++)
     await q(`insert into work_items(id,workspace_id,title,status,execution_owner_id,metadata) values($1,$2,'Synthetic task',$3,$4,$5::jsonb)`,
         [workId, workspace, status, ownerId, JSON.stringify(archived ? { archived_at: '2026-11-01T00:00:00Z' } : {})])
     for (const user of collaborators) await q('insert into work_item_assignees(work_item_id,user_id,workspace_id) values($1,$2,$3)', [workId, user, workspace])
+    if (client) await q('insert into work_item_relationships(work_item_id,relationship_id,workspace_id) values($1,$2,$3)', [workId, client, workspace])
     return workId
 }
 
@@ -54,7 +55,8 @@ try {
     await instance(activeClient, { disposition: 'cancelled', assignee: former })
     await instance(archivedClient, { assignee: former })
 
-    const openOwned = await work({ ownerId: former, collaborators: [former, current] })
+    const openOwned = await work({ ownerId: former, collaborators: [former, current], client: activeClient })
+    const archivedOwned = await work({ ownerId: former, client: archivedClient })
     await work({ status: 'done', ownerId: former, collaborators: [former] })
     await work({ status: 'canceled', ownerId: former })
     await work({ archived: true, ownerId: former })
@@ -77,16 +79,22 @@ try {
         `service_instance_manager:${activeInstance}`,
         `work_collaborator:${openOwned}`,
         `work_owner:${openOwned}`,
+        `work_owner:${archivedOwned}`,
     ].sort()
     assert.deepEqual(got, expected)
     pass('finds every kind of assignment left on a former member')
-    pass('ignores archived and lost clients, cancelled instances, and done, canceled or archived work')
+    pass('ignores managers and services on archived or lost clients, cancelled instances, and done, canceled or archived work')
     pass('ignores current members, and people who are still members of the other workspace')
 
     assert.ok(rows.every(row => row.workspace_id === ws && row.former_member_user_id === former))
-    assert.ok(rows.every(row => Number(row.kind_total_in_workspace) === 1))
-    assert.deepEqual(Object.keys(rows[0]).sort(), ['former_member_user_id', 'kind', 'kind_total_in_workspace', 'record_id', 'record_table', 'service_key', 'workspace_id'])
+    assert.ok(rows.every(row => Number(row.kind_total_in_workspace) === (row.kind === 'work_owner' ? 2 : 1)))
+    assert.deepEqual(Object.keys(rows[0]).sort(), ['client_state', 'former_member_user_id', 'kind', 'kind_total_in_workspace', 'record_id', 'record_table', 'service_key', 'workspace_id'])
     pass('returns ids and counts only, no names or content')
+
+    const state = Object.fromEntries(rows.filter(row => row.record_table === 'work_items').map(row => [row.record_id, row.client_state]))
+    assert.deepEqual(state, { [openOwned]: 'active', [archivedOwned]: 'archived_or_lost' })
+    assert.ok(rows.filter(row => !row.record_table.startsWith('work_')).every(row => row.client_state === 'active'))
+    pass('marks open work on archived or lost clients apart from live work')
 
     const after = await q('select (select count(*) from relationships)::int r, (select count(*) from work_items)::int w, (select count(*) from relationship_service_instances)::int i')
     assert.deepEqual(after, before)

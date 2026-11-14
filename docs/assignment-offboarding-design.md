@@ -126,6 +126,10 @@ Accepted by the user on 2026-11-14, as recommended:
    assignee or open-work owner, so nothing outside the command can orphan work.
 4. **Existing orphans.** Run a read-only report of assignments already pointing at former members
    (`scripts/assignment-orphan-report.sql`) before any migration, and decide how to repair what it finds separately.
+   Run on production 2026-11-14: one active client's service still assigned to a removed member (11 linked tasks), and 40
+   open SOP tasks on archived or lost clients whose only people had been removed. The 40 were cancelled with
+   `scripts/operations/offboarding-orphan-cancel-20261114.sql` (rehearsed with rollback first; rows backed up in
+   `offboarding_repair_20261114.work_item_snapshots`). The active service is repaired through the existing service transfer.
 
 ## Staged plan
 

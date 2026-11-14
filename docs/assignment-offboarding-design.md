@@ -15,12 +15,12 @@ and four kinds of assignment are not guarded at all, so they can be silently orp
 
 | # | Attachment | Today on removal | Moves with |
 | - | --- | --- | --- |
-| 1 | Fulfilment manager of a locked, active client | Refused by `guard_client_team_offboarding` | client team save |
-| 2 | Legacy per-service assignee (`relationship_services`) on a locked, active client | Refused by the same guard; sold rows cannot be edited directly | `transfer_service_assignee` |
+| 1 | Fulfilment manager of a locked, active client | Refused by `guard_client_team_offboarding` | the new commands only, under a permit (no other path can change a sold client's manager) |
+| 2 | Legacy per-service assignee (`relationship_services`) on a locked, active client | Refused by the same guard; sold rows cannot be edited directly | the new commands only, under a permit |
 | 3 | Primary assignee of an active service instance | **Allowed; instance keeps the former member** | `transfer_service_assignee` |
 | 4 | Shared queue roster member on an active instance | Refused by `guard_service_queue_offboarding` | `save_service_queue_roster` |
 | 5 | Work item execution owner or collaborator | **Allowed; task keeps the former member** | `transfer_service_assignee` (selected work) |
-| 6 | Seller on a client | Allowed; client keeps the former member | not moved (decision 1) |
+| 6 | Seller on a client, and each service instance's sale-time `seller_user_id`/`manager_user_id` snapshot | Allowed; history keeps the former member | not moved (decision 1) |
 | 7 | Service eligibility, client chat access, queue preferences, operational roles | Deleted automatically by foreign-key cascade | not applicable |
 | 8 | Team chat membership | Synced by triggers | handled inside the commands above |
 
@@ -70,6 +70,18 @@ A header shared with another person's service keeps that person.
 
 Nothing is partially applied: if any planned item fails, the whole request is rolled back. For a removal, the person also
 stays a member.
+
+**Sold-client locks (decided 2026-11-14: permit-only).** Once a client is sold, `guard_relationship_delivery_team` and
+`guard_sold_service_assignment` refuse any change to its manager or legacy service assignees, and nothing else in the app can
+change them. The commands do not lift the lock: `apply_member_item_moves` writes a `member_move_permits` row for the specific
+client inside its own transaction, the two guards accept a manager or assignee change only while such a row exists for the
+current transaction, and the function deletes its permits before returning. Every other path stays locked, and each change is
+recorded on the command's receipt with the actor and reason.
+
+Implemented in `supabase/migrations/20261114180000_member_assignment_moves.sql` (not yet applied to production) and checked by
+`scripts/validate-member-assignment-moves.mjs`. Preview: `preview_workspace_member_footprint(workspace, actor, target, service)`
+returns the items, eligible people grouped as `managers`, `service:<id>` or `members`, the footprint fingerprint and seller
+history. A footprint above 300 items is refused with a request to move one service at a time.
 
 ## Interface
 

@@ -76,7 +76,7 @@ try {
         `legacy_service_assignee:${activeClient}:seo`,
         `seller_history_kept:${activeClient}`,
         `service_instance_assignee:${activeInstance}`,
-        `service_instance_manager:${activeInstance}`,
+        `service_manager_history_kept:${activeInstance}`,
         `work_collaborator:${openOwned}`,
         `work_owner:${openOwned}`,
         `work_owner:${archivedOwned}`,

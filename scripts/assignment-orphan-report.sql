@@ -13,7 +13,8 @@
 -- "Open work" means status not in done/canceled and not archived (metadata.archived_at is null). Its client_state is
 -- active when any linked client is active, archived_or_lost when every linked client is, and no_client otherwise.
 -- Every non-work row is on an active client by definition.
--- seller_history_kept rows are informational: sellers are deliberately left in place (decision 1).
+-- seller_history_kept and service_manager_history_kept rows are informational: the client seller and each service's sale-time
+-- seller/manager snapshot are deliberate history and never move (decision 1).
 
 begin transaction read only;
 set local statement_timeout = '30s';
@@ -52,7 +53,7 @@ found as (
     select 'service_instance_assignee', workspace_id, 'relationship_service_instances', id, null, 'active', assignee_user_id
     from active_instances where assignee_user_id is not null
     union all
-    select 'service_instance_manager', workspace_id, 'relationship_service_instances', id, null, 'active', manager_user_id
+    select 'service_manager_history_kept', workspace_id, 'relationship_service_instances', id, null, 'active', manager_user_id
     from active_instances where manager_user_id is not null
     union all
     select 'work_owner', workspace_id, 'work_items', id, null, client_state, execution_owner_id

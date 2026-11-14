@@ -59,7 +59,7 @@ try {
         assert.equal(await page.locator("[data-workspace-tabbar]").evaluate(element=>element.inert),true)
         assert.equal(await page.locator("[data-workspace-tab-panels]").evaluate(element=>element.inert),true)
         assert.equal(await drawer.locator("[data-side-drawer]").evaluate(element=>getComputedStyle(element).animationName),"betelgeze-drawer-right-in")
-        assert.equal(await drawer.locator("[data-side-drawer]").evaluate(element=>getComputedStyle(element).animationDuration),"0.2s")
+        assert.equal(await drawer.locator("[data-side-drawer]").evaluate(element=>getComputedStyle(element).animationDuration),"0.24s","context drawer keeps the documented 240ms slide paired with the left navigation")
         await drawer.locator("[data-side-drawer]").evaluate(async element=>{await Promise.allSettled(element.getAnimations().map(animation=>animation.finished))})
         await page.waitForFunction(()=>window.fixtureDrawerAnimations[0]?.completed)
         const entry=await page.evaluate(()=>window.fixtureDrawerAnimations[0])

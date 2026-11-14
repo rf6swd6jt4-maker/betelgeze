@@ -7,6 +7,8 @@ import { SERVICE_TEMPLATES, serviceTemplateThumbnailSrc } from "@/lib/onboarding
 import { POSTGRES_UUID_PATTERN, type ReorderedServices } from "@/lib/onboarding/service-order"
 import { DEFAULT_SERVICE_CAPABILITIES } from "@/lib/workspace-capabilities"
 import { supabaseAdmin } from "@/lib/supabase/admin"
+import { isOffboardingGuardMessage } from "@/lib/offboarding-blocker-message"
+import { serviceEligibilityBlockedMessage } from "@/lib/offboarding-blockers"
 import { requireWorkspace } from "@/lib/workspaces"
 
 type SavedService = { service_id: string; revision_id: string; revision_number: number; state: OnboardingServiceState }
@@ -47,6 +49,10 @@ export async function saveOnboardingService(slug: string, serviceId: string | nu
                 p_connection_provider: template.setup.connectionKey,
             } : {}),
         })
+        if (!outcome.ok && serviceId && isOffboardingGuardMessage(outcome.error)) {
+            const named = await serviceEligibilityBlockedMessage(workspace.id, serviceId, eligibleUserIds)
+            if (named) return { ...outcome, error: named }
+        }
         if (outcome.ok && !serviceId) {
             const savedService = outcome.data
             if (!savedService) return { ok: false, error: "The service was created without a Staff access identity. Do not assign it until an administrator retries." }

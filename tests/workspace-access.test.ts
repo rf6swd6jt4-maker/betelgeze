@@ -109,7 +109,7 @@ test("workspace access defaults every member to Work Queue without changing deli
 })
 
 test("mobile workspace navigation scrolls within the dynamic viewport", () => {
-    assert.match(workspaceTopBar, /h-\[calc\(100dvh-3\.5rem\)\]/)
+    assert.match(workspaceTopBar, /top-16 z-50 h-\[calc\(100dvh-4\.5rem\)\]/)
     assert.match(workspaceTopBar, /touch-pan-y flex-col gap-2 overflow-y-auto overscroll-contain/)
     assert.match(workspaceTopBar, /md:overflow-visible md:overscroll-auto/)
 })

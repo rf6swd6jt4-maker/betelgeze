@@ -31,7 +31,9 @@ for (const path of ["app/error.tsx", "app/global-error.tsx"]) test(`${path} retr
     let reads = 0
     boundary.context = { refresh() { reads++ } }
     boundary.setState = (state: unknown) => { boundary.state = state }
-    const render = component(path, { ErrorBoundaryReporter: () => null }).default
+    // Card and Button are the shared primitives; on this path Button renders a
+    // native <button>, so host stand-ins keep the real onClick wiring under test.
+    const render = component(path, { ErrorBoundaryReporter: () => null, Card: "section", Button: "button" }).default
     const view = render({ error: new Error("transient read failure"), reset: boundary.reset, unstable_retry: boundary.unstable_retry })
     const retry = button(view)
     assert.ok(retry?.props?.onClick, "a touch-accessible recovery action must exist")

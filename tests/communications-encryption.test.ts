@@ -74,7 +74,7 @@ test("private chat policy, recovery views, and participant moderation are databa
     assert.doesNotMatch(migration.slice(migration.lastIndexOf("create or replace function public.native_conversation_can_read")), /archived_at is not null/)
     assert.match(workspace, /The other participant will keep their history/)
     assert.match(workspace, /bootstrap\.currentUserRole === "admin" && message\.senderWorkspaceRole === "staff"/)
-    assert.match(profile, /canMessage \? <button/)
+    assert.match(profile, /canMessage \? <Button className=\"mt-5\" onClick=\{\(\) => onMessage\(profile\.id\)\}>Message<\/Button>/)
     assert.doesNotMatch(await readFile("lib/teams/server.ts", "utf8"), /canInspectArchived/)
 })
 

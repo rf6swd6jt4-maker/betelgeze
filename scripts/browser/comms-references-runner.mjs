@@ -77,6 +77,8 @@ define("local suggestions appear immediately in a compact viewport with eight bo
     assert(f.options().length === 8, `Expected eight bounded local choices, got ${f.options().length}`)
     assert(f.requests.length === 0, "Local suggestions waited on server search")
     assert(document.activeElement === f.story.input.current, "Picker stole composer focus")
+    // Measure resting targets: the documented popup entrance briefly scales from 0.97.
+    await Promise.all(document.querySelector("[data-anchored-popup]").getAnimations().map(animation => animation.finished))
     for (const row of f.options()) assert(row.getBoundingClientRect().height >= 44, "Mobile row is smaller than 44px")
     const bounds = document.querySelector('[role="listbox"]').getBoundingClientRect()
     assert(bounds.left >= 7 && bounds.right <= innerWidth - 7, "Picker escaped viewport width")

@@ -60,6 +60,14 @@ instances, then work, matching existing order, and moves items 1 to 5 using the 
 reimplemented. Where the recipient is already on a shared roster or already a collaborator on a task, the source is removed
 and no duplicate is added. One receipts table records both commands, with the command kind on each receipt.
 
+**Group headers move too.** A service's work hangs under a group header (`work_items.workflow_role = 'service_group'`,
+and `lifecycle_stage` headers likewise). `transfer_service_assignee` never treats these as movable, so after every transfer the
+previous assignee stays listed as a collaborator (or owner) on the header. On production this left a removed member on one
+header after an otherwise complete transfer (repaired 2026-11-14, see decision 4). When a moved item is a service instance,
+`apply_member_item_moves` also moves the source's ownership and collaborator entry on that instance's open group and stage
+headers to the same recipient. Headers are never listed as separate footprint items to choose; they follow their service.
+A header shared with another person's service keeps that person.
+
 Nothing is partially applied: if any planned item fails, the whole request is rolled back. For a removal, the person also
 stays a member.
 
@@ -111,7 +119,8 @@ For `reassign_workspace_member_items` specifically: a partial plan moves only th
 membership unchanged; a changed fingerprint on a planned item fails while a change to an unplanned item does not; an item that
 already moved to someone else fails; a recipient already on the roster or already a collaborator ends with one entry, not two;
 the source as recipient, a non-member recipient and an admin moving an owner's items are refused; moving everything and then
-running `offboard_workspace_member` removes the person with nothing left behind.
+running `offboard_workspace_member` removes the person with nothing left behind; moving a service also moves the source
+off its group and stage headers, while a collaborator on the header who is not the source stays.
 
 ## Decisions
 
@@ -129,7 +138,10 @@ Accepted by the user on 2026-11-14, as recommended:
    Run on production 2026-11-14: one active client's service still assigned to a removed member (11 linked tasks), and 40
    open SOP tasks on archived or lost clients whose only people had been removed. The 40 were cancelled with
    `scripts/operations/offboarding-orphan-cancel-20261114.sql` (rehearsed with rollback first; rows backed up in
-   `offboarding_repair_20261114.work_item_snapshots`). The active service is repaired through the existing service transfer.
+   `offboarding_repair_20261114.work_item_snapshots`). The active service was moved with the existing service transfer, which
+   left the removed member on its group header; that single collaborator row was removed with
+   `scripts/operations/offboarding-group-collaborator-20261114.sql` (backed up in
+   `offboarding_repair_20261114.work_item_assignee_snapshots`). The report then returned no rows.
 
 ## Staged plan
 
@@ -139,3 +151,5 @@ Accepted by the user on 2026-11-14, as recommended:
 3. Removal dialog and the two existing entry points, behind the same permission checks as today.
 4. Staff panel: the people list with counts (its own bounded read), the per-person footprint and bulk "Move to".
 5. Backstop guards (decision 3) and a Settings > Services "take off this service" path using the same commands.
+6. Bring `transfer_service_assignee` in line by moving group and stage headers the same way, so ordinary transfers between
+   current members stop leaving the previous assignee on the header.

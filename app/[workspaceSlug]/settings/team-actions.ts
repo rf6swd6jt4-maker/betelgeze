@@ -2,6 +2,8 @@
 import { revalidatePath } from "next/cache"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspace } from "@/lib/workspaces"
+import { isOffboardingGuardMessage } from "@/lib/offboarding-blocker-message"
+import { serviceEligibilityBlockedMessage } from "@/lib/offboarding-blockers"
 
 export async function saveWorkspaceOperations(slug: string, people: Array<{ userId: string; canSell: boolean; canManage: boolean }>) {
     try {
@@ -21,7 +23,10 @@ export async function saveServiceDeliveryUsers(slug: string, serviceId: string, 
     try {
         const { workspace, user } = await requireWorkspace(slug, "admin")
         const { error } = await supabaseAdmin.rpc("set_service_delivery_users", { p_workspace_id: workspace.id, p_actor_user_id: user.id, p_service_id: serviceId, p_user_ids: [...new Set(userIds)] })
-        if (error) throw new Error(error.message)
+        if (error) {
+            const named = isOffboardingGuardMessage(error.message) ? await serviceEligibilityBlockedMessage(workspace.id, serviceId, userIds) : null
+            throw new Error(named ?? error.message)
+        }
         revalidatePath(`/${slug}`, "layout")
         return { ok: true as const }
     } catch (error) { return { ok: false as const, error: error instanceof Error ? error.message : "Could not save service eligibility." } }

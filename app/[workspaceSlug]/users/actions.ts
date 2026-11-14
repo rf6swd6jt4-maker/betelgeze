@@ -8,6 +8,7 @@ import { recordAdminActivity } from "@/lib/admin/activity"
 import { createAccountToken, hashAccountToken } from "@/lib/auth/account-tokens"
 import { accountFlowV2Enabled } from "@/lib/auth/account-flow"
 import { authOrigin } from "@/lib/auth/origin"
+import { workspaceRemovalBlockedMessage } from "@/lib/offboarding-blockers"
 
 export type WorkspaceInvitationActionState = {
     ok: boolean
@@ -126,7 +127,26 @@ export async function inviteWorkspaceUser(slug: string, formData: FormData): Pro
     return { ok: true, message: "Invitation email sent." }
 }
 
-export async function removeWorkspaceUser(slug: string, formData: FormData) {
+export type RemoveWorkspaceUserActionState = {
+    ok: boolean
+    message: string
+}
+
+// Offboarding guards in the database reject removal while the person still owns
+// active client or shared-service work. Surface those reasons instead of letting
+// the thrown error reach the generic page-load boundary.
+function removalRefusalMessage(error: { message?: string }) {
+    const text = error.message ?? ""
+    if (/Client-team handover must be completed/i.test(text)) {
+        return "This person is still the fulfilment manager or a service assignee on an active client team. Hand those clients over to someone else, then remove them."
+    }
+    if (/shared service assignments/i.test(text)) {
+        return "This person is still in a shared service queue with active work. Remove them from those shared service assignments, then remove them from the workspace."
+    }
+    return null
+}
+
+export async function removeWorkspaceUser(slug: string, _previous: RemoveWorkspaceUserActionState | null, formData: FormData): Promise<RemoveWorkspaceUserActionState> {
     const { workspace, role: actingRole } = await requireUserManager(slug)
     const userId = String(formData.get("userId") ?? "")
     const { data: target } = await supabaseAdmin
@@ -135,17 +155,27 @@ export async function removeWorkspaceUser(slug: string, formData: FormData) {
         .eq("workspace_id", workspace.id)
         .eq("user_id", userId)
         .maybeSingle()
-    if (!target || target.role === "owner") throw new Error("Owners cannot be removed here")
+    if (!target) {
+        revalidatePath(`/${slug}/settings`)
+        return { ok: false, message: "That person is no longer in this workspace. Refresh the list." }
+    }
+    if (target.role === "owner") return { ok: false, message: "Owners cannot be removed here." }
     if (actingRole !== "owner" && normalizeWorkspaceRole(target.role) !== "staff") {
-        throw new Error("Admins can only remove staff")
+        return { ok: false, message: "Admins can only remove staff." }
     }
     const { error: removeError } = await supabaseAdmin
         .from("workspace_memberships")
         .delete()
         .eq("workspace_id", workspace.id)
         .eq("user_id", userId)
-    if (removeError) throw new Error(removeError.message)
+    if (removeError) {
+        const fallback = removalRefusalMessage(removeError)
+        const refusal = fallback ? (await workspaceRemovalBlockedMessage(workspace.id, userId)) ?? fallback : null
+        if (!refusal) console.error("Workspace member removal failed", { workspaceId: workspace.id, userId, error: removeError.message })
+        return { ok: false, message: refusal ?? "Betelgeze could not remove this person. Nothing was changed; try again." }
+    }
     revalidatePath(`/${slug}/settings`)
+    return { ok: true, message: "Removed from the workspace." }
 }
 
 export type AdminMfaResetActionState = { ok: boolean; message: string }

@@ -13,8 +13,8 @@ import { OnboardingSettings } from "@/components/settings/OnboardingSettings"
 import { ServiceCatalogue } from "@/components/settings/ServiceCatalogue"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { WorkspaceAutosaveForm } from "@/components/workspace/WorkspaceAutosaveForm"
-import { WorkspaceActionButton } from "@/components/workspace/WorkspaceActionButton"
 import { AdminMfaResetButton } from "@/components/admin/AdminMfaResetButton"
+import { RemoveWorkspaceUserForm } from "@/components/admin/RemoveWorkspaceUserForm"
 import { createUploadSignedUrl } from "@/lib/onboarding/uploads"
 import { loadOnboardingSettingsPageData } from "@/lib/onboarding/configuration"
 import { supabaseAdmin } from "@/lib/supabase/admin"
@@ -189,7 +189,7 @@ async function UsersSettingsSection({ workspace, isOwner, onboardingSettingsProm
                 <div><p className="break-words font-medium">{workspaceUser?.email}</p><p className="text-sm text-neutral-500">{workspaceRoleLabel(assignedRole)}</p></div>
                 {normalizeWorkspaceRole(assignedRole) !== "owner" ? <div className="flex flex-wrap items-center gap-2">
                     {(isOwner || normalizeWorkspaceRole(assignedRole) === "staff") ? <AdminMfaResetButton email={workspaceUser?.email ?? "this user"} userId={workspaceUser?.id ?? ""} action={resetWorkspaceUserMfa.bind(null, workspace.slug)} /> : null}
-                    <form action={removeWorkspaceUser.bind(null, workspace.slug)} data-workspace-mutation="background" className="flex-1 sm:flex-none"><input type="hidden" name="userId" value={workspaceUser?.id} /><WorkspaceActionButton pendingLabel="Removing…" confirmMessage={`Remove ${workspaceUser?.email ?? "this user"} from the workspace?`} className="w-full rounded-lg border border-red-900 px-3 py-1 text-sm text-red-300 sm:w-auto">Remove</WorkspaceActionButton></form>
+                    <RemoveWorkspaceUserForm userId={workspaceUser?.id ?? ""} email={workspaceUser?.email ?? "this user"} action={removeWorkspaceUser.bind(null, workspace.slug)} />
                 </div> : null}
             </div>)}
         </div>

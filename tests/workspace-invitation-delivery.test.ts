@@ -22,6 +22,24 @@ test("workspace invitations are persisted with a hashed rotating token before de
     assert.match(invitationAction, /The invitation was saved, but its email failed/)
 })
 
+test("member removal returns database offboarding refusals instead of throwing to the page error boundary", () => {
+    const action = source("app/[workspaceSlug]/users/actions.ts")
+    const start = action.indexOf("export async function removeWorkspaceUser")
+    const end = action.indexOf("\nexport type AdminMfaResetActionState", start)
+    assert.ok(start >= 0 && end > start)
+    const removal = action.slice(start, end)
+
+    assert.doesNotMatch(removal, /throw new Error/)
+    assert.match(removal, /Promise<RemoveWorkspaceUserActionState>/)
+    assert.match(action, /Client-team handover must be completed/)
+    assert.match(action, /shared service assignments/)
+    assert.match(removal, /return \{ ok: false, message: refusal \?\?/)
+
+    const form = source("components/admin/RemoveWorkspaceUserForm.tsx")
+    assert.match(form, /useActionState/)
+    assert.match(form, /role="alert"/)
+})
+
 test("transactional email uses Resend and retains safe provider diagnostics", () => {
     const email = source("lib/email.ts")
 

@@ -127,7 +127,7 @@ test("representative workspace forms declare their loading behavior", () => {
     for (const path of [
         "components/admin/WorkspaceOnboardingDomain.tsx",
         "components/admin/PendingWorkspaceInvitations.tsx",
-        "app/[workspaceSlug]/settings/page.tsx",
+        "components/admin/RemoveWorkspaceUserForm.tsx",
     ]) {
         assert.match(source(path), /data-workspace-mutation="background"/, path)
     }

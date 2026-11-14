@@ -177,6 +177,8 @@ export function workspaceTabTitleForUrl(value: string, workspaceSlug: string) {
     if (suffix === "leadgen/polls") return "Polls"
     if (suffix === "admin") return "Admin"
     if (suffix === "settings") return "Settings"
+    if (suffix === "staff") return "Staff"
+    if (suffix.startsWith("staff/")) return "Staff member"
     if (suffix === "users") return "Users"
     return suffix.split("/")[0]?.replace(/-/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase()) || "Tab"
 }
@@ -203,7 +205,7 @@ export function workspaceRouteIsRecordDetail(value: string, workspaceSlug: strin
     const prefix = `/${workspaceSlug}/`
     if (!parsed.pathname.startsWith(prefix)) return false
     const segments = parsed.pathname.slice(prefix.length).split("/").filter(Boolean)
-    if (segments.length === 2 && ["relationships", "onboarding", "work", "work-items", "assets", "notes"].includes(segments[0])) return true
+    if (segments.length === 2 && ["relationships", "onboarding", "work", "work-items", "assets", "notes", "staff"].includes(segments[0])) return true
     return segments.length === 3
         && ((segments[0] === "leadgen" && ["poll", "company"].includes(segments[1]))
             || (segments[0] === "admin" && ["activity", "okrs"].includes(segments[1])))

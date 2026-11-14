@@ -21,6 +21,7 @@ export type PanelLoadingVariant =
     | "queue"
     | "sops"
     | "settings"
+    | "staff"
     | "work-items"
     | "detail"
 
@@ -29,6 +30,14 @@ function RelationshipsLoading() {
         <PanelTabHeader title="Relationships" description="People, businesses and the services you deliver together." actions={<LoadingPulse className="h-11 w-full sm:h-10 sm:w-32" />} />
         <PanelLoadingFilters widths={[54, 70, 104, 64, 86, 78]} />
         <PanelLoadingList kind="relationship" />
+    </PanelLoadingFrame>
+}
+
+function StaffLoading() {
+    return <PanelLoadingFrame title="Staff">
+        <PanelTabHeader title="Staff" description="Who holds which clients, services and open tasks." />
+        <PanelLoadingStats labels={["People", "Clients managed", "Open tasks"]} />
+        <PanelLoadingList rows={5} />
     </PanelLoadingFrame>
 }
 
@@ -199,5 +208,6 @@ export function PanelRouteLoading({ variant, title }: { variant: PanelLoadingVar
     if (variant === "admin-maintenance") return <AdminLoading section="maintenance" />
     if (variant === "admin-okrs") return <AdminLoading section="okrs" />
     if (variant === "admin") return <AdminLoading />
+    if (variant === "staff") return <StaffLoading />
     return <DetailRouteLoading title={title ?? "record"} />
 }

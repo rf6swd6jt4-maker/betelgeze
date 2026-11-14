@@ -20,5 +20,6 @@ export function workspaceRouteUsesSharedBanner(pathname: string) {
         "work",
         "work-items",
         "queue",
+        "staff",
     ].includes(panel)
 }

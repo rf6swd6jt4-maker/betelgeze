@@ -1,4 +1,4 @@
-// The real reassign-and-remove dialog with synthetic people and assignments. No database, no writes:
+// The real reassign-and-remove dialog (and, with ?view=staff, the Staff panel assignments) with synthetic data. No database, no writes:
 // the footprint read is served here and the save is a browser stub. ?mode=full|empty|blocked|unavailable|stale
 import { createServer } from "node:http"
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs"
@@ -43,11 +43,16 @@ try {
     writeFileSync(join(directory, "image.js"), 'import React from "react";export default function Image({fill,sizes,unoptimized,...props}){return React.createElement("img",props)}')
     writeFileSync(join(directory, "actions.js"), `export async function offboardWorkspaceMember(slug,input){(window.fixtureRequests??=[]).push(input);await new Promise(r=>setTimeout(r,500));
 if(new URLSearchParams(location.search).get("mode")==="stale"&&window.fixtureRequests.length===1)return{ok:false,uncertain:false,message:"Assignments changed. Reload and try again. Nothing was moved."};
-return{ok:true,message:"Assignments moved and the person was removed."}}`)
+return{ok:true,message:"Assignments moved and the person was removed."}}
+export async function reassignWorkspaceMemberItems(slug,input){(window.fixtureMoves??=[]).push(input);await new Promise(r=>setTimeout(r,500));return{ok:true,message:"Assignments moved."}}
+export async function removeWorkspaceUser(){return{ok:false,message:"Fixture"}}`)
     writeFileSync(join(directory, "entry.tsx"), `import React from"react";import{createRoot}from"react-dom/client";
 import{RemoveWorkspaceUser}from"@/components/admin/RemoveWorkspaceUser";
+import{StaffMemberAssignments}from"@/components/staff/StaffMemberAssignments";
+const staffFootprint=${JSON.stringify(full)};
 const legacy=async()=>({ok:false,message:"Fixture: plain removal is not wired here."});
-createRoot(document.getElementById("root")).render(<div style={{padding:24,maxWidth:640}}><div className="flex flex-col gap-3 rounded-2xl border border-neutral-800 bg-neutral-900 p-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-medium">hemant@example.invalid</p><p className="text-sm text-neutral-500">Staff</p></div><RemoveWorkspaceUser workspaceSlug="fixture" currentUserId="${me}" userId="${target}" email="hemant@example.invalid" legacyAction={legacy}/></div></div>);`)
+const staffView=new URLSearchParams(location.search).get("view")==="staff";
+createRoot(document.getElementById("root")).render(staffView?<div style={{padding:24,maxWidth:1100}}><StaffMemberAssignments workspaceSlug="fixture" currentUserId="${me}" initial={staffFootprint}/></div>:<div style={{padding:24,maxWidth:640}}><div className="flex flex-col gap-3 rounded-2xl border border-neutral-800 bg-neutral-900 p-5 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-medium">hemant@example.invalid</p><p className="text-sm text-neutral-500">Staff</p></div><RemoveWorkspaceUser workspaceSlug="fixture" currentUserId="${me}" userId="${target}" email="hemant@example.invalid" legacyAction={legacy}/></div></div>);`)
     const cssPromise = postcss([tailwind({ base: root, optimize: false })]).process(readFileSync("app/globals.css", "utf8"), { from: resolve("app/globals.css") }).then(result => result.css)
     const bundle = await new Promise((done, fail) => webpack({ mode: "production", devtool: false,
         plugins: [new webpack.DefinePlugin({ "process.env": JSON.stringify({ NODE_ENV: "production" }) })],

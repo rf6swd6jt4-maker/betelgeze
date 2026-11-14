@@ -4,14 +4,29 @@
     {
       "name": "betelgeze-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 3000
     },
     {
       "name": "betelgeze-comms-preview",
       "runtimeExecutable": "node",
-      "runtimeArgs": ["scripts/serve-fullscreen-comms-preview.mjs", "--host", "127.0.0.1"],
+      "runtimeArgs": [
+        "scripts/serve-fullscreen-comms-preview.mjs",
+        "--host",
+        "127.0.0.1"
+      ],
       "port": 3107
+    },
+    {
+      "name": "member-offboarding-fixture",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "scripts/serve-member-offboarding-fixture.mjs"
+      ],
+      "port": 3108
     }
   ]
 }

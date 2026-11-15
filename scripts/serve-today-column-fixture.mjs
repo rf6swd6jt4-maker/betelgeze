@@ -22,6 +22,10 @@ const queue = {
         item(4, "Refresh ad creatives", { relationship: "Cedar & Pine Interiors", blocked: true, calibrated_minutes: 150, due_at: new Date(Date.now() - 50 * 3_600_000).toISOString() }),
     ],
 }
+const team = { available: true, truncated: false, people: [
+    { userId: id(40), name: "Sam Ortega", ready: 6, items: [item(11, "Refresh ad creatives", { status: "doing", relationship: "Cedar & Pine Interiors", calibrated_minutes: 120, due_at: new Date(Date.now() + 50 * 3_600_000).toISOString() }), item(12, "Kick-off deck", { relationship: "Northwind Dental", calibrated_minutes: 40 })] },
+    { userId: id(41), name: "Priya Shah", ready: 3, items: [item(13, "Audience refresh", { relationship: "Harbor Fitness", calibrated_minutes: 30, due_at: new Date(Date.now() + 100 * 3_600_000).toISOString() }), item(11, "Refresh ad creatives", { status: "doing", shared: true, started_by: id(40), relationship: "Cedar & Pine Interiors" })] },
+] }
 const attention = { available: true, groups: [
     { kind: "waiting_on_reply", total: 1, items: [{ since: new Date(Date.now() - 2 * 86_400_000).toISOString(), relationshipId: id(30), client: "North Texas Shutters", title: "Client message waiting for a reply", recordId: id(30) }] },
     { kind: "disputed_task", total: 16, items: [{ since: new Date(Date.now() - 5 * 3_600_000).toISOString(), relationshipId: null, client: null, title: "Bug: application page failed", recordId: id(200) }, { since: null, relationshipId: id(31), client: "PRO Construction", title: "Calculate budget assumptions", recordId: id(201) }] },
@@ -57,12 +61,13 @@ createRoot(document.getElementById("root")).render(<Shell/>);`)
     }, (error, stats) => error || stats.hasErrors() ? fail(error ?? Error(stats.toString({ all: false, errors: true }))) : done(readFileSync(join(directory, "bundle.js")))))
     const css = await cssPromise
     const html = '<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/style.css"></head><body class="bg-neutral-950 text-white"><div id="root"></div><script src="/bundle.js"></script></body></html>'
-    const counts = { queue: 0, attention: 0 }
+    const counts = { queue: 0, attention: 0, team: 0 }
     const server = createServer((request, response) => {
         const path = new URL(request.url, "http://127.0.0.1").pathname
         const ok = request.headers["x-workspace-user"] === me
         if (path === "/api/workspaces/fixture/panels/queue") { counts.queue++; response.writeHead(ok ? 200 : 409, { "Content-Type": "application/json" }); setTimeout(() => response.end(JSON.stringify(queue)), 200); return }
         if (path === "/api/workspaces/fixture/needs-attention") { counts.attention++; response.writeHead(ok ? 200 : 409, { "Content-Type": "application/json" }); setTimeout(() => response.end(JSON.stringify(attention)), 200); return }
+        if (path === "/api/workspaces/fixture/team-queue") { counts.team++; response.writeHead(ok ? 200 : 409, { "Content-Type": "application/json" }); setTimeout(() => response.end(JSON.stringify(team)), 200); return }
         if (path === "/fixture-counts") { response.writeHead(200, { "Content-Type": "application/json" }); response.end(JSON.stringify(counts)); return }
         response.writeHead(200, { "Content-Type": path === "/bundle.js" ? "text/javascript" : path === "/style.css" ? "text/css" : "text/html", "Cache-Control": "no-store", "Content-Security-Policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; img-src 'self' data:" })
         response.end(path === "/bundle.js" ? bundle : path === "/style.css" ? css : html)

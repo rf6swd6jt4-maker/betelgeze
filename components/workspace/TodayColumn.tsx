@@ -3,12 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react"
 import { List, ListCompactItem } from "@/components/list/List"
 import { LoadingPulse } from "@/components/panel/PanelLoading"
-import { Button, RoundPill, Status } from "@/components/ui"
+import { Button, RoundPill, SegmentedSwitch, Status } from "@/components/ui"
 import { nativePanelCacheKey, readNativePanel, type NativePanelSnapshot } from "@/components/workspace/NativeWorkspaceTab"
 import { ATTENTION_LABELS, attentionHref, type AttentionGroup } from "@/lib/needs-attention"
 import type { PersonalQueueSnapshot } from "@/lib/work-queue/server"
 import { rankQueue } from "@/lib/work-queue/ranking"
 import { dueLabel, effortLabel, waitingLabel } from "@/lib/today-column"
+import { teamQueueRows, type TeamQueue } from "@/lib/team-queue"
 import type { WorkspaceRecordCache } from "@/lib/workspace-record-cache"
 
 const ATTENTION_REFRESH_MS = 60_000
@@ -41,6 +42,11 @@ type AttentionState = { status: "loading" } | { status: "ready"; groups: Attenti
 
 // Last good result per account and workspace, so reopening the phone sheet or remounting within a minute reuses it.
 const attentionMemory = new Map<string, { state: AttentionState; at: number }>()
+
+type TeamState = { status: "idle" } | { status: "loading" } | { status: "ready"; queue: TeamQueue } | { status: "unavailable" } | { status: "error"; message: string }
+// Same reuse rule as Needs attention: the last good Team read per account and workspace, for one minute.
+const teamMemory = new Map<string, { state: TeamState; at: number }>()
+const QUEUE_SCOPES = [{ value: "mine", label: "Mine" }, { value: "team", label: "Team" }] as const
 
 function pathOf(url: string) {
     try { return new URL(url, "http://workspace.invalid").pathname.replace(/\/$/, "") } catch { return url }
@@ -144,6 +150,38 @@ export function TodayColumn({ workspaceSlug, workspaceId, userId, canSeeAttentio
         return () => { controller.abort(); document.removeEventListener("visibilitychange", refresh); window.removeEventListener("focus", refresh) }
     }, [canSeeAttention, loadAttention])
 
+    // Team is read only when someone chooses it, never at shell start, so the scope always opens on Mine.
+    const [scope, setScope] = useState<"mine" | "team">("mine")
+    const [team, setTeam] = useState<TeamState>(() => teamMemory.get(memoryKey)?.state ?? { status: "idle" })
+    const lastTeam = useRef(teamMemory.get(memoryKey)?.at ?? 0)
+    const loadTeam = useCallback(async (signal?: AbortSignal) => {
+        lastTeam.current = Date.now()
+        setTeam(current => current.status === "ready" ? current : { status: "loading" })
+        try {
+            const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceSlug)}/team-queue`, {
+                cache: "no-store", redirect: "error", credentials: "same-origin", headers: { "x-workspace-user": userId },
+                signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30_000)]) : AbortSignal.timeout(30_000),
+            })
+            const value = await response.json() as { available?: boolean; people?: TeamQueue["people"]; truncated?: boolean; error?: string }
+            if (signal?.aborted) return
+            if (!response.ok) { setTeam(current => current.status === "ready" ? current : { status: "error", message: value.error ?? "Could not load the team's queue." }); return }
+            const next: TeamState = value.available === false ? { status: "unavailable" } : { status: "ready", queue: { people: value.people ?? [], truncated: value.truncated === true } }
+            teamMemory.set(memoryKey, { state: next, at: lastTeam.current })
+            setTeam(next)
+        } catch (error) {
+            if (signal?.aborted) return
+            setTeam(current => current.status === "ready" ? current : { status: "error", message: error instanceof Error ? error.message : "Could not load the team's queue." })
+        }
+    }, [workspaceSlug, userId, memoryKey])
+    const showTeam = canSeeAttention && scope === "team"
+    useEffect(() => {
+        if (!showTeam) return
+        const controller = new AbortController()
+        // Deferred a microtask so the read never starts inside the render that chose Team.
+        void Promise.resolve().then(() => { if (!controller.signal.aborted && Date.now() - lastTeam.current >= ATTENTION_REFRESH_MS) void loadTeam(controller.signal) })
+        return () => controller.abort()
+    }, [showTeam, loadTeam])
+
     const activePath = pathOf(activeUrl)
     const queue = queueSnapshot.data?.kind === "queue" ? queueSnapshot.data as PersonalQueueSnapshot : null
     const queueItems = useMemo(() => queue ? rankQueue(queue.items).filter(item => item.state === "Ready" || item.state === "In progress" || item.state === "Blocked" || item.state === "Disputed").slice(0, QUEUE_ROWS) : [], [queue])
@@ -160,6 +198,8 @@ export function TodayColumn({ workspaceSlug, workspaceId, userId, canSeeAttentio
         try { window.localStorage.setItem(collapsedKey, current ? "0" : "1") } catch { /* preference only */ }
         return !current
     })
+    const teamRows = useMemo(() => team.status === "ready" ? teamQueueRows(team.queue, QUEUE_ROWS, now) : [], [team, now])
+    const teamReady = team.status === "ready" ? team.queue.people.reduce((sum, person) => sum + person.ready, 0) : 0
     const recentRows = recent.filter(destination => pathOf(destination.url) !== activePath).slice(0, RECENT_ROWS)
 
     return <aside data-workspace-today-column aria-label="Today" className="flex h-full flex-col gap-5 overflow-y-auto overscroll-contain px-3 pb-6 pt-3">
@@ -197,10 +237,36 @@ export function TodayColumn({ workspaceSlug, workspaceId, userId, canSeeAttentio
         </section> : null}
 
         <section aria-labelledby="today-queue">
-            <SectionHeading id="today-queue" title="Your queue"
-                count={queue ? <span className="text-sm tabular-nums text-neutral-400">{queue.ready}</span> : null}
-                action={<Button variant="ghost" size="sm" onClick={() => onOpen(queueUrl)}>Open queue</Button>} />
-            {queueError && !queue ? <Notice tone="error">{queueError} <button type="button" className="underline underline-offset-2" onClick={() => loadQueue(true)}>Retry</button></Notice>
+            <SectionHeading id="today-queue" title={showTeam ? "Team queue" : "Your queue"}
+                count={showTeam ? (team.status === "ready" ? <span className="text-sm tabular-nums text-neutral-400">{teamReady}</span> : null)
+                    : queue ? <span className="text-sm tabular-nums text-neutral-400">{queue.ready}</span> : null}
+                action={<Button variant="ghost" size="sm" onClick={() => onOpen(showTeam ? `/${workspaceSlug}/staff` : queueUrl)}>{showTeam ? "Open staff" : "Open queue"}</Button>} />
+            {canSeeAttention ? <SegmentedSwitch label="Queue scope" value={scope} options={QUEUE_SCOPES} onChange={setScope} className="mb-2" /> : null}
+            {showTeam ? (team.status === "idle" || team.status === "loading" ? <LoadingRows label="Loading the team's queue" />
+                : team.status === "unavailable" ? <Notice>Needs a database update.</Notice>
+                : team.status === "error" ? <Notice tone="error">{team.message} <button type="button" className="underline underline-offset-2" onClick={() => void loadTeam()}>Retry</button></Notice>
+                : teamRows.length === 0 ? <Notice><Status label="Nobody else has work ready" tone="green" /></Notice>
+                : <List flush ariaLabel="Team queue">
+                    {teamRows.map(item => {
+                        const href = `/${workspaceSlug}/work-items/${item.id}`
+                        const effort = effortLabel(item.calibrated_minutes ?? item.assessment?.effort_minutes)
+                        const due = dueLabel(item.due_at, now)
+                        return <ListCompactItem key={item.id} current={pathOf(href) === activePath} onOpen={() => onOpen(href)}
+                            meta={<>
+                                <Status label={item.state} tone={item.state === "In progress" ? "yellow" : "grey"} />
+                                {effort ? <span className="ml-auto shrink-0 tabular-nums">{effort}</span> : null}
+                            </>}
+                            title={item.title}
+                            supporting={<>
+                                <span className="min-w-0 truncate">{[item.owner, item.relationship].filter(Boolean).join(" · ")}</span>
+                                {due ? <span className={`ml-auto shrink-0 ${due.late ? "text-red-200" : ""}`}>{due.label}</span> : null}
+                            </>} />
+                    })}
+                    {teamReady > teamRows.length || team.queue.truncated ? <ListCompactItem onOpen={() => onOpen(`/${workspaceSlug}/staff`)}
+                        title={<span className="font-normal text-neutral-300">More on the Staff panel</span>} /> : null}
+                </List>)
+            : null}
+            {showTeam ? null : queueError && !queue ? <Notice tone="error">{queueError} <button type="button" className="underline underline-offset-2" onClick={() => loadQueue(true)}>Retry</button></Notice>
                 : !queue ? <LoadingRows label="Loading your queue" />
                 : queueItems.length === 0 ? <Notice><Status label="Nothing ready for you" tone="green" /></Notice>
                 : <List flush ariaLabel="Your queue">{queueItems.map(item => {

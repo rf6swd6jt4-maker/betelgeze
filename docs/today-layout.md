@@ -61,5 +61,14 @@ first load. The Today layout keeps that model and hides only its strip:
    - Below `lg` there is no dock: Communications stays the full view from the sidebar.
    - Not verified without a signed-in session: the real page inside the dock (layout at 20rem, composer, realtime),
      WebKit, and real read and alert behaviour. Check these in the pilot before widening.
+   - *Mine / Team (added on `today-team-queue`).* Owners and admins get a `SegmentedSwitch` above the queue. Team shows
+     other people's ready work with the owner's name, from `read_team_work_queue`: for each other member it calls the
+     existing personal queue read and keeps that person's first four items and ready count, so Team always matches what
+     each person sees, in their order. People take turns in the list and work in progress comes first. Bounded to 25
+     members and 100 rows; descriptions are not sent. The read costs one personal queue read per other member, so it
+     runs only when Team is chosen (never at shell start; the switch always opens on Mine) and is reused for a minute.
+     Until the migration `20261115190000_team_work_queue.sql` is applied the Team view says "Needs a database update".
+     `scripts/validate-team-queue-full-schema.mjs` checks it against every committed migration in CI. Its production
+     cost has not been measured.
 5. **Measure and roll out.** Pilot one workspace, compare its `workspace_interaction_metrics` against the baseline with the
    same query, then widen.

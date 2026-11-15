@@ -162,3 +162,40 @@ test("only the dock owner names the docked chat, and only while it is displayed 
     assert.match(shell, /if \(!safe\) \{ setDockNotice\(/, "a chat that cannot confirm stays mounted")
     assert.match(source("components/workspace/ShellRelationshipContextPanel.tsx"), /<ContextContent \{\.\.\.props\} onChat=\{undefined\} onClose=\{dismiss\}/, "the phone context drawer never offers the dock")
 })
+
+test("the Team queue is owner/admin only, read on demand, and merged fairly", async () => {
+    const route = source("app/api/workspaces/[workspaceSlug]/team-queue/route.ts")
+    assert.match(route, /requireWorkspace\(workspaceSlug, "admin"\)/)
+    assert.match(route, /x-workspace-user/)
+    assert.doesNotMatch(route, /export async function (POST|PUT|PATCH|DELETE)/)
+    const sql = source("supabase/migrations/20261115190000_team_work_queue.sql")
+    assert.match(sql, /m\.role in \('owner', 'admin'\)/)
+    assert.match(sql, /public\.read_personal_work_queue\(p_workspace, member\.user_id, 0, 'ready'\)/, "ownership and ranking are not redefined")
+    assert.match(sql, /limit 25/)
+    assert.match(sql, /entry\.position <= 4/)
+    assert.match(sql, /revoke all on function public\.read_team_work_queue\(uuid, uuid\) from public, anon, authenticated/)
+
+    const column = source("components/workspace/TodayColumn.tsx")
+    assert.match(column, /useState<"mine" \| "team">\("mine"\)/, "Team is never the starting scope, so it is never read at shell start")
+    assert.match(column, /const showTeam = canSeeAttention && scope === "team"/)
+    assert.match(column, /if \(!showTeam\) return/)
+    assert.match(column, /\{canSeeAttention \? <SegmentedSwitch label="Queue scope"/, "staff are not offered Team")
+
+    // @ts-expect-error Node's built-in TypeScript test runner requires the source extension.
+    const { parseTeamQueue, teamQueueRows } = await import("../lib/team-queue.ts")
+    const now = Date.parse("2026-11-15T12:00:00Z")
+    const item = (id: string, extra: Record<string, unknown> = {}) => ({ id, title: id, description: null, status: "todo", created_at: "2026-11-14T12:00:00Z", updated_at: "2026-11-14T12:00:00Z", actual_start_at: null, due_at: null, planned_at: null, priority_override: null, blocked: false, paused: false, relationship: null, service: null, assessment: null, assessment_status: null, assessed_at: null, ...extra })
+    const queue = parseTeamQueue({ truncated: false, people: [
+        { userId: "sam", name: "Sam", ready: 3, items: [item("s1"), item("s2"), item("s3")] },
+        { userId: "priya", name: " ", ready: 2, items: [item("p1"), item("shared", { status: "doing", shared: true, started_by: "sam" }), item("blocked", { blocked: true })] },
+        { userId: "mia", name: "Mia", ready: 1, items: [item("shared", { status: "doing", shared: true, started_by: "sam" })] },
+    ] })
+    assert.ok(queue)
+    assert.equal(queue.people[1].name, "Team member")
+    const rows = teamQueueRows(queue, 12, now)
+    assert.deepEqual(rows.map((row: { id: string }) => row.id), ["shared", "s1", "s2", "p1", "s3"], "in progress first, then people take turns in their own order; blocked work is left out")
+    assert.equal(rows.filter((row: { id: string }) => row.id === "shared").length, 1, "a shared item appears once")
+    assert.equal(teamQueueRows(queue, 2, now).length, 2)
+    assert.equal(parseTeamQueue({ people: "no" }), null)
+    assert.equal(parseTeamQueue({ people: [{ userId: 1, items: [] }] }), null)
+})

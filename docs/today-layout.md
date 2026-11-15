@@ -59,6 +59,9 @@ first load. The Today layout keeps that model and hides only its strip:
    - Record links inside the dock open in the work area through `openWorkspaceTab`. If the docked page navigates away
      from Communications, that destination opens in the work area and the dock returns to its chat.
    - Below `lg` there is no dock: Communications stays the full view from the sidebar.
+   - The docked chat is wider than the context reference on wider windows (`--workspace-dock-width`: 20rem, 24rem from
+     1280px, 26rem from 1440px, 30rem from 1680px), and native panels reserve that width while it shows. Legacy framed
+     pages still reserve 20rem, so there the chat overlaps the page's right edge by the difference.
    - Not verified without a signed-in session: the real page inside the dock (layout at 20rem, composer, realtime),
      WebKit, and real read and alert behaviour. Check these in the pilot before widening.
    - *Mine / Team (added on `today-team-queue`).* Owners and admins get a `SegmentedSwitch` above the queue. Team shows

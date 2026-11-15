@@ -5,6 +5,8 @@
   --foreground: #ededed;
   --workspace-sidebar-width: 5rem;
   --workspace-today-width: 22rem;
+  /* Docked chat column (Today layout). The context reference stays 20rem; chat gets more room as the window allows. */
+  --workspace-dock-width: 20rem;
 }
 
 @theme inline {
@@ -596,3 +598,10 @@ details:not([open]) > .betelgeze-popup-enter {
 
 /* Native panels retain the existing relationship context column. */
 [data-native-context-open="false"] [data-native-context-spacer] { width: 0; }
+
+/* While the client column shows the docked chat, the work area reserves the chat's width instead of the 20rem
+   context width, so the wider chat never covers the work. Dimensions change without a transition. */
+@media (min-width: 1280px) { :root { --workspace-dock-width: 24rem; } }
+@media (min-width: 1440px) { :root { --workspace-dock-width: 26rem; } }
+@media (min-width: 1680px) { :root { --workspace-dock-width: 30rem; } }
+body[data-workspace-dock="column"] [data-native-context-open="true"] [data-native-context-spacer] { width: var(--workspace-dock-width); }

@@ -709,7 +709,10 @@ At `lg` and above, retain the desktop sidebar preference and reserve its width i
 In the Today layout at `lg` and above, the client column can show a docked chat in place of the context reference, and
 the top bar's `Comms` button (`Button` secondary, with `UnreadMessageCount`) opens the conversation list as a drawer.
 Both use the context panel's surface and position: frosted `--color-surface-glass`, `rounded-xl`, `border-card-border`,
-`shadow-card`, below the tab bar. The column dock is 20rem wide at level `35`; the drawer is 25rem at `36`, opens with
+`shadow-card`, below the tab bar. The column dock is `--workspace-dock-width` wide at level `35`: 20rem, then 24rem from
+1280px, 26rem from 1440px and 30rem from 1680px. While it shows, native panels reserve that width in place of the 20rem
+context width (`body[data-workspace-dock="column"]`), so the chat never covers the work; the context reference itself
+stays 20rem. The drawer is at least 25rem at `36`, opens with
 `betelgeze-popup-enter` and closes immediately. Neither dims or makes the work area inert, and neither is offered
 below `lg`. The header carries the client or `Comms`, a close control, and for the drawer `Open full view`.
 

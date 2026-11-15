@@ -2737,6 +2737,13 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
         if (dock?.place === "column" && dock.relationshipId === activeRelationshipContext.id) { setColumnChat(true); return }
         void changeDock({ place: "column", relationshipId: activeRelationshipContext.id, title: activeRelationshipContext.business_name?.trim() || activeRelationshipContext.primary_person_name })
     }
+    const dockColumnShown = dockShown && dock?.place === "column"
+    useEffect(() => {
+        // The work area reserves the docked chat's width only while the column is showing it (globals.css).
+        if (!dockColumnShown) return
+        document.body.dataset.workspaceDock = "column"
+        return () => { delete document.body.dataset.workspaceDock }
+    }, [dockColumnShown])
     const dockLoaded = dock !== null
     useEffect(() => {
         // Narrowing below desktop width, or losing access, releases the dock once it confirms its work is saved.
@@ -3250,7 +3257,7 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
 
         {dock ? <aside data-workspace-docked-chat={dock.place} data-workspace-context-column="" aria-label={dock.place === "drawer" ? "Comms" : `Chat with ${dock.title}`} inert={!dockShown}
             onKeyDown={event => { if (event.key === "Escape" && dock.place === "drawer") void changeDock(null) }}
-            className={`fixed right-4 top-[7.75rem] h-[calc(100dvh-9.25rem)] flex-col overflow-hidden rounded-xl border border-card-border bg-[var(--color-surface-glass)] text-white shadow-card backdrop-blur-xl backdrop-saturate-150 sm:right-6 ${dock.place === "drawer" ? "betelgeze-popup-enter z-[36] w-[25rem]" : "z-[35] w-80"} ${dockShown ? "hidden lg:flex" : "hidden"}`}>
+            className={`fixed right-4 top-[7.75rem] h-[calc(100dvh-9.25rem)] flex-col overflow-hidden rounded-xl border border-card-border bg-[var(--color-surface-glass)] text-white shadow-card backdrop-blur-xl backdrop-saturate-150 sm:right-6 ${dock.place === "drawer" ? "betelgeze-popup-enter z-[36] w-[max(25rem,var(--workspace-dock-width))]" : "z-[35] w-[var(--workspace-dock-width)]"} ${dockShown ? "hidden lg:flex" : "hidden"}`}>
             <header className="shrink-0 border-b border-white/[0.06] px-4 py-3">
                 <div className="flex items-center gap-2">
                     <h2 className="min-w-0 flex-1 truncate text-base font-semibold">{dock.place === "drawer" ? "Comms" : dock.title}</h2>

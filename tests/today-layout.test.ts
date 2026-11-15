@@ -216,3 +216,16 @@ test("a wrapped dependency list cannot be lifted over the Parent row", () => {
     const fields = source("app/[workspaceSlug]/work-items/[id]/InlineWorkItemFields.tsx")
     assert.match(fields, /<DetailField multiline label="Dependencies" icon="dependency"[^>]*><div className="relative block max-w-full">/)
 })
+
+test("the docked chat column widens with the window and the work area reserves its width", () => {
+    const css = source("app/globals.css")
+    assert.match(css, /--workspace-dock-width: 20rem;/)
+    assert.match(css, /@media \(min-width: 1280px\) \{ :root \{ --workspace-dock-width: 24rem; \} \}/)
+    assert.match(css, /@media \(min-width: 1440px\) \{ :root \{ --workspace-dock-width: 26rem; \} \}/)
+    assert.match(css, /@media \(min-width: 1680px\) \{ :root \{ --workspace-dock-width: 30rem; \} \}/)
+    assert.match(css, /body\[data-workspace-dock="column"\] \[data-native-context-open="true"\] \[data-native-context-spacer\] \{ width: var\(--workspace-dock-width\); \}/)
+    const shell = source("components/workspace/WorkspaceTopBarClient.tsx")
+    assert.match(shell, /"z-\[35\] w-\[var\(--workspace-dock-width\)\]"/)
+    assert.match(shell, /if \(!dockColumnShown\) return\s*document\.body\.dataset\.workspaceDock = "column"/, "the wider reservation applies only while the column shows the chat")
+    assert.match(source("components/workspace/ShellRelationshipContextPanel.tsx"), /hidden w-80 flex-col/, "the context reference keeps its 20rem width")
+})

@@ -33,6 +33,7 @@ import { WorkspaceRecordCache } from "@/lib/workspace-record-cache"
 import { WorkspaceTabScrollStore } from "@/lib/workspace-tab-scroll"
 import type { WorkspaceLayout } from "@/lib/workspace-layout"
 import { TodayColumn, useTodayColumnVisible } from "./TodayColumn"
+import { SideDrawer } from "@/components/ui/SideDrawer"
 import { nativeWorkspaceRoute } from "@/lib/workspace-native"
 import { AccountMenu } from "@/components/account/AccountMenu"
 import { Avatar } from "@/components/account/Avatar"
@@ -479,6 +480,8 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
     const [editingTabId, setEditingTabId] = useState<string | null>(null)
     const [editingTabTitle, setEditingTabTitle] = useState("")
     const [mobileContextKey, setMobileContextKey] = useState<string | null>(null)
+    // Phones and tablets in the Today layout: the Today column as a left SideDrawer, mounted only while open.
+    const [todaySheetOpen, setTodaySheetOpen] = useState(false)
     const [contextOpenByTab, setContextOpenByTab] = useState<Record<string, boolean>>({})
     const [contextStatusByTab, setContextStatusByTab] = useState<Record<string, WorkspaceTabContextStatus>>({})
     const [contextObstructedByTab, setContextObstructedByTab] = useState<Record<string, boolean>>({})
@@ -612,6 +615,7 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
         for (const timeout of navigationTimeoutRef.current.values()) timeout.update()
         nativeNavigationPerformance.activate(tabId)
         setMobileContextKey(null)
+        setTodaySheetOpen(false)
         const next = [tabId, ...residentTabIdsRef.current.filter((id) => id !== tabId)].slice(0, MAX_RESIDENT_WORKSPACE_FRAMES)
         residentTabIdsRef.current = next
         setResidentTabIds(next)
@@ -869,7 +873,7 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
     }, [])
 
     const beginTabNavigation = useCallback((tabId: string, url: string) => {
-        if (tabId === activeTabIdRef.current) setMobileContextKey(null)
+        if (tabId === activeTabIdRef.current) { setMobileContextKey(null); setTodaySheetOpen(false) }
         navigationErrorRef.current.delete(tabId)
         const currentTab = tabsRef.current.find((tab) => tab.id === tabId)
         if (currentTab && !navigationFallbackRef.current.has(tabId)) {
@@ -1986,6 +1990,7 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
         }
         const closeForOtherDropdown = (event: Event) => {
             setMobileContextKey(null)
+            setTodaySheetOpen(false)
             if ((event as CustomEvent<string>).detail !== searchMenuId) setSearchOpen(false)
         }
         document.addEventListener("mousedown", close)
@@ -2222,6 +2227,7 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
 
     function toggleSidebar() {
         setMobileContextKey(null)
+        setTodaySheetOpen(false)
         if (sidebarTransitionTimeout.current) window.clearTimeout(sidebarTransitionTimeout.current)
         setSidebarTransitionEnabled(true)
         sidebarTransitionTimeout.current = window.setTimeout(() => {
@@ -2243,6 +2249,7 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
         if (!confirmDeparture) { nativeNavigationPerformance.finish(intent, "failed"); return }
         const committed = confirmDeparture(() => {
             setMobileContextKey(null)
+            setTodaySheetOpen(false)
             const tabId = activeTabIdRef.current
             if (!tabId) { nativeNavigationPerformance.finish(intent, "aborted"); return }
             const url = normalizeWorkspaceUrl(href)
@@ -2640,6 +2647,18 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
         .filter((tab) => tab.id === activeTabId || residentTabIdSet.has(tab.id))
     const activeTab = visibleTabs.find((tab) => tab.id === activeTabId) ?? visibleTabs[0]
     const activeNativePanel = usesNativeCommunications(activeTab.url) || (nativePanelsEnabled && Boolean(nativeWorkspaceRoute(activeTab.url, workspace.slug)))
+    const todayLaunchChecked = useRef(false)
+    useEffect(() => {
+        // On a phone, opening the app at the queue or workspace home shows Today first. Runs once, a frame after mount,
+        // so launch-time tab activation (which closes the sheet) has already happened.
+        if (layout !== "today" || todayLaunchChecked.current) return
+        todayLaunchChecked.current = true
+        if (window.matchMedia("(min-width: 1024px)").matches) return
+        const path = new URL(activeTab.url, "http://workspace.invalid").pathname.replace(/\/$/, "")
+        if (path !== `/${workspace.slug}` && path !== `/${workspace.slug}/queue`) return
+        const frame = window.requestAnimationFrame(() => setTodaySheetOpen(true))
+        return () => window.cancelAnimationFrame(frame)
+    }, [layout, activeTab.url, workspace.slug])
     useLayoutEffect(() => { syncComposerViewportRef.current?.() }, [activeTabId, activeTab.url, mobileCommunicationsHost])
     const activeTabLoaded = loadedTabIds.has(activeTab.id)
     const canGoBack = activeTabLoaded && activeTab.historyIndex > 0
@@ -2994,6 +3013,8 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
 
         <div data-workspace-tabbar className={`fixed top-14 z-40 h-11 border-b border-neutral-800 bg-neutral-950 text-white shadow-lg shadow-black/10 ${sidebarTransitionEnabled ? "transition-[left,width] duration-200 ease-out" : ""}`}>
             <div className="flex h-full min-w-0 items-end gap-2 px-2 pt-1">
+                {layout === "today" ? <button type="button" data-today-button aria-expanded={todaySheetOpen} onClick={event => { event.currentTarget.focus({ preventScroll: true }); setSidebarOpen(false); setMobileContextKey(null); setTodaySheetOpen(true) }}
+                    className="mb-1 inline-flex h-9 shrink-0 items-center rounded-lg border border-neutral-700 px-3 text-sm font-medium text-neutral-100 hover:bg-neutral-900 lg:hidden">Today</button> : null}
                 <div className="relative h-full min-w-0 flex-1">
                 <div ref={tabStripRef} role="tablist" aria-label="Workspace tabs" className="relative flex h-full min-w-0 flex-1 items-end gap-1 touch-pan-x overflow-x-auto overflow-y-hidden overscroll-x-contain md:overflow-hidden">
                     {visibleTabs.map((tab) => {
@@ -3074,7 +3095,7 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
                 <button data-icon-button type="button" onClick={toggleContextPanel} disabled={!activeContextSupported} aria-label={!activeContextSupported ? "Relationship context unavailable" : activeContextOpen ? "Hide relationship context" : "Show relationship context"} aria-pressed={activeContextSupported ? activeContextOpen : undefined} className="mb-1 hidden h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:text-neutral-400 lg:inline-flex">
                     <ContextPanelIcon />
                 </button>
-                <button data-icon-button type="button" onClick={event => { event.currentTarget.focus({ preventScroll: true }); setSidebarOpen(false); setMobileContextKey(`${activeTab.id}:${activeTab.url}`) }} disabled={!activeContextSupported || activeContextObstructed || activeRouteLoading} aria-label="Show relationship context" aria-haspopup="dialog" className="mb-1 inline-flex h-8 w-8 shrink-0 items-center justify-center text-neutral-400 hover:text-white disabled:opacity-30 lg:hidden">
+                <button data-icon-button type="button" onClick={event => { event.currentTarget.focus({ preventScroll: true }); setSidebarOpen(false); setTodaySheetOpen(false); setMobileContextKey(`${activeTab.id}:${activeTab.url}`) }} disabled={!activeContextSupported || activeContextObstructed || activeRouteLoading} aria-label="Show relationship context" aria-haspopup="dialog" className="mb-1 inline-flex h-8 w-8 shrink-0 items-center justify-center text-neutral-400 hover:text-white disabled:opacity-30 lg:hidden">
                     <ContextPanelIcon />
                 </button>
             </div>
@@ -3109,6 +3130,18 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
             )}
             {tabsHydrated && activeNavigation?.status === "error" ? <div role="alert" className="absolute right-4 top-4 z-20 flex items-center gap-3 rounded-lg border border-red-500/30 bg-neutral-950/95 px-3 py-2 text-xs text-red-200 shadow-xl"><span>{activeNavigation.error}</span><button type="button" onClick={retryActiveNavigation} className="font-medium text-white underline decoration-neutral-600 underline-offset-2">Retry</button></div> : null}
         </div>
+
+        {layout === "today" && todaySheetOpen && !todayColumnVisible ? <SideDrawer side="left" label="Today" onClose={() => setTodaySheetOpen(false)}>{dismiss => <>
+            <div className="flex shrink-0 items-center justify-between border-b border-card-border px-4 py-2">
+                <h2 className="text-base font-semibold">Today</h2>
+                <button data-icon-button type="button" onClick={dismiss} aria-label="Close Today" className="flex h-11 w-11 items-center justify-center text-xl text-neutral-400 hover:text-white">×</button>
+            </div>
+            <div className="min-h-0 flex-1">
+                <TodayColumn workspaceSlug={workspace.slug} workspaceId={workspace.id} userId={currentUserId}
+                    canSeeAttention={workspaceRole === "owner" || workspaceRole === "admin"} cache={nativeCache}
+                    activeUrl={activeTab.url} onOpen={(href) => { dismiss(); void openWorkspaceTab(href) }} />
+            </div>
+        </>}</SideDrawer> : null}
 
         {todayColumnVisible ? <div data-workspace-today-shell className="fixed bottom-0 top-14 z-30 hidden border-r border-neutral-800 bg-neutral-950 lg:block">
             <TodayColumn workspaceSlug={workspace.slug} workspaceId={workspace.id} userId={currentUserId}

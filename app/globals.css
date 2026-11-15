@@ -358,15 +358,15 @@ html:is([data-mobile-conversation-phase="open"], [data-mobile-conversation-phase
      and the work area. Below lg the tabbed frame is unchanged. Only the frame moves; the resident tabs stay mounted. */
 }
 
+/* Today layout at every width: the tabs go, the strip keeps its Today and context-panel controls. */
+body[data-workspace-layout="today"] [data-workspace-tabbar] [role="tablist"] {
+  visibility: hidden;
+}
+
 @media (min-width: 1024px) {
   [data-workspace-today-shell] {
     left: var(--workspace-sidebar-width);
     width: var(--workspace-today-width);
-  }
-
-  /* Only the tabs go: the strip keeps its context-panel controls. */
-  body[data-workspace-layout="today"] [data-workspace-tabbar] [role="tablist"] {
-    visibility: hidden;
   }
 
   body[data-workspace-layout="today"] [data-workspace-tabbar],
@@ -445,6 +445,15 @@ html:is([data-mobile-conversation-phase="open"], [data-mobile-conversation-phase
   animation: betelgeze-drawer-right-in 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+@keyframes betelgeze-drawer-left-in {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(0); }
+}
+
+.betelgeze-drawer-left {
+  animation: betelgeze-drawer-left-in 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
 @keyframes betelgeze-popup-fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
@@ -516,6 +525,7 @@ details:not([open]) > .betelgeze-popup-enter {
   .betelgeze-popup-enter,
   .betelgeze-popup-fade,
   .betelgeze-drawer-right,
+  .betelgeze-drawer-left,
   .betelgeze-typing-dot { animation: none; }
 }
 

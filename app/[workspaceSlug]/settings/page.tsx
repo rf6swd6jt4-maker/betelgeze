@@ -14,7 +14,7 @@ import { ServiceCatalogue } from "@/components/settings/ServiceCatalogue"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { WorkspaceAutosaveForm } from "@/components/workspace/WorkspaceAutosaveForm"
 import { AdminMfaResetButton } from "@/components/admin/AdminMfaResetButton"
-import { RemoveWorkspaceUserForm } from "@/components/admin/RemoveWorkspaceUserForm"
+import { RemoveWorkspaceUser } from "@/components/admin/RemoveWorkspaceUser"
 import { createUploadSignedUrl } from "@/lib/onboarding/uploads"
 import { loadOnboardingSettingsPageData } from "@/lib/onboarding/configuration"
 import { supabaseAdmin } from "@/lib/supabase/admin"
@@ -174,7 +174,7 @@ function serviceOptions(settings: OnboardingSettingsData) {
     return settings.services.filter((service) => /^[0-9a-f-]{36}$/i.test(service.id)).map((service) => ({ id: service.id, name: service.name, state: service.state }))
 }
 
-async function UsersSettingsSection({ workspace, isOwner, onboardingSettingsPromise }: { workspace: WorkspaceRecord; isOwner: boolean; onboardingSettingsPromise: Promise<OnboardingSettingsData> }) {
+async function UsersSettingsSection({ workspace, isOwner, currentUserId, onboardingSettingsPromise }: { workspace: WorkspaceRecord; isOwner: boolean; currentUserId: string; onboardingSettingsPromise: Promise<OnboardingSettingsData> }) {
     const [membershipsResult, onboardingSettings] = await Promise.all([
         supabaseAdmin.from("workspace_memberships").select("user_id, role, created_at").eq("workspace_id", workspace.id).order("created_at"),
         onboardingSettingsPromise,
@@ -189,7 +189,7 @@ async function UsersSettingsSection({ workspace, isOwner, onboardingSettingsProm
                 <div><p className="break-words font-medium">{workspaceUser?.email}</p><p className="text-sm text-neutral-500">{workspaceRoleLabel(assignedRole)}</p></div>
                 {normalizeWorkspaceRole(assignedRole) !== "owner" ? <div className="flex flex-wrap items-center gap-2">
                     {(isOwner || normalizeWorkspaceRole(assignedRole) === "staff") ? <AdminMfaResetButton email={workspaceUser?.email ?? "this user"} userId={workspaceUser?.id ?? ""} action={resetWorkspaceUserMfa.bind(null, workspace.slug)} /> : null}
-                    <RemoveWorkspaceUserForm userId={workspaceUser?.id ?? ""} email={workspaceUser?.email ?? "this user"} action={removeWorkspaceUser.bind(null, workspace.slug)} />
+                    <RemoveWorkspaceUser workspaceSlug={workspace.slug} currentUserId={currentUserId} userId={workspaceUser?.id ?? ""} email={workspaceUser?.email ?? "this user"} legacyAction={removeWorkspaceUser.bind(null, workspace.slug)} />
                 </div> : null}
             </div>)}
         </div>
@@ -222,7 +222,7 @@ export default async function SettingsPage({ params, searchParams }: PageProps) 
                     <ClientPortalSettingsSection workspace={workspace} role={role} />
                     <Suspense fallback={<SettingsSectionFallback id="agency-branding" title="Agency Branding" description="Manage the public identity, policies, metadata, favicon, and colours used across agency-branded pages." height="min-h-72" />}><AgencyBrandingSettingsSection workspace={workspace} userId={user.id} onboardingSettingsPromise={onboardingSettingsPromise} /></Suspense>
                     <Suspense fallback={<SettingsSectionFallback id="connections" title="Connections" description="Manage active provider credentials and client communication delivery channels." height="min-h-64" />}><ConnectionsSettingsSection workspace={workspace} isOwner={isOwner} /></Suspense>
-                    <Suspense fallback={<SettingsSectionFallback id="users" title="Users" description="Invite teammates and control workspace access." height="min-h-56" />}><UsersSettingsSection workspace={workspace} isOwner={isOwner} onboardingSettingsPromise={onboardingSettingsPromise} /></Suspense>
+                    <Suspense fallback={<SettingsSectionFallback id="users" title="Users" description="Invite teammates and control workspace access." height="min-h-56" />}><UsersSettingsSection workspace={workspace} isOwner={isOwner} currentUserId={user.id} onboardingSettingsPromise={onboardingSettingsPromise} /></Suspense>
                     <Suspense fallback={<SettingsSectionFallback id="teams" title="Teams" description="Selling, management, and service delivery responsibilities." height="min-h-56" />}><TeamsSettingsSection workspace={workspace} isOwner={isOwner} /></Suspense>
                     <p className="pt-2 text-center text-xs text-neutral-600">Betelgeze © 2026</p>
                 </div>

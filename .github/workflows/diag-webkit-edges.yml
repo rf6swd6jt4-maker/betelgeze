@@ -33,6 +33,7 @@ jobs:
           DEBUG: pw:browser
         shell: bash
         run: |
+          set +e +o pipefail
           failures=0
           for i in $(seq 1 12); do
             echo "::group::iteration $i"

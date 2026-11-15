@@ -68,6 +68,7 @@ first load. The Today layout keeps that model and hides only its strip:
      members and 100 rows; descriptions are not sent. The read costs one personal queue read per other member, so it
      runs only when Team is chosen (never at shell start; the switch always opens on Mine) and is reused for a minute.
      Until the migration `20261115190000_team_work_queue.sql` is applied the Team view says "Needs a database update".
-     Its production cost has not been measured.
+     `scripts/validate-team-queue-full-schema.mjs` checks it against every committed migration in CI. Its production
+     cost has not been measured.
 5. **Measure and roll out.** Pilot one workspace, compare its `workspace_interaction_metrics` against the baseline with the
    same query, then widen.

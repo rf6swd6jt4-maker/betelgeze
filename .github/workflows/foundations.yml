@@ -76,6 +76,8 @@ jobs:
         run: BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-assignment-orphan-report.mjs
       - name: Needs attention summary on the full migration schema
         run: BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-needs-attention.mjs
+      - name: Team queue on the full migration schema
+        run: BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-team-queue-full-schema.mjs
       - name: Portal upload team access and private downloads
         run: |
           BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-portal-upload-team-access.mjs

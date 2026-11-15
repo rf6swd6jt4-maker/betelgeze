@@ -8,7 +8,7 @@ try {
  await db.exec(await fixtureSql());await db.exec(await migration())
  await db.exec("alter table workspaces add column if not exists status text default 'active'")
  await db.exec(await readFile(new URL('../supabase/migrations/20261115190000_team_work_queue.sql',import.meta.url),'utf8'))
- const {w,alice,bob,admin,outsider}=await seed(db)
+ const {w,alice,admin,outsider}=await seed(db)
  const one=async(s,p=[])=>(await db.query(s,p)).rows[0]
  const team=async actor=>(await one('select read_team_work_queue($1,$2) r',[w,actor])).r
  const personal=async user=>(await one("select read_personal_work_queue($1,$2,0,'ready') r",[w,user])).r

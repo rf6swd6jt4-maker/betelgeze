@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6]
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -27,16 +27,17 @@ jobs:
           npm ci
           npm ci --prefix scripts/browser --ignore-scripts
           node scripts/browser/node_modules/playwright/cli.js install --with-deps webkit
+          sudo apt-get install -y -q gdb > /dev/null
       - name: Loop action edges on WebKit
         env:
           DEBUG: pw:browser
         run: |
           failures=0
-          for i in $(seq 1 12); do
+          for i in $(seq 1 15); do
             echo "::group::iteration $i"
             if ! node scripts/browser/run-comms-action-edges.mjs webkit > "iter-$i.log" 2>&1; then
               failures=$((failures+1)); echo "ITERATION $i FAILED"; echo "::endgroup::"
-              grep -v "pw:browser.*<\(launching\|launched\)" "iter-$i.log" | tail -150
+              grep -v "pw:browser.*<\(launching\|launched\)" "iter-$i.log" | grep -v ' hb ' | tail -400
             else
               echo "iteration $i passed"; echo "::endgroup::"
             fi

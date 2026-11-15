@@ -1,5 +1,5 @@
 // Rare UI lifecycle checks in the real workspaces, using synthetic local I/O.
-import { spawn } from "node:child_process"
+import { spawn, execSync } from "node:child_process"
 import { mkdir, writeFile } from "node:fs/promises"
 import assert from "node:assert/strict"
 import { chromium, webkit } from "playwright"
@@ -35,7 +35,17 @@ try {
             const page = await context.newPage()
             page.on("pageerror", error => errors.push(error.message))
             const t0 = Date.now()
-            page.on("console", message => { if (message.text().startsWith("[diag]")) console.log(`+${Date.now() - t0}ms`, message.text()) })
+            let lastHb = Date.now(), dumps = 0
+            page.on("console", message => { if (message.text().startsWith("[diag] hb")) lastHb = Date.now(); if (message.text().startsWith("[diag]")) console.log(`+${Date.now() - t0}ms`, message.text()) })
+            const dump = label => {
+                try {
+                    console.log(`+${Date.now() - t0}ms [diag] DUMP ${label}\n` + execSync(`for p in $(pgrep -f WebKitWebProcess); do echo "== pid $p"; ps -o pid,rss,vsz,pcpu,etime,cmd -p $p; grep -E 'VmRSS|VmHWM|Threads' /proc/$p/status; sudo gdb -p $p -batch -nx -ex 'set pagination off' -ex 'info threads' -ex 'thread 1' -ex 'bt 60' 2>&1 | grep -v '^\\[New LWP' | head -120; done; free -m`, { encoding: "utf8", timeout: 60_000, stdio: ["ignore", "pipe", "pipe"] }))
+                } catch (error) { console.log("[diag] dump failed", String(error).slice(0, 2000)) }
+            }
+            const watchdog = setInterval(() => {
+                if (Date.now() - lastHb > 4000 && dumps < 3) { dumps++; dump(`stall ${dumps} gap=${Date.now() - lastHb}ms`) }
+            }, 1000)
+            process.on("exit", () => clearInterval(watchdog))
             page.on("crash", () => console.log(`+${Date.now() - t0}ms [diag] PAGE CRASH event`))
             await context.addInitScript(() => {
                 let hb = 0

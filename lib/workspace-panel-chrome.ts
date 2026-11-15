@@ -6,6 +6,7 @@ export function workspaceRouteUsesSharedBanner(pathname: string) {
     if (panel === "admin") {
         return nested.length === 0 || nested[0] === "activity" || (nested.length === 1 && ["maintenance", "okrs"].includes(nested[0]))
     }
+    if (panel === "queue") return nested.length === 0 || (nested.length === 1 && nested[0] === "attention")
     if (panel === "leadgen") {
         return nested.length === 0 || (nested.length === 1 && nested[0] === "polls")
     }

@@ -74,6 +74,8 @@ jobs:
         run: BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-member-assignment-moves.mjs
       - name: Assignment orphan report on the full migration schema
         run: BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-assignment-orphan-report.mjs
+      - name: Needs attention summary on the full migration schema
+        run: BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-needs-attention.mjs
       - name: Portal upload team access and private downloads
         run: |
           BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-portal-upload-team-access.mjs

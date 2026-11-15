@@ -34,7 +34,7 @@ function extract(path, name, optional = false) {
 }
 const shellPath = "components/workspace/WorkspaceTopBarClient.tsx"
 const nativePath = "components/workspace/NativeWorkspaceTab.tsx"
-const names = ["prepareNativeLeave", "activateWorkspaceTab", "warmWorkspaceTab", "closeTab", "switchTab", "reopenClosedTab", "retryActiveNavigation", "navigateActiveTab"]
+const names = ["prepareNativeLeave", "activateWorkspaceTab", "warmWorkspaceTab", "discardWorkspaceTabState", "closeTab", "switchTab", "reopenClosedTab", "retryActiveNavigation", "navigateActiveTab"]
 const callbacks = Object.fromEntries(names.map((name) => [name, extract(shellPath, name)]))
 for (const name of ["prepareNativeNavigation", "prepareNativePanelNavigation"]) callbacks[name] = extract(shellPath, name, true)
 callbacks.nativeNavigate = extract(nativePath, "navigate")
@@ -98,7 +98,7 @@ async function fixture(options={}){
     closedTabsRef:ref([{tab:{...initial[3]},index:3,contextOpen:true}]),tabFrameOrderRef:ref(initial.map(t=>t.id)),mutationRevisionRef:ref(0),loadedTabIdsRef:ref(new Set(initial.map(t=>t.id))),readyTabIdsRef:ref(new Set()),
     pendingNavigationRef:makeMap(),navigationTimeoutRef:makeMap(),softNavigationFallbackRef:makeMap(),navigationFallbackRef:makeMap(),navigationErrorRef:makeMap(),mutationIdsByTabRef:makeMap(),contextStatusByTabRef:ref({}),contextManualClosedByTabRef:ref({}),contextObstructedByTabRef:ref({}),
     contextOpenByTab:{},routeLoadingTabId:null,activeNavigation:{requestedUrl:'/fixture/native/retry'},activeTabId:'a',
-    setBackgroundMutationState:noop,setBackgroundMutationError:error=>story.errors.push(error),setMobileContextKey:noop,setTodaySheetOpen:noop,setTabFrameOrder:noop,setLoadedTabIds:noop,setRefreshingTabIds:noop,setNavigationStateByTab:noop,setBackgroundMutationCounts:noop,setContextStatusByTab:noop,setContextObstructedByTab:noop,setContextOpenByTab:noop,setRouteLoadingTabId:noop,
+    setBackgroundMutationState:noop,setBackgroundMutationError:error=>story.errors.push(error),setMobileContextKey:noop,setTodaySheetOpen:noop,tabRecencyRef:ref([]),setTabRecency:noop,setTabFrameOrder:noop,setLoadedTabIds:noop,setRefreshingTabIds:noop,setNavigationStateByTab:noop,setBackgroundMutationCounts:noop,setContextStatusByTab:noop,setContextObstructedByTab:noop,setContextOpenByTab:noop,setRouteLoadingTabId:noop,
     shellStorage:{set:()=>{story.sideEffects.storage++},remove:noop},workspaceTabContextStorageKey:(_slug,id)=>id,saveTabsState:()=>{story.sideEffects.save++},
     nativeNavigationPerformance:{begin:noop,cancel:noop,finish:noop,activate:()=>{story.sideEffects.activate++},bind:noop,finishSource:noop},startNativeNavigation:noop,publishWorkspaceTabActivity:noop,
     nativeWorkspaceRoute:url=>url.includes('/native/')?{key:url}:null,usesNativeCommunications:url=>tabsHelpers.workspaceTabIsCommunications(url,'fixture',window.location.origin),workspaceFrameHasNavigationReceiver:()=>false,normalizeWorkspaceUrl:url=>url,normalizeWorkspaceRoute:url=>url,
@@ -108,7 +108,7 @@ async function fixture(options={}){
    };
    context.updateTabForShellNavigation=(id,url)=>{modes[id]=url.includes('/native/')?'native':'frame';const next=context.tabsRef.current.map(tab=>tab.id===id?{...tab,url}:tab);context.tabsRef.current=next;context.setTabs(next)};
    context.setTabs=update=>setTabsReact(previous=>{const next=typeof update==='function'?update(previous):update;context.tabsRef.current=next;return next});context.setResidentTabIds=setResidents;context.setActiveTabId=setActive;
-   for(const name of ['activateWorkspaceTab','prepareNativeLeave','warmWorkspaceTab','closeTab','switchTab','reopenClosedTab','retryActiveNavigation','navigateActiveTab'])context[name]=evaluate(name,context);
+   for(const name of ['activateWorkspaceTab','prepareNativeLeave','warmWorkspaceTab','discardWorkspaceTabState','closeTab','switchTab','reopenClosedTab','retryActiveNavigation','navigateActiveTab'])context[name]=evaluate(name,context);
    for(const name of ['prepareNativeNavigation','prepareNativePanelNavigation'])if(callbacks[name])context[name]=evaluate(name,context);
   }
   context.activeTabId=active;context.tabsRef.current=tabs;

@@ -31,6 +31,7 @@ import { WorkspaceNavigationPerformanceTracker } from "@/lib/workspace-performan
 import { createWorkspaceNavigationDeadline, workspaceNavigationReadyMatches } from "@/lib/workspace-navigation-lifecycle"
 import { WorkspaceRecordCache } from "@/lib/workspace-record-cache"
 import { WorkspaceTabScrollStore } from "@/lib/workspace-tab-scroll"
+import type { WorkspaceLayout } from "@/lib/workspace-layout"
 import { nativeWorkspaceRoute } from "@/lib/workspace-native"
 import { AccountMenu } from "@/components/account/AccountMenu"
 import { Avatar } from "@/components/account/Avatar"
@@ -168,6 +169,8 @@ type Props = {
     initialTab: WorkspaceInitialTab
     communicationsReadProtocol?: CommunicationReadProtocol
     nativePanelsEnabled?: boolean
+    /** Rollout selection for the redesigned shell; "tabs" renders today's shell. The "today" layout is not built yet. */
+    layout?: WorkspaceLayout
     nativeBanner?: ReactNode
     launchServerTiming?: WorkspaceShellBootstrapTiming
     currentUserId: string
@@ -352,7 +355,7 @@ export function WorkspaceTopBarClient(props: Props) {
     return <WorkspaceTabsShell {...props} />
 }
 
-function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspace, initialWorkspaceUrl, initialTab: bootstrapTab, nativePanelsEnabled = false, nativeBanner, launchServerTiming, currentUserId, username, avatarSrc, workspaceRole, workspaceCapabilities, leaveAction, createRelationshipAction, createWorkItemAction, createAssetAction, createNoteAction, createOkrAction }: Props) {
+function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspace, initialWorkspaceUrl, initialTab: bootstrapTab, nativePanelsEnabled = false, layout = "tabs", nativeBanner, launchServerTiming, currentUserId, username, avatarSrc, workspaceRole, workspaceCapabilities, leaveAction, createRelationshipAction, createWorkItemAction, createAssetAction, createNoteAction, createOkrAction }: Props) {
     // Revalidation may supply a new launch ID. The mounted shell already owns
     // its tabs: changing this ID detaches frame refs and erases their readiness.
     const [initialTab] = useState(() => bootstrapTab)
@@ -2864,7 +2867,7 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
         else navigateActiveTab(href)
     }
 
-    return <div ref={shellRootRef} data-workspace-shell-root data-communications-read-protocol={readProtocol} data-communications-workspace={workspace.id} data-communications-workspace-slug={workspace.slug} data-communications-user={currentUserId}>
+    return <div ref={shellRootRef} data-workspace-shell-root data-workspace-layout={layout} data-communications-read-protocol={readProtocol} data-communications-workspace={workspace.id} data-communications-workspace-slug={workspace.slug} data-communications-user={currentUserId}>
         {/* Keep this stacking context above the sidebar so account and search popups remain clickable. */}
         <header data-workspace-topbar className="fixed left-0 top-0 z-[55] h-14 w-full border-b border-neutral-800 bg-neutral-950 text-white shadow-lg shadow-black/20">
             <div className="grid h-full grid-cols-[minmax(0,1fr)_auto] items-center gap-2 px-3 sm:px-6 md:grid-cols-[minmax(0,1fr)_minmax(20rem,40rem)_minmax(0,1fr)] md:gap-4">

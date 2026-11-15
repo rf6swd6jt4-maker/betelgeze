@@ -54,4 +54,3 @@ begin
         'items', items, 'eligibility', coalesce(groups, '{}'::jsonb), 'fingerprint', fingerprint,
         'history', jsonb_build_object('sellerClients', sellers));
 end $$;
-

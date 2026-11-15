@@ -5,6 +5,7 @@ import { WorkspaceBannerPending } from "@/components/admin/WorkspaceBannerPendin
 import { WorkspaceNativeBanner } from "./WorkspaceNativeBanner"
 import { randomUUID } from "node:crypto"
 import { workspacePerformanceEnabled } from "@/lib/workspace-native"
+import { workspaceLayoutFor } from "@/lib/workspace-layout"
 import { WorkspaceTopBarClient } from "@/components/workspace/WorkspaceTopBarClient"
 import { WorkspaceTabBridge } from "@/components/workspace/WorkspaceTabBridge"
 import { createAssetFromModal, createNoteFromModal, createRelationshipFromModal, createWorkItemFromModal } from "@/app/[workspaceSlug]/relationships/actions"
@@ -67,6 +68,7 @@ export async function WorkspaceTopBar({ readProtocol, userId, workspace, workspa
         workspace={workspace}
         communicationsReadProtocol={readProtocol ?? resolveCommunicationReadProtocol(workspace.id, userId)}
         nativePanelsEnabled={nativePanelsEnabled}
+        layout={workspaceLayoutFor(workspace.id, userId)}
         nativeBanner={nativePanelsEnabled ? <Suspense fallback={<WorkspaceBannerPending />}><WorkspaceNativeBanner workspaceSlug={workspace.slug} /></Suspense> : null}
         initialWorkspaceUrl={initialWorkspaceUrl}
         initialTab={launchTab}

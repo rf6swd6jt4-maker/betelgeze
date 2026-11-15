@@ -35,15 +35,15 @@ try {
             const page = await context.newPage()
             page.on("pageerror", error => errors.push(error.message))
             const t0 = Date.now()
-            let lastHb = Date.now(), dumps = 0
+            let lastHb = 0, dumps = 0
             page.on("console", message => { if (message.text().startsWith("[diag] hb")) lastHb = Date.now(); if (message.text().startsWith("[diag]")) console.log(`+${Date.now() - t0}ms`, message.text()) })
             const dump = label => {
                 try {
-                    console.log(`+${Date.now() - t0}ms [diag] DUMP ${label}\n` + execSync(`ps -eo pid,comm,rss,pcpu,etime --sort=-pcpu | head -15; for p in $(pgrep WebProces); do echo "== pid $p"; ps -o pid,rss,vsz,pcpu,etime,cmd -p $p; grep -E 'VmRSS|VmHWM|Threads' /proc/$p/status; sudo gdb -p $p -batch -nx -ex 'set pagination off' -ex 'info threads' -ex 'thread 1' -ex 'bt 80' 2>&1 | grep -v '^\\[New LWP' | head -120; done; free -m`, { encoding: "utf8", timeout: 60_000, stdio: ["ignore", "pipe", "pipe"] }))
+                    console.log(`+${Date.now() - t0}ms [diag] DUMP ${label}\n` + execSync(`ps -eo pid,comm,rss,pcpu,etime --sort=-pcpu | head -15; for p in $(pgrep WebProces); do echo "== pid $p"; ps -o pid,rss,vsz,pcpu,etime,cmd -p $p; grep -E 'VmRSS|VmHWM|Threads' /proc/$p/status; sudo DEBUGINFOD_URLS= timeout -s KILL 40 gdb -p $p -batch -nx -iex 'set debuginfod enabled off' -ex 'set pagination off' -ex 'info threads' -ex 'thread 1' -ex 'bt 80' 2>&1 | grep -v '^\\[New LWP' | head -120; done; free -m`, { encoding: "utf8", timeout: 120_000, stdio: ["ignore", "pipe", "pipe"] }))
                 } catch (error) { console.log("[diag] dump failed", String(error).slice(0, 2000)) }
             }
             const watchdog = setInterval(() => {
-                if (Date.now() - lastHb > 4000 && dumps < 3) { dumps++; dump(`stall ${dumps} gap=${Date.now() - lastHb}ms`) }
+                if (lastHb && Date.now() - lastHb > 4000 && dumps < 2) { dumps++; dump(`stall ${dumps} gap=${Date.now() - lastHb}ms`) }
             }, 1000)
             process.on("exit", () => clearInterval(watchdog))
             page.on("crash", () => console.log(`+${Date.now() - t0}ms [diag] PAGE CRASH event`))
@@ -57,6 +57,7 @@ try {
             const row = id => surface().locator(`[data-message-interaction="${id}"]`)
             async function open(mode = "team") {
                 await page.setViewportSize({ width: 390, height: 844 })
+                lastHb = 0
                 await page.goto(origin)
                 if (mode === "client") await page.getByRole("tab", { name: "Clients", exact: true }).click()
                 await choose(mode === "team" ? "Project team" : "Northstar Studio")

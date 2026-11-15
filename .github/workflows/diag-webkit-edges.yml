@@ -10,11 +10,11 @@ permissions:
 jobs:
   loop:
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8]
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
         with:
@@ -31,13 +31,15 @@ jobs:
       - name: Loop action edges on WebKit
         env:
           DEBUG: pw:browser
+        shell: bash
         run: |
           failures=0
-          for i in $(seq 1 15); do
+          for i in $(seq 1 12); do
             echo "::group::iteration $i"
-            if ! node scripts/browser/run-comms-action-edges.mjs webkit > "iter-$i.log" 2>&1; then
+            node scripts/browser/run-comms-action-edges.mjs webkit 2>&1 | grep -v ' hb \|pw:browser.*<\(launching\|launched\)'
+            rc=${PIPESTATUS[0]}
+            if [ "$rc" != 0 ]; then
               failures=$((failures+1)); echo "ITERATION $i FAILED"; echo "::endgroup::"
-              grep -v "pw:browser.*<\(launching\|launched\)" "iter-$i.log" | grep -v ' hb ' | tail -400
             else
               echo "iteration $i passed"; echo "::endgroup::"
             fi

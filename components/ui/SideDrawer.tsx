@@ -3,7 +3,7 @@
 import { useEffect, useRef, type ReactNode } from "react"
 
 /** A nonmodal shell companion: chrome remains available above the drawer. */
-export function SideDrawer({ label, onClose, children, modal = false }: { label: string; onClose: () => void; children: ReactNode | ((dismiss: () => void) => ReactNode); modal?: boolean }) {
+export function SideDrawer({ label, onClose, children, modal = false, side = "right" }: { label: string; onClose: () => void; children: ReactNode | ((dismiss: () => void) => ReactNode); modal?: boolean; side?: "right" | "left" }) {
     const ref = useRef<HTMLDialogElement>(null)
     const closeRef = useRef(onClose)
     const releaseRef = useRef<() => void>(() => {})
@@ -51,8 +51,8 @@ export function SideDrawer({ label, onClose, children, modal = false }: { label:
     return <dialog ref={ref} data-workspace-side-drawer aria-label={label} aria-modal={modal}
         onCancel={event => { event.preventDefault(); dismiss() }}
         onClick={event => { if (event.target === event.currentTarget) dismiss() }}
-        className="fixed inset-x-0 top-0 z-50 m-0 h-dvh max-h-none w-full max-w-none overflow-clip border-0 bg-black/60 p-0 text-white backdrop:bg-transparent open:flex open:justify-end">
-        <section data-side-drawer className={`betelgeze-drawer-right flex h-full w-[min(22rem,calc(100%-3rem))] min-w-0 flex-col overflow-hidden border-l border-card-border bg-[var(--color-surface-glass)] pb-[env(safe-area-inset-bottom)] shadow-card backdrop-blur-xl backdrop-saturate-150 ${modal ? "pt-[env(safe-area-inset-top)]" : ""}`}>
+        className={`fixed inset-x-0 top-0 z-50 m-0 h-dvh max-h-none w-full max-w-none overflow-clip border-0 bg-black/60 p-0 text-white backdrop:bg-transparent open:flex ${side === "left" ? "open:justify-start" : "open:justify-end"}`}>
+        <section data-side-drawer className={`${side === "left" ? "betelgeze-drawer-left border-r" : "betelgeze-drawer-right border-l"} flex h-full w-[min(22rem,calc(100%-3rem))] min-w-0 flex-col overflow-hidden border-card-border bg-[var(--color-surface-glass)] pb-[env(safe-area-inset-bottom)] shadow-card backdrop-blur-xl backdrop-saturate-150 ${modal ? "pt-[env(safe-area-inset-top)]" : ""}`}>
             {content}
         </section>
     </dialog>

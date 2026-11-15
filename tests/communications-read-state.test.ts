@@ -32,7 +32,7 @@ test("all activation paths revoke the old chat before queued iframe messages, in
         visit(source)
         assert.ok(callback)
         const code = ts.transpileModule(`const activate = ${callback.getText(source)}`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-        const deps = { publishWorkspaceTabActivity, iframeRefs: { current: frames }, activeTabIdRef: { current: "chat" }, residentTabIdsRef: { current: ["chat", "other"] }, MAX_RESIDENT_WORKSPACE_FRAMES: 3, navigationTimeoutRef: { current: new Map() }, nativeNavigationPerformance: { activate() {} }, setMobileContextKey() {}, setResidentTabIds() {}, setActiveTabId() {} }
+        const deps = { publishWorkspaceTabActivity, iframeRefs: { current: frames }, activeTabIdRef: { current: "chat" }, residentTabIdsRef: { current: ["chat", "other"] }, MAX_RESIDENT_WORKSPACE_FRAMES: 3, navigationTimeoutRef: { current: new Map() }, nativeNavigationPerformance: { activate() {} }, setMobileContextKey() {}, setTodaySheetOpen() {}, setResidentTabIds() {}, setActiveTabId() {} }
         const activate = new Function(...Object.keys(deps), `${code};return activate`)(...Object.values(deps))
         activate("other") // run the actual shell callback used by addTab, close and history
         Object.assign(globalThis, { document: frames.get("chat")!.contentWindow!.document })

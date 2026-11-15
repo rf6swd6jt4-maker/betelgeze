@@ -185,7 +185,7 @@ function shellFixture(native: boolean) {
         softNavigationFallbackRef: ref(new Map()), navigationTimeoutRef: timers,
         navigationErrorRef: failures, navigationFallbackRef: ref(new Map()), pendingNavigationRef: pending,
         readyTabIdsRef: ref(new Set()), nativeRefs: ref(new Map(native ? [["tab", {}]] : [])), iframeRefs: ref(new Map()),
-        nativeNavigationPerformance: { finishTarget() {} }, setMobileContextKey() {}, setRouteLoadingTabId() {}, saveTabsState() {},
+        nativeNavigationPerformance: { finishTarget() {} }, setMobileContextKey() {}, setTodaySheetOpen() {}, setRouteLoadingTabId() {}, saveTabsState() {},
         setTabs: (update: (tabs: Tab[]) => Tab[]) => { tabsRef.current = update(tabsRef.current) },
         setNavigationStateByTab: (update: (state: Record<string, unknown>) => Record<string, unknown>) => {
             const next = update(Object.fromEntries(navigationState)); navigationState.clear()

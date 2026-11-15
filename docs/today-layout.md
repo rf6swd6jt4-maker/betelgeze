@@ -22,10 +22,14 @@ first load. The Today layout keeps that model and hides only its strip:
 
 ## Slices
 
-1. **Frame and Today column (this slice).** From `lg` up: hide the tabs (the strip stays for its context-panel controls), add the Today column between the sidebar
+1. **Frame and Today column.** From `lg` up: hide the tabs (the strip stays for its context-panel controls), add the Today column between the sidebar
    and the work area, open items through `openWorkspaceTab`, mark the active item. Below `lg` the layout keeps the tab
    strip and no column (phones are slice 2). Nothing changes when the switch is off.
-2. **Phones and tablets.** The Today column as the default screen with the work area pushed over it; back returns.
+2. **Phones and tablets.** Below `lg` the tabs are hidden too, and a **Today** button in the strip opens the same
+   column as a left `SideDrawer` sheet; choosing an item closes the sheet and opens it through `openWorkspaceTab`.
+   The sheet opens by itself once at launch when the shell starts on the workspace home or queue. It mounts only while
+   open (no fetches while closed), closes on navigation, tab switches and the other drawers, and reuses Needs
+   attention and the queue cache when reopened within a minute.
 3. **Resident limit.** Replace the "replace the active tab when eight are open" rule with least-recently-used eviction
    that never evicts a destination with unsaved drafts.
 4. **Comms in the context column and drawer.** Changes when messages count as read; needs the user's explicit

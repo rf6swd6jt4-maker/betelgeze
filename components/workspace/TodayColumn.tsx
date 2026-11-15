@@ -33,6 +33,9 @@ const ATTENTION_ROWS = 8
 
 type AttentionState = { status: "loading" } | { status: "ready"; groups: AttentionGroup[] } | { status: "unavailable" } | { status: "error"; message: string }
 
+// Last good result per account and workspace, so reopening the phone sheet or remounting within a minute reuses it.
+const attentionMemory = new Map<string, { state: AttentionState; at: number }>()
+
 function pathOf(url: string) {
     try { return new URL(url, "http://workspace.invalid").pathname.replace(/\/$/, "") } catch { return url }
 }
@@ -65,8 +68,16 @@ export function TodayColumn({ workspaceSlug, workspaceId, userId, canSeeAttentio
     }, [cache, queueKey, queueUrl, workspaceSlug, workspaceId, userId])
     useEffect(() => { loadQueue() }, [loadQueue])
 
-    const [attention, setAttention] = useState<AttentionState>({ status: "loading" })
-    const lastAttention = useRef(0)
+    const memoryKey = `${userId}:${workspaceSlug}`
+    const [attention, setAttentionState] = useState<AttentionState>(() => attentionMemory.get(memoryKey)?.state ?? { status: "loading" })
+    const lastAttention = useRef(attentionMemory.get(memoryKey)?.at ?? 0)
+    const setAttention = useCallback((next: AttentionState | ((current: AttentionState) => AttentionState)) => {
+        setAttentionState(current => {
+            const value = typeof next === "function" ? next(current) : next
+            if (value.status === "ready" || value.status === "unavailable") attentionMemory.set(memoryKey, { state: value, at: lastAttention.current })
+            return value
+        })
+    }, [memoryKey])
     const loadAttention = useCallback(async (signal?: AbortSignal) => {
         lastAttention.current = Date.now()
         try {
@@ -82,11 +93,11 @@ export function TodayColumn({ workspaceSlug, workspaceId, userId, canSeeAttentio
             if (signal?.aborted) return
             setAttention(current => current.status === "ready" ? current : { status: "error", message: error instanceof Error ? error.message : "Could not load what needs attention." })
         }
-    }, [workspaceSlug, userId])
+    }, [workspaceSlug, userId, setAttention])
     useEffect(() => {
         if (!canSeeAttention) return
         const controller = new AbortController()
-        void loadAttention(controller.signal)
+        if (Date.now() - lastAttention.current >= ATTENTION_REFRESH_MS) void loadAttention(controller.signal)
         // Quiet foreground refresh only: no polling and no work while the window is hidden.
         const refresh = () => {
             if (document.visibilityState === "visible" && Date.now() - lastAttention.current >= ATTENTION_REFRESH_MS) void loadAttention(controller.signal)

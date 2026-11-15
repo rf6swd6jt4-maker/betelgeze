@@ -19,6 +19,7 @@ export type PanelLoadingVariant =
     | "notes"
     | "relationships"
     | "queue"
+    | "queue-attention"
     | "sops"
     | "settings"
     | "staff"
@@ -30,6 +31,14 @@ function RelationshipsLoading() {
         <PanelTabHeader title="Relationships" description="People, businesses and the services you deliver together." actions={<LoadingPulse className="h-11 w-full sm:h-10 sm:w-32" />} />
         <PanelLoadingFilters widths={[54, 70, 104, 64, 86, 78]} />
         <PanelLoadingList kind="relationship" />
+    </PanelLoadingFrame>
+}
+
+function QueueAttentionLoading() {
+    return <PanelLoadingFrame title="Needs attention">
+        <PanelTabHeader title="Needs attention" description="Team-wide items nobody may be acting on, oldest first. Up to five of each kind." tabs={<PanelLoadingTabs active={1} />} />
+        <PanelLoadingStats labels={["Open items", "Waiting on a reply", "Overdue"]} />
+        <PanelLoadingList rows={5} />
     </PanelLoadingFrame>
 }
 
@@ -193,6 +202,7 @@ export function PanelRouteLoading({ variant, title }: { variant: PanelLoadingVar
     if (variant === "communications") return <CommunicationsLoading />
     if (variant === "communications-team") return <CommunicationsLoading team />
     if (variant === "queue") return <QueueLoading />
+    if (variant === "queue-attention") return <QueueAttentionLoading />
     if (variant === "sops") return <SopsLoading />
     if (variant === "settings") return <SettingsLoading />
     if (variant === "relationships") return <RelationshipsLoading />

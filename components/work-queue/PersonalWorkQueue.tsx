@@ -6,6 +6,7 @@ import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle, ListTraili
 import { ListActionMenu } from "@/components/list/ListActionMenu"
 import { MobileListActionSurface } from "@/components/list/MobileCardActionSurface"
 import { PanelTabHeader } from "@/components/panel/PanelTabHeader"
+import { QueuePanelTabs } from "@/components/work-queue/QueuePanelTabs"
 import { QuickStats } from "@/components/panel/QuickStats"
 import { FilterRail, FilterRailButton, FilterRailCount } from "@/components/panel/FilterRail"
 import { CenteredDialog } from "@/components/ui/CenteredDialog"
@@ -134,7 +135,7 @@ function PersonalWorkQueueOwner({ data }: { data: PersonalQueueSnapshot }) {
 
     const tone = (item: RankedQueueItem) => item.state === "In progress" ? "yellow" as const : item.state === "Ready" ? "green" as const : "grey" as const
     return <>
-        <PanelTabHeader title="Work Queue" description="Your assigned and shared service work, ordered by readiness and priority." />
+        <PanelTabHeader title="Work Queue" description="Your assigned and shared service work, ordered by readiness and priority." tabs={snapshot.canSeeAttention ? <QueuePanelTabs workspaceSlug={snapshot.workspaceSlug} active="queue" /> : undefined} />
         <QuickStats ariaLabel="Your queue statistics" items={[{label:"Ready",value:snapshot.ready},{label:"Waiting",value:snapshot.deferred},{label:"Open work",value:snapshot.total}]} />
         <FilterRail ariaLabel="Your work"><FilterRailButton selected={view==="ready"} disabled={Boolean(busy)} onClick={()=>void refresh(false,"ready")}>Ready <FilterRailCount>{snapshot.ready}</FilterRailCount></FilterRailButton><FilterRailButton selected={view==="deferred"} disabled={Boolean(busy)} onClick={()=>void refresh(false,"deferred")}>Waiting & scheduled <FilterRailCount>{snapshot.deferred}</FilterRailCount></FilterRailButton></FilterRail>
         {recovery ? <p role="status" className="mt-4 text-sm text-neutral-300">A shared work action needs confirmation. <button className="min-h-11 underline" disabled={Boolean(busy)} onClick={() => void command({id: recovery.id, updated_at: recovery.version, shared: true}, recovery.action)}>Retry same action</button></p> : null}

@@ -23,6 +23,7 @@ function panelLoadingForUrl(value: string, workspaceSlug: string): { variant: Pa
         if (!nested && url.searchParams.get("view") === "okrs") return { variant: "admin-okrs" as const }
         return { variant: "admin" as const }
     }
+    if (panel === "queue" && nested === "attention") return { variant: "queue-attention" as const }
     if (panel === "appointment-setting") return { variant: "client-connections" }
     if (panel === "leadgen") return { variant: nested === "polls" ? "leadgen-polls" as const : "leadgen" as const }
     if (panel === "communications" && (url.searchParams.get("mode") === "team" || url.searchParams.has("dm") || url.searchParams.has("nativeConversation"))) return { variant: "communications-team" as const }

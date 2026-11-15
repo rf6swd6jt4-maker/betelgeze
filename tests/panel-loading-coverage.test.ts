@@ -72,7 +72,7 @@ test("nested and query-sensitive destinations agree across route and shell", () 
     const { WorkspaceTabOpeningState } = load(openingPath)
     const cases = [
         ["admin/activity", "admin-activity"], ["admin/maintenance", "admin-maintenance"], ["admin/okrs", "admin-okrs"],
-        ["leadgen/polls", "leadgen-polls"], ["admin?view=okrs", "admin-okrs"], ["communications?mode=team", "communications-team"],
+        ["leadgen/polls", "leadgen-polls"], ["queue/attention", "queue-attention"], ["admin?view=okrs", "admin-okrs"], ["communications?mode=team", "communications-team"],
     ] as const
     for (const [url, variant] of cases) {
         const [route, query = ""] = url.split("?")

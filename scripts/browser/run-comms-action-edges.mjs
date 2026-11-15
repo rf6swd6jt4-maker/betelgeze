@@ -39,7 +39,7 @@ try {
             page.on("console", message => { if (message.text().startsWith("[diag] hb")) lastHb = Date.now(); if (message.text().startsWith("[diag]")) console.log(`+${Date.now() - t0}ms`, message.text()) })
             const dump = label => {
                 try {
-                    console.log(`+${Date.now() - t0}ms [diag] DUMP ${label}\n` + execSync(`for p in $(pgrep -f WebKitWebProcess); do echo "== pid $p"; ps -o pid,rss,vsz,pcpu,etime,cmd -p $p; grep -E 'VmRSS|VmHWM|Threads' /proc/$p/status; sudo gdb -p $p -batch -nx -ex 'set pagination off' -ex 'info threads' -ex 'thread 1' -ex 'bt 60' 2>&1 | grep -v '^\\[New LWP' | head -120; done; free -m`, { encoding: "utf8", timeout: 60_000, stdio: ["ignore", "pipe", "pipe"] }))
+                    console.log(`+${Date.now() - t0}ms [diag] DUMP ${label}\n` + execSync(`ps -eo pid,comm,rss,pcpu,etime --sort=-pcpu | head -15; for p in $(pgrep WebProces); do echo "== pid $p"; ps -o pid,rss,vsz,pcpu,etime,cmd -p $p; grep -E 'VmRSS|VmHWM|Threads' /proc/$p/status; sudo gdb -p $p -batch -nx -ex 'set pagination off' -ex 'info threads' -ex 'thread 1' -ex 'bt 80' 2>&1 | grep -v '^\\[New LWP' | head -120; done; free -m`, { encoding: "utf8", timeout: 60_000, stdio: ["ignore", "pipe", "pipe"] }))
                 } catch (error) { console.log("[diag] dump failed", String(error).slice(0, 2000)) }
             }
             const watchdog = setInterval(() => {

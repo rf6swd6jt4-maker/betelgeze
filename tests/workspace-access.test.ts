@@ -47,6 +47,7 @@ test("Staff see Library and Communications while operational roles reveal Relati
         "Library",
         "Onboarding Builder",
         "Admin",
+        "Staff",
         "Settings",
     ])
     const byKey = new Map(WORKSPACE_PANELS.map((panel) => [panel.key, panel]))

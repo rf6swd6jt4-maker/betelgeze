@@ -138,3 +138,39 @@ export function footprintPeopleIds(raw: unknown): string[] {
     const groups = (raw as { eligibility?: Record<string, unknown> } | null)?.eligibility ?? {}
     return [...new Set(Object.values(groups).flatMap(ids => Array.isArray(ids) ? ids.filter((id): id is string => typeof id === "string" && UUID.test(id)) : []))]
 }
+
+export type ReassignInput = {
+    expectedUserId: string
+    requestId: string
+    sourceId: string
+    reason: string
+    plan: OffboardPlanEntry[]
+}
+
+/** People eligible for every one of the given items, for the Staff panel's bulk "Move to". */
+export function eligibleForItems(footprint: MemberFootprint, items: FootprintItem[]) {
+    if (!items.length) return []
+    return Object.keys(footprint.people).filter(id => id !== footprint.targetId && items.every(item => !item.blockedReason && eligiblePeople(footprint, item).includes(id)))
+        .sort((left, right) => (footprint.people[left] ?? "").localeCompare(footprint.people[right] ?? ""))
+}
+
+export function validReassignInput(input: ReassignInput) {
+    return UUID.test(input.expectedUserId) && UUID.test(input.requestId) && UUID.test(input.sourceId)
+        && typeof input.reason === "string" && input.reason.trim().length > 0 && input.reason.length <= 1000
+        && Array.isArray(input.plan) && input.plan.length > 0 && input.plan.length <= 300
+        && new Set(input.plan.map(entry => entry.key)).size === input.plan.length
+        && input.plan.every(entry => typeof entry.key === "string" && entry.key.length <= 200 && KINDS.has(entry.key.split(":")[0] as FootprintKind)
+            && MD5.test(entry.fingerprint) && typeof entry.recipientId === "string" && UUID.test(entry.recipientId) && entry.recipientId !== input.sourceId)
+}
+
+export type StaffWorkloadRow = {
+    userId: string
+    name: string
+    role: string
+    joinedAt: string | null
+    avatarSrc: string | null
+    clients: number
+    services: number
+    queues: number
+    tasks: number
+}

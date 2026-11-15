@@ -9,7 +9,7 @@ import { createAccountToken, hashAccountToken } from "@/lib/auth/account-tokens"
 import { accountFlowV2Enabled } from "@/lib/auth/account-flow"
 import { authOrigin } from "@/lib/auth/origin"
 import { workspaceRemovalBlockedMessage } from "@/lib/offboarding-blockers"
-import { validOffboardInput, type OffboardInput } from "@/lib/member-offboarding"
+import { validOffboardInput, validReassignInput, type OffboardInput, type ReassignInput } from "@/lib/member-offboarding"
 
 export type WorkspaceInvitationActionState = {
     ok: boolean
@@ -207,6 +207,31 @@ export async function offboardWorkspaceMember(slug: string, input: OffboardInput
     }
     revalidatePath(`/${slug}/settings`)
     return { ok: true, message: "Assignments moved and the person was removed." }
+}
+
+/** Staff panel "Move to": moves some of a member's assignments and keeps their membership. Idempotent by request id. */
+export async function reassignWorkspaceMemberItems(slug: string, input: ReassignInput): Promise<OffboardWorkspaceMemberResult> {
+    const { workspace, user } = await requireUserManager(slug)
+    if (user.id !== input.expectedUserId || !validReassignInput(input)) {
+        return { ok: false, uncertain: false, message: "Choose who takes the selected assignments and add a reason." }
+    }
+    const { error } = await supabaseAdmin.rpc("reassign_workspace_member_items", {
+        p_workspace: workspace.id, p_actor: user.id, p_request: input.requestId, p_source: input.sourceId,
+        p_input: { reason: input.reason.trim(), plan: input.plan },
+    })
+    if (error) {
+        const definitive = /^[0-9A-Z]{5}$/.test(error.code ?? "")
+        if (!definitive) console.error("Staff reassignment could not be confirmed", { workspaceId: workspace.id, sourceId: input.sourceId, error: error.message })
+        return {
+            ok: false, uncertain: !definitive,
+            message: error.code === "P0001" ? error.message
+                : error.code === "55P03" ? "Someone else is changing these clients. Nothing was moved; try again."
+                : definitive ? "Betelgeze could not move these assignments. Nothing was changed; try again."
+                : "The move could not be confirmed. Retry the same request to check whether it completed.",
+        }
+    }
+    revalidatePath(`/${slug}/staff`, "layout")
+    return { ok: true, message: "Assignments moved." }
 }
 
 export type AdminMfaResetActionState = { ok: boolean; message: string }

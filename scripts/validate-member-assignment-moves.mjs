@@ -71,6 +71,15 @@ try {
     await db.exec('set session_replication_role = origin')
     pass('full schema replays with the new migration and the fixture seeds')
 
+    // Staff panel counts: owned tasks and tasks they collaborate on without owning, counted once each.
+    const workload = (await one('select public.workspace_member_workload($1,$2) w', [ws, owner])).w
+    const mine = workload.find(row => row.userId === source)
+    assert.deepEqual({ clients: mine.clients, services: mine.services, queues: mine.queues, tasks: mine.tasks }, { clients: 1, services: 1, queues: 1, tasks: 5 })
+    assert.deepEqual(workload.find(row => row.userId === third), { ...workload.find(row => row.userId === third), clients: 1, services: 1, tasks: 1 })
+    assert.equal(workload.length, 5)
+    await assert.rejects(q('select public.workspace_member_workload($1,$2)', [ws, third]), /Owner or admin required/)
+    pass('the Staff panel counts clients, services, queues and open tasks per member, for owners and admins only')
+
     // Preview: one entry per movable responsibility; work under the person's own service follows it.
     let p = await preview()
     const keys = p.items.map(i => i.key).sort()

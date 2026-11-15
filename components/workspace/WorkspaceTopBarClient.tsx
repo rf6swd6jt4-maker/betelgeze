@@ -284,6 +284,10 @@ function LeadIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="M4 19V5" /><path d="M4 19h16" /><path d="m7 15 4-4 3 3 5-7" /></svg>
 }
 
+function StaffIcon() {
+    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><circle cx="9" cy="8" r="3" /><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" /><path d="M16 4.5a3 3 0 0 1 0 6" /><path d="M21 20c0-2.6-1.6-4.8-4-5.6" /></svg>
+}
+
 function AdminIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="M12 3 5 6v5c0 4.7 2.8 8 7 10 4.2-2 7-5.3 7-10V6l-7-3Z" /><path d="M9 12h6" /><path d="M12 9v6" /></svg>
 }
@@ -302,6 +306,7 @@ function workspacePanelIcon(key: WorkspacePanelKey) {
     if (key === "onboarding-builder") return <BuilderIcon />
     if (key === "leadgen") return <LeadIcon />
     if (key === "admin") return <AdminIcon />
+    if (key === "staff") return <StaffIcon />
     return <SettingsIcon />
 }
 

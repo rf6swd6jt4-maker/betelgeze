@@ -12,7 +12,7 @@ function panelLoadingForUrl(value: string, workspaceSlug: string): { variant: Pa
     if (workspaceRouteIsRecordDetail(value, workspaceSlug, "http://localhost")) {
         const titles: Record<string, string> = {
             relationships: "relationship", assets: "asset", notes: "note",
-            onboarding: "onboarding", work: "fulfilment", "work-items": "work item",
+            onboarding: "onboarding", work: "fulfilment", "work-items": "work item", staff: "staff member",
         }
         return { variant: "detail", title: panel === "admin" ? nested === "okrs" ? "OKR" : "activity event" : titles[panel] ?? "record" }
     }
@@ -36,6 +36,7 @@ function panelLoadingForUrl(value: string, workspaceSlug: string): { variant: Pa
         queue: "queue",
         sops: "sops",
         settings: "settings",
+        staff: "staff",
         work: "fulfilment",
         "work-items": "work-items",
     }

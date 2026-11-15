@@ -3,6 +3,7 @@ export const WORKSPACE_SHELL_REQUEST_HEADER = "x-betelgeze-workspace-shell"
 
 const WORKSPACE_SHELL_SECTIONS = new Set([
     "admin",
+    "staff",
     "client-connections",
     "assets",
     "communications",

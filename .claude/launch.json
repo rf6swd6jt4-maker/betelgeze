@@ -27,6 +27,14 @@
         "scripts/serve-member-offboarding-fixture.mjs"
       ],
       "port": 3108
+    },
+    {
+      "name": "today-column-fixture",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "scripts/serve-today-column-fixture.mjs"
+      ],
+      "port": 3109
     }
   ]
 }

@@ -32,6 +32,7 @@ import { createWorkspaceNavigationDeadline, workspaceNavigationReadyMatches } fr
 import { WorkspaceRecordCache } from "@/lib/workspace-record-cache"
 import { WorkspaceTabScrollStore } from "@/lib/workspace-tab-scroll"
 import type { WorkspaceLayout } from "@/lib/workspace-layout"
+import { TodayColumn, useTodayColumnVisible } from "./TodayColumn"
 import { nativeWorkspaceRoute } from "@/lib/workspace-native"
 import { AccountMenu } from "@/components/account/AccountMenu"
 import { Avatar } from "@/components/account/Avatar"
@@ -2040,6 +2041,14 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
         }
     }, [])
 
+    const todayColumnVisible = useTodayColumnVisible(layout === "today")
+
+    useEffect(() => {
+        // The Today layout restyles only the shell frame (globals.css); the resident tab model below is unchanged.
+        document.body.dataset.workspaceLayout = layout
+        return () => { delete document.body.dataset.workspaceLayout }
+    }, [layout])
+
     useEffect(() => {
         document.body.dataset.workspaceSidebarOpen = sidebarOpen ? "true" : "false"
         document.body.dataset.workspaceSidebarTransition = sidebarTransitionEnabled ? "true" : "false"
@@ -3100,6 +3109,12 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
             )}
             {tabsHydrated && activeNavigation?.status === "error" ? <div role="alert" className="absolute right-4 top-4 z-20 flex items-center gap-3 rounded-lg border border-red-500/30 bg-neutral-950/95 px-3 py-2 text-xs text-red-200 shadow-xl"><span>{activeNavigation.error}</span><button type="button" onClick={retryActiveNavigation} className="font-medium text-white underline decoration-neutral-600 underline-offset-2">Retry</button></div> : null}
         </div>
+
+        {todayColumnVisible ? <div data-workspace-today-shell className="fixed bottom-0 top-14 z-30 hidden border-r border-neutral-800 bg-neutral-950 lg:block">
+            <TodayColumn workspaceSlug={workspace.slug} workspaceId={workspace.id} userId={currentUserId}
+                canSeeAttention={workspaceRole === "owner" || workspaceRole === "admin"} cache={nativeCache}
+                activeUrl={activeTab.url} onOpen={(href) => { void openWorkspaceTab(href) }} />
+        </div> : null}
 
         {activeRelationshipContext && !activeRouteLoading && (
             <ShellRelationshipContextPanel

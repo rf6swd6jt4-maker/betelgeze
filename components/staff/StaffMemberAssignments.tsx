@@ -116,7 +116,7 @@ export function StaffMemberAssignments({ workspaceSlug, currentUserId, initial }
                         people={people.map(id => ({ id, name: footprint.people[id] ?? "Workspace member" }))} onChange={value => { request.current = null; setRecipient(value); setError("") }} className="min-h-11 min-w-44" />
                     : <p className="text-sm text-neutral-400">Nobody is eligible for all of these. Select fewer.</p> : null}
                 <input value={reason} disabled={frozen} maxLength={1000} onChange={event => { request.current = null; setReason(event.target.value) }} aria-label="Reason" placeholder="Reason, for example: covering while away"
-                    className="min-h-11 min-w-0 flex-1 rounded-lg border border-neutral-700 bg-black px-3 text-base sm:text-sm" />
+                    className="min-h-11 w-full min-w-0 basis-full rounded-lg border border-neutral-700 bg-black px-3 text-base sm:w-auto sm:basis-0 sm:flex-1 sm:text-sm" />
                 <Button variant="ghost" disabled={frozen} onClick={() => { request.current = null; setSelected([]); setError(""); setStale(false) }}>Clear</Button>
                 {stale ? <Button variant="secondary" disabled={refreshing} onClick={() => void refresh()}>Reload</Button> : null}
                 <Button disabled={pending || stale || refreshing || (!uncertain && !ready)} onClick={move}>{pending ? "Moving…" : uncertain ? "Retry same request" : "Move"}</Button>

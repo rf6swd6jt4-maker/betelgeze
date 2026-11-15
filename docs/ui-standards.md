@@ -478,6 +478,24 @@ The two dividers are deliberately different weights of the same soft hairline la
 - Creator avatars in lists use the stable, versioned `/api/profile-avatars/[username]` rendition rather than direct signed upload URLs. This keeps the displayed file small and cacheable across tab openings; do not restore per-render signed URLs in list implementations.
 - A genuine failed or critical record may add a very faint semantic wash to `ListItem`, but this must not replace its `Status` or alter the standard geometry.
 
+### Compact companion lists
+
+A shell companion column (the Today column, 22rem wide) cannot hold the two-band row. Its records use `ListCompactItem`
+inside `List flush` (`flush` drops the list's top margin when a section heading sits directly above it):
+
+- The whole record is one activation target. It never contains a second control, so use plain text rather than an
+  interactive `Assignee`.
+- Line one is meta: exactly one `Status` on the left and one short measurement on the right (waiting time or effort).
+  Line two is the title, `text-sm font-medium`, at most two lines. Line three is one non-wrapping supporting line, with
+  the client first and a deadline right-aligned; a passed deadline uses the red status text colour.
+- The record open in the work area sets `current`: `aria-current="page"`, the `bg-white/[0.06]` wash and a 2px inset
+  marker in `--color-text-primary` on the leading edge. Hover uses `--color-surface-hover`.
+- Small text in this row is `text-neutral-400`, not the tertiary token, so 12px text keeps its contrast on the surface.
+- Loading shows three placeholder records with `LoadingPulse`; empty states use a green `Status` in the same surface.
+
+This variant is for companion columns only. Panel collections keep the two-band anatomy, and a companion list never
+gains per-row menus, pills or secondary actions.
+
 ### Reference mappings
 
 - Lead: owner and company; callability status; phone, source, industry, location, score; ID, created time, Betelgeze creator, actions.
@@ -678,6 +696,24 @@ Keep permission-aware shortcuts in a compact two-column navigation area outside 
 At `lg` and above, retain the desktop sidebar preference and reserve its width in the page. Below `lg`, context opens explicitly from the tab-bar icon in the shared `SideDrawer`: a right-edge `240ms` slide on the shared `cubic-bezier(0.22, 1, 0.36, 1)` ease, matching the left navigation's own slide timing, bounded below the intact interactive top bar using the existing shell viewport measurements. Its stationary dimmed dismiss surface covers only the area below that bar. Covered panel/tab content is inert while open; focus moves into the drawer and returns on dismissal without stealing focus from a header action. Use a nonmodal dialog inside the shell, never a portalled top-layer modal. Left and right navigation close each other. Escape/backdrop dismissal is supported. Reduced motion disables the slide; dismissal is immediate. Opening this drawer does not change the desktop preference. Close it on navigation, tab switches, and desktop resizing. Identity and lifecycle come first, followed by contact details, services/team, notes and secondary metadata. Contact values wrap and offer link/copy actions with visible success or failure feedback. Context messages carry their route identity so a late response or cleanup cannot replace another destination's reference. Unsupported routes do not erase the desktop preference.
 
 `SideDrawer` takes `side="left"` for a left-edge sheet with the same surface, timing, inertness, focus and dismissal rules (`betelgeze-drawer-left`, also disabled under reduced motion). The Today layout uses it below `lg` for its Today sheet; the context drawer stays on the right.
+
+### Docked chat and SegmentedSwitch
+
+In the Today layout at `lg` and above, the client column can show a docked chat in place of the context reference, and
+the top bar's `Comms` button (`Button` secondary, with `UnreadMessageCount`) opens the conversation list as a drawer.
+Both use the context panel's surface and position: frosted `--color-surface-glass`, `rounded-xl`, `border-card-border`,
+`shadow-card`, below the tab bar. The column dock is 20rem wide at level `35`; the drawer is 25rem at `36`, opens with
+`betelgeze-popup-enter` and closes immediately. Neither dims or makes the work area inert, and neither is offered
+below `lg`. The header carries the client or `Comms`, a close control, and for the drawer `Open full view`.
+
+`SegmentedSwitch` is the control for two or three views of one companion surface: a canvas-coloured track with a
+`border-card-border` edge, 30px segments, the selected segment on `bg-neutral-800` with primary text. It reports
+`aria-pressed`, never navigates and never filters a collection; use `PanelTabs` or `FilterRail` for those. The column's
+switch reads `Context` / `Chat` in both the context panel and the docked chat so it stays in the same place.
+
+While the dock opens it shows message-shaped `LoadingPulse` placeholders on the dark canvas, never a white frame. A dock
+that cannot confirm its work is saved stays open with a short red notice in its header. `app-alerts.md` governs when a
+docked chat counts as read.
 
 ## Client portal calendar
 

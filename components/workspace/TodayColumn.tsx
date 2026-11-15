@@ -1,12 +1,14 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
-import { List, ListItem, ListPrimaryRow, ListSecondaryRow } from "@/components/list/List"
-import { Status } from "@/components/ui"
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react"
+import { List, ListCompactItem } from "@/components/list/List"
+import { LoadingPulse } from "@/components/panel/PanelLoading"
+import { Button, RoundPill, Status } from "@/components/ui"
 import { nativePanelCacheKey, readNativePanel, type NativePanelSnapshot } from "@/components/workspace/NativeWorkspaceTab"
 import { ATTENTION_LABELS, attentionHref, type AttentionGroup } from "@/lib/needs-attention"
 import type { PersonalQueueSnapshot } from "@/lib/work-queue/server"
 import { rankQueue } from "@/lib/work-queue/ranking"
+import { dueLabel, effortLabel, waitingLabel } from "@/lib/today-column"
 import type { WorkspaceRecordCache } from "@/lib/workspace-record-cache"
 
 const ATTENTION_REFRESH_MS = 60_000
@@ -30,6 +32,10 @@ export function useTodayColumnVisible(enabled: boolean) {
 }
 const QUEUE_ROWS = 12
 const ATTENTION_ROWS = 8
+const RECENT_ROWS = 5
+
+/** Another destination that is still open in the shell; choosing it is a memory switch, not a load. */
+export type TodayRecentDestination = { id: string; title: string; url: string }
 
 type AttentionState = { status: "loading" } | { status: "ready"; groups: AttentionGroup[] } | { status: "unavailable" } | { status: "error"; message: string }
 
@@ -40,17 +46,45 @@ function pathOf(url: string) {
     try { return new URL(url, "http://workspace.invalid").pathname.replace(/\/$/, "") } catch { return url }
 }
 
-function rowButtonClass(active: boolean) {
-    return `min-h-11 min-w-0 flex-1 truncate text-left text-base font-medium ${active ? "text-white underline decoration-neutral-500 underline-offset-4" : "text-neutral-100 hover:text-white"}`
+function readCollapsed(key: string) {
+    try { return window.localStorage.getItem(key) === "1" } catch { return false }
+}
+
+function SectionHeading({ id, title, count, action }: { id: string; title: string; count?: ReactNode; action?: ReactNode }) {
+    return <div className="mb-2 flex min-h-9 items-center gap-2 px-1">
+        <h2 id={id} className="text-sm font-semibold text-neutral-100">{title}</h2>
+        {count}
+        {action ? <span className="ml-auto flex shrink-0 items-center">{action}</span> : null}
+    </div>
+}
+
+/** Three quiet placeholder records while a section's first read is in flight. */
+function LoadingRows({ label }: { label: string }) {
+    return <List flush ariaLabel={label}>
+        <div role="status" aria-label={label} className="divide-y divide-[var(--color-card-border)]">
+            {[72, 56, 64].map(width => <div key={width} aria-hidden="true" className="flex flex-col gap-2 px-3.5 py-3">
+                <LoadingPulse className="h-3 w-20" />
+                <LoadingPulse className="h-4" style={{ width: `${width}%` }} />
+            </div>)}
+        </div>
+    </List>
+}
+
+function Notice({ children, tone = "quiet" }: { children: ReactNode; tone?: "quiet" | "error" }) {
+    return <p role={tone === "error" ? "alert" : undefined} className={`rounded-2xl border border-card-border bg-[var(--color-surface-1)] px-3.5 py-3 text-sm ${tone === "error" ? "text-red-200" : "text-neutral-400"}`}>{children}</p>
+}
+
+function Chevron({ open }: { open: boolean }) {
+    return <svg aria-hidden="true" viewBox="0 0 24 24" className={`h-4 w-4 shrink-0 text-neutral-400 ${open ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="m6 9 6 6 6-6" /></svg>
 }
 
 /**
  * The Today layout's left column: your queue and, for owners and admins, what needs attention. It never owns navigation:
  * every item opens through the shell's openWorkspaceTab, so resident destinations, draft checks and context stay intact.
  */
-export function TodayColumn({ workspaceSlug, workspaceId, userId, canSeeAttention, cache, activeUrl, onOpen }: {
+export function TodayColumn({ workspaceSlug, workspaceId, userId, canSeeAttention, cache, activeUrl, recent = [], onOpen }: {
     workspaceSlug: string; workspaceId: string; userId: string; canSeeAttention: boolean
-    cache: WorkspaceRecordCache<NativePanelSnapshot>; activeUrl: string; onOpen: (href: string) => void
+    cache: WorkspaceRecordCache<NativePanelSnapshot>; activeUrl: string; recent?: TodayRecentDestination[]; onOpen: (href: string) => void
 }) {
     const queueUrl = `/${workspaceSlug}/queue`
     const queueKey = nativePanelCacheKey(userId, workspaceId, queueUrl)
@@ -78,8 +112,11 @@ export function TodayColumn({ workspaceSlug, workspaceId, userId, canSeeAttentio
             return value
         })
     }, [memoryKey])
+    // The clock for relative wording ("26h", "Due today"). It advances with each Needs attention read, never on a timer.
+    const [now, setNow] = useState(() => Date.now())
     const loadAttention = useCallback(async (signal?: AbortSignal) => {
         lastAttention.current = Date.now()
+        setNow(lastAttention.current)
         try {
             const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceSlug)}/needs-attention`, {
                 cache: "no-store", redirect: "error", credentials: "same-origin", headers: { "x-workspace-user": userId },
@@ -114,51 +151,82 @@ export function TodayColumn({ workspaceSlug, workspaceId, userId, canSeeAttentio
         ? attention.groups.flatMap(group => group.items.map(item => ({ group, item, href: attentionHref(workspaceSlug, group.kind, item) }))).slice(0, ATTENTION_ROWS)
         : []
     const attentionTotal = attention.status === "ready" ? attention.groups.reduce((sum, group) => sum + group.total, 0) : 0
+    const attentionUrl = `/${workspaceSlug}/queue/attention`
 
-    return <aside data-workspace-today-column aria-label="Today" className="flex h-full flex-col gap-4 overflow-y-auto overscroll-contain p-3">
+    // Remembered per person and workspace on this device only; the column works the same when storage is unavailable.
+    const collapsedKey = `betelgeze:today:attention-collapsed:${userId}:${workspaceSlug}`
+    const [attentionCollapsed, setAttentionCollapsed] = useState(() => readCollapsed(collapsedKey))
+    const toggleAttention = () => setAttentionCollapsed(current => {
+        try { window.localStorage.setItem(collapsedKey, current ? "0" : "1") } catch { /* preference only */ }
+        return !current
+    })
+    const recentRows = recent.filter(destination => pathOf(destination.url) !== activePath).slice(0, RECENT_ROWS)
+
+    return <aside data-workspace-today-column aria-label="Today" className="flex h-full flex-col gap-5 overflow-y-auto overscroll-contain px-3 pb-6 pt-3">
         {canSeeAttention ? <section aria-labelledby="today-attention">
-            <div className="mb-2 flex items-center gap-2 px-1">
-                <h2 id="today-attention" className="text-sm font-semibold text-neutral-200">Needs attention</h2>
-                {attention.status === "ready" ? <span className="text-sm text-neutral-500">{attentionTotal}</span> : null}
-                <button type="button" onClick={() => onOpen(`/${workspaceSlug}/queue/attention`)} className="ml-auto min-h-11 text-sm text-neutral-400 underline">See all</button>
+            <div className="mb-2 flex min-h-9 items-center gap-1 px-1">
+                <button type="button" data-today-attention-toggle aria-expanded={!attentionCollapsed} aria-controls="today-attention-list" onClick={toggleAttention}
+                    className="flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-neutral-500">
+                    <h2 id="today-attention" className="text-sm font-semibold text-neutral-100">Needs attention</h2>
+                    {attention.status === "ready" && attentionTotal > 0 ? <RoundPill tone="red" className="tabular-nums">{attentionTotal > 99 ? "99+" : attentionTotal}</RoundPill> : null}
+                    <Chevron open={!attentionCollapsed} />
+                </button>
+                <Button variant="ghost" size="sm" onClick={() => onOpen(attentionUrl)}>See all</Button>
             </div>
-            {attention.status === "loading" ? <p role="status" className="px-1 text-sm text-neutral-500">Loading…</p>
-                : attention.status === "unavailable" ? <p className="px-1 text-sm text-neutral-500">Needs a database update.</p>
-                : attention.status === "error" ? <p role="alert" className="px-1 text-sm text-red-300">{attention.message} <button type="button" className="min-h-11 underline" onClick={() => void loadAttention()}>Retry</button></p>
-                : attentionRows.length === 0 ? <p className="px-1 text-sm text-neutral-500">Nothing needs attention.</p>
-                : <List ariaLabel="Needs attention">{attentionRows.map(({ group, item, href }) => {
-                    const meta = ATTENTION_LABELS[group.kind]
-                    const clientFirst = group.kind === "waiting_on_reply" || group.kind === "stalled_onboarding"
-                    return <ListItem key={`${group.kind}:${item.recordId}`}>
-                        <ListPrimaryRow>
-                            {href ? <button type="button" onClick={() => onOpen(href)} aria-current={pathOf(href) === activePath ? "page" : undefined} className={rowButtonClass(pathOf(href) === activePath)}>{clientFirst ? item.client ?? item.title : item.title}</button>
-                                : <span className="min-w-0 flex-1 truncate text-base font-medium text-neutral-100">{item.title}</span>}
-                        </ListPrimaryRow>
-                        <ListSecondaryRow><Status label={meta.label} tone={meta.tone} /><span className="min-w-0 truncate text-neutral-500">{clientFirst ? "" : item.client ?? ""}</span></ListSecondaryRow>
-                    </ListItem>
-                })}</List>}
+            {attentionCollapsed ? null : <div id="today-attention-list">
+                {attention.status === "loading" ? <LoadingRows label="Loading what needs attention" />
+                    : attention.status === "unavailable" ? <Notice>Needs a database update.</Notice>
+                    : attention.status === "error" ? <Notice tone="error">{attention.message} <button type="button" className="underline underline-offset-2" onClick={() => void loadAttention()}>Retry</button></Notice>
+                    : attentionRows.length === 0 ? <Notice><Status label="Nothing needs attention" tone="green" /></Notice>
+                    : <List flush ariaLabel="Needs attention">
+                        {attentionRows.map(({ group, item, href }) => {
+                            const meta = ATTENTION_LABELS[group.kind]
+                            const clientFirst = group.kind === "waiting_on_reply" || group.kind === "stalled_onboarding"
+                            const waiting = waitingLabel(item.since, now)
+                            return <ListCompactItem key={`${group.kind}:${item.recordId}`}
+                                current={href ? pathOf(href) === activePath : false}
+                                onOpen={href ? () => onOpen(href) : undefined}
+                                meta={<><Status label={meta.label} tone={meta.tone} />{waiting ? <span className="ml-auto shrink-0 tabular-nums" title={`Waiting ${waiting}`}>{waiting}</span> : null}</>}
+                                title={clientFirst ? item.client ?? item.title : item.title}
+                                supporting={!clientFirst && item.client ? <span className="truncate">{item.client}</span> : undefined} />
+                        })}
+                        {attentionTotal > attentionRows.length ? <ListCompactItem onOpen={() => onOpen(attentionUrl)} current={pathOf(attentionUrl) === activePath}
+                            title={<span className="font-normal text-neutral-300">{attentionTotal - attentionRows.length} more in Needs attention</span>} /> : null}
+                    </List>}
+            </div>}
         </section> : null}
 
         <section aria-labelledby="today-queue">
-            <div className="mb-2 flex items-center gap-2 px-1">
-                <h2 id="today-queue" className="text-sm font-semibold text-neutral-200">Your queue</h2>
-                {queue ? <span className="text-sm text-neutral-500">{queue.ready}</span> : null}
-                <button type="button" onClick={() => onOpen(queueUrl)} className="ml-auto min-h-11 text-sm text-neutral-400 underline">Open queue</button>
-            </div>
-            {queueError && !queue ? <p role="alert" className="px-1 text-sm text-red-300">{queueError} <button type="button" className="min-h-11 underline" onClick={() => loadQueue(true)}>Retry</button></p>
-                : !queue ? <p role="status" className="px-1 text-sm text-neutral-500">Loading…</p>
-                : queueItems.length === 0 ? <p className="px-1 text-sm text-neutral-500">Nothing ready for you.</p>
-                : <List ariaLabel="Your queue">{queueItems.map(item => {
+            <SectionHeading id="today-queue" title="Your queue"
+                count={queue ? <span className="text-sm tabular-nums text-neutral-400">{queue.ready}</span> : null}
+                action={<Button variant="ghost" size="sm" onClick={() => onOpen(queueUrl)}>Open queue</Button>} />
+            {queueError && !queue ? <Notice tone="error">{queueError} <button type="button" className="underline underline-offset-2" onClick={() => loadQueue(true)}>Retry</button></Notice>
+                : !queue ? <LoadingRows label="Loading your queue" />
+                : queueItems.length === 0 ? <Notice><Status label="Nothing ready for you" tone="green" /></Notice>
+                : <List flush ariaLabel="Your queue">{queueItems.map(item => {
                     const href = `/${workspaceSlug}/work-items/${item.id}`
-                    const active = pathOf(href) === activePath
-                    return <ListItem key={item.id}>
-                        <ListPrimaryRow><button type="button" onClick={() => onOpen(href)} aria-current={active ? "page" : undefined} className={rowButtonClass(active)}>{item.title}</button></ListPrimaryRow>
-                        <ListSecondaryRow>
+                    const effort = effortLabel(item.calibrated_minutes ?? item.assessment?.effort_minutes)
+                    const due = dueLabel(item.due_at, now)
+                    const supporting = [item.relationship, item.shared && item.state === "In progress" && item.started_by_name ? `Started by ${item.started_by_name}` : null].filter(Boolean).join(" · ")
+                    return <ListCompactItem key={item.id} current={pathOf(href) === activePath} onOpen={() => onOpen(href)}
+                        meta={<>
                             <Status label={item.state} tone={item.state === "In progress" ? "yellow" : item.state === "Ready" ? "grey" : "red"} />
-                            <span className="min-w-0 truncate text-neutral-500">{item.relationship ?? ""}</span>
-                        </ListSecondaryRow>
-                    </ListItem>
+                            {effort ? <span className="ml-auto shrink-0 tabular-nums">{effort}</span> : null}
+                        </>}
+                        title={item.title}
+                        supporting={supporting || due ? <>
+                            {supporting ? <span className="min-w-0 truncate">{supporting}</span> : null}
+                            {due ? <span className={`ml-auto shrink-0 ${due.late ? "text-red-200" : ""}`}>{due.label}</span> : null}
+                        </> : undefined} />
                 })}</List>}
         </section>
+
+        {recentRows.length ? <section aria-labelledby="today-recent">
+            <SectionHeading id="today-recent" title="Still open" />
+            <List flush ariaLabel="Still open">
+                {recentRows.map(destination => <ListCompactItem key={destination.id} onOpen={() => onOpen(destination.url)}
+                    title={<span className="font-normal text-neutral-200">{destination.title}</span>} />)}
+            </List>
+        </section> : null}
     </aside>
 }

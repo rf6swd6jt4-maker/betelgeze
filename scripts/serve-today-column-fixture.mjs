@@ -16,15 +16,15 @@ const item = (n, title, extra = {}) => ({ id: id(100 + n), title, status: "todo"
 const queue = {
     kind: "queue", userId: me, workspaceId: ws, workspaceSlug: "fixture", view: "ready", ready: 4, deferred: 1, total: 5,
     items: [
-        item(1, "Monthly performance report", { status: "doing", relationship: "Harbor Fitness" }),
-        item(2, "Launch spring offer campaign", { relationship: "Lumen Physio" }),
-        item(3, "Kick-off call notes", { relationship: "Northwind Dental" }),
-        item(4, "Refresh ad creatives", { relationship: "Cedar & Pine Interiors", blocked: true }),
+        item(1, "Monthly performance report", { status: "doing", relationship: "Harbor Fitness", calibrated_minutes: 45, due_at: new Date(Date.now() + 3 * 3_600_000).toISOString() }),
+        item(2, "Launch spring offer campaign with the approved creatives and budget", { relationship: "Lumen Physio", calibrated_minutes: 60, due_at: new Date(Date.now() + 26 * 3_600_000).toISOString() }),
+        item(3, "Kick-off call notes", { relationship: "Northwind Dental", calibrated_minutes: 20 }),
+        item(4, "Refresh ad creatives", { relationship: "Cedar & Pine Interiors", blocked: true, calibrated_minutes: 150, due_at: new Date(Date.now() - 50 * 3_600_000).toISOString() }),
     ],
 }
 const attention = { available: true, groups: [
     { kind: "waiting_on_reply", total: 1, items: [{ since: new Date(Date.now() - 2 * 86_400_000).toISOString(), relationshipId: id(30), client: "North Texas Shutters", title: "Client message waiting for a reply", recordId: id(30) }] },
-    { kind: "disputed_task", total: 16, items: [{ since: null, relationshipId: null, client: null, title: "Bug: application page failed", recordId: id(200) }, { since: null, relationshipId: id(31), client: "PRO Construction", title: "Calculate budget assumptions", recordId: id(201) }] },
+    { kind: "disputed_task", total: 16, items: [{ since: new Date(Date.now() - 5 * 3_600_000).toISOString(), relationshipId: null, client: null, title: "Bug: application page failed", recordId: id(200) }, { since: null, relationshipId: id(31), client: "PRO Construction", title: "Calculate budget assumptions", recordId: id(201) }] },
     { kind: "overdue_task", total: 1, items: [{ since: null, relationshipId: null, client: null, title: "Familiarise yourself with Betelgeze", recordId: id(202) }] },
 ] }
 try {
@@ -38,13 +38,13 @@ export async function readNativePanel({url,workspaceSlug,userId,signal}){const r
 import{TodayColumn,useTodayColumnVisible}from"@/components/workspace/TodayColumn";import{WorkspaceRecordCache}from"@/lib/workspace-record-cache";import{SideDrawer}from"@/components/ui/SideDrawer";
 const cache=new WorkspaceRecordCache();
 document.body.dataset.workspaceLayout="today";document.documentElement.style.setProperty("--workspace-sidebar-width","5rem");
-function Shell(){const[url,setUrl]=useState("/fixture/queue");const[sheet,setSheet]=useState(false);const visible=useTodayColumnVisible(true);const staff=new URLSearchParams(location.search).has("staff");return <>
+function Shell(){const[url,setUrl]=useState("/fixture/queue");const[sheet,setSheet]=useState(false);const visible=useTodayColumnVisible(true);const staff=new URLSearchParams(location.search).has("staff");const recent=[{id:"r1",title:"Harbor Fitness",url:"/fixture/relationships/harbor"},{id:"r2",title:"Staff",url:"/fixture/staff"},{id:"r3",title:"Queue",url:"/fixture/queue"}];return <>
 <header className="fixed inset-x-0 top-0 z-40 h-14 border-b border-neutral-800 bg-neutral-950" />
-<div data-workspace-tabbar className="fixed top-14 z-40 flex h-11 items-center border-b border-neutral-800 bg-neutral-950 px-2"><button type="button" data-today-button aria-expanded={sheet} onClick={()=>setSheet(true)} className="mb-1 inline-flex h-9 shrink-0 items-center rounded-lg border border-neutral-700 px-3 text-sm font-medium lg:hidden">Today</button><div role="tablist" aria-label="Workspace tabs" className="flex-1 bg-red-900 text-xs">TABS (hidden in Today layout)</div><button type="button" aria-label="Show relationship context" className="h-8 w-8 rounded bg-neutral-800">C</button></div>
+<div data-workspace-tabbar className="fixed top-14 z-40 flex h-11 items-center border-b border-neutral-800 bg-neutral-950 px-2"><button type="button" data-today-button aria-expanded={sheet} onClick={()=>setSheet(true)} className="mb-1 inline-flex h-9 shrink-0 items-center rounded-lg border border-neutral-700 px-3 text-sm font-medium lg:hidden">Today</button><div className="relative h-full min-w-0 flex-1"><p data-today-destination className="pointer-events-none absolute inset-0 flex min-w-0 items-center gap-2 px-1 pb-1 text-sm font-medium text-neutral-200 lg:px-2"><span className="truncate">{url}</span></p><div role="tablist" aria-label="Workspace tabs" className="bg-red-900 text-xs">TABS (hidden in Today layout)</div></div><button type="button" aria-label="Show relationship context" className="h-8 w-8 rounded bg-neutral-800">C</button></div>
 {sheet&&!visible?<SideDrawer side="left" label="Today" onClose={()=>setSheet(false)}>{dismiss=><><div className="flex shrink-0 items-center justify-between border-b border-card-border px-4 py-2"><h2 className="text-base font-semibold">Today</h2><button type="button" onClick={dismiss} aria-label="Close Today" className="h-11 w-11">×</button></div><div className="min-h-0 flex-1">
-<TodayColumn workspaceSlug="fixture" workspaceId="${ws}" userId="${me}" canSeeAttention={!staff} cache={cache} activeUrl={url} onOpen={(href)=>{dismiss();(window.fixtureOpened??=[]).push(href);setUrl(href)}}/></div></>}</SideDrawer>:null}
+<TodayColumn workspaceSlug="fixture" workspaceId="${ws}" userId="${me}" canSeeAttention={!staff} cache={cache} activeUrl={url} recent={recent} onOpen={(href)=>{dismiss();(window.fixtureOpened??=[]).push(href);setUrl(href)}}/></div></>}</SideDrawer>:null}
 {visible?<div data-workspace-today-shell className="fixed bottom-0 top-14 z-30 hidden border-r border-neutral-800 bg-neutral-950 lg:block">
-<TodayColumn workspaceSlug="fixture" workspaceId="${ws}" userId="${me}" canSeeAttention={!staff} cache={cache} activeUrl={url} onOpen={(href)=>{(window.fixtureOpened??=[]).push(href);setUrl(href)}}/></div>:null}
+<TodayColumn workspaceSlug="fixture" workspaceId="${ws}" userId="${me}" canSeeAttention={!staff} cache={cache} activeUrl={url} recent={recent} onOpen={(href)=>{(window.fixtureOpened??=[]).push(href);setUrl(href)}}/></div>:null}
 <div data-workspace-tab-panels className="fixed bottom-0 top-[6.25rem] z-30 overflow-hidden bg-neutral-950 p-6"><p data-fixture-work-area>Work area: {url}</p></div></>}
 createRoot(document.getElementById("root")).render(<Shell/>);`)
     const cssPromise = postcss([tailwind({ base: root, optimize: false })]).process(readFileSync("app/globals.css", "utf8"), { from: resolve("app/globals.css") }).then(result => result.css)

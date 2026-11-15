@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Assignee, ServiceStage, RoundPill, RelationshipStage, SideDrawer } from "@/components/ui"
+import { Assignee, ServiceStage, RoundPill, RelationshipStage, SegmentedSwitch, SideDrawer } from "@/components/ui"
 import { QuickStats } from "@/components/panel/QuickStats"
 import { shortId } from "@/lib/ui/relative-time"
 import { relationshipContactHref, relationshipContextDestinations, relationshipContextHref, relationshipContextRouteKey } from "@/lib/relationship-context"
@@ -20,7 +20,11 @@ type Props = {
     mobileOpen: boolean
     onClose: () => void
     standalone?: boolean
+    /** Today layout, desktop only: offers the Context / Chat switch. Choosing Chat hands the column to the docked chat. */
+    onChat?: () => void
 }
+
+const CONTEXT_VIEWS = [{ value: "context", label: "Context" }, { value: "chat", label: "Chat" }] as const
 
 function ContactValue({ label, value }: { label: "Phone" | "Email" | "Website"; value: string }) {
     const [feedback, setFeedback] = useState("")
@@ -46,7 +50,7 @@ function ContactValue({ label, value }: { label: "Phone" | "Email" | "Website"; 
     </div>
 }
 
-function ContextContent({ currentUrl, context, workspaceSlug, workspaceCapabilities, onNavigate, onClose }: Pick<Props, "currentUrl" | "context" | "workspaceSlug" | "workspaceCapabilities" | "onNavigate"> & { onClose?: () => void }) {
+function ContextContent({ currentUrl, context, workspaceSlug, workspaceCapabilities, onNavigate, onClose, onChat }: Pick<Props, "currentUrl" | "context" | "workspaceSlug" | "workspaceCapabilities" | "onNavigate" | "onChat"> & { onClose?: () => void }) {
     const company = context.business_name?.trim()
     const details = [
         { label: "Industry", value: context.industry_value?.replace(/_/g, " ") },
@@ -70,6 +74,7 @@ function ContextContent({ currentUrl, context, workspaceSlug, workspaceCapabilit
             <h2 className="mt-2 break-words text-base font-semibold">{company || context.primary_person_name}</h2>
             {company || context.primary_contact_role?.trim() ? <p className="mt-1 break-words text-xs leading-5 text-neutral-400">{[company ? context.primary_person_name : null, context.primary_contact_role?.trim()].filter(Boolean).join(" · ")}</p> : null}
             {Object.hasOwn(relationshipPhaseTones, context.lifecycle_phase) ? <RelationshipStage phase={context.lifecycle_phase as RelationshipPhase} className="mt-3" /> : null}
+            {onChat ? <SegmentedSwitch label="Client column view" value="context" options={CONTEXT_VIEWS} onChange={view => { if (view === "chat") onChat() }} className="mt-3" /> : null}
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">
@@ -141,6 +146,6 @@ export function ShellRelationshipContextPanel({ desktopOpen, mobileOpen, onClose
         {desktopOpen ? <aside aria-label="Relationship context" className={`fixed right-4 z-[35] hidden w-80 flex-col overflow-hidden rounded-xl border border-card-border bg-[var(--color-surface-glass)] text-white shadow-card backdrop-blur-xl backdrop-saturate-150 sm:right-6 lg:flex ${standalone ? "top-6 h-[calc(100dvh-3rem)]" : "top-[7.75rem] h-[calc(100dvh-9.25rem)]"}`}>
             <ContextContent {...props} />
         </aside> : null}
-        {mobileOpen ? <SideDrawer label="Relationship context" onClose={onClose} modal={standalone}>{dismiss => <ContextContent {...props} onClose={dismiss} onNavigate={href => { dismiss(); props.onNavigate(href) }} />}</SideDrawer> : null}
+        {mobileOpen ? <SideDrawer label="Relationship context" onClose={onClose} modal={standalone}>{dismiss => <ContextContent {...props} onChat={undefined} onClose={dismiss} onNavigate={href => { dismiss(); props.onNavigate(href) }} />}</SideDrawer> : null}
     </>
 }

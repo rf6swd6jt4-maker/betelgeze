@@ -40,3 +40,5 @@ export { AssetGallery, AssetGalleryCard, AddAssetGalleryCard } from "./AssetGall
 export { SideDrawer } from "./SideDrawer"
 
 export { ChoiceCards, ChoiceCard } from "./ChoiceCards"
+
+export { SegmentedSwitch } from "./SegmentedSwitch"

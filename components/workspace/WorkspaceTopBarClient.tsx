@@ -33,6 +33,9 @@ import { WorkspaceRecordCache } from "@/lib/workspace-record-cache"
 import { WorkspaceTabScrollStore } from "@/lib/workspace-tab-scroll"
 import type { WorkspaceLayout } from "@/lib/workspace-layout"
 import { TodayColumn, useTodayColumnVisible } from "./TodayColumn"
+import { DockedCommunications, type DockedCommunicationsHandle } from "./DockedCommunications"
+import { SegmentedSwitch } from "@/components/ui/SegmentedSwitch"
+import { Button } from "@/components/ui/Button"
 import { SideDrawer } from "@/components/ui/SideDrawer"
 import { nativeWorkspaceRoute } from "@/lib/workspace-native"
 import { AccountMenu } from "@/components/account/AccountMenu"
@@ -81,6 +84,7 @@ import {
     orderWorkspaceTabsByStableIds,
     reorderWorkspaceTabs,
     insertWorkspaceTabAfter,
+    workspaceTabToEvict,
     WORKSPACE_TAB_FRAME_NAME_PREFIX,
     WORKSPACE_TAB_FRAME_PARAM,
     WORKSPACE_TAB_MESSAGE_SOURCE,
@@ -107,6 +111,9 @@ import type { WorkspaceCreateTarget } from "@/components/workspace/WorkspaceCrea
 const WorkspaceMemberProfileModal = dynamic(() => import("@/components/workspace/WorkspaceMemberProfileModal").then((module) => module.WorkspaceMemberProfileModal))
 const WorkspaceCreateModal = dynamic(() => import("@/components/workspace/WorkspaceCreateModal").then((module) => module.WorkspaceCreateModal))
 const ShellRelationshipContextPanel = dynamic(() => import("@/components/workspace/ShellRelationshipContextPanel").then((module) => module.ShellRelationshipContextPanel))
+const DOCK_VIEWS = [{ value: "context", label: "Context" }, { value: "chat", label: "Chat" }] as const
+/** The one chat the Today layout docks beside the work: a client's conversation in the client column, or the Comms drawer. */
+type DockedChat = { place: "column"; relationshipId: string; title: string } | { place: "drawer" }
 
 const sidebarStorageKey = "betelgeze:workspace-sidebar-open"
 const sidebarDrawerQuery = "(max-width: 767px)"
@@ -118,6 +125,7 @@ function subscribeSidebarDrawerQuery(onChange: () => void) {
 function getSidebarDrawerSnapshot() { return window.matchMedia(sidebarDrawerQuery).matches }
 function getSidebarDrawerServerSnapshot() { return false }
 const MAX_RESIDENT_WORKSPACE_FRAMES = 3
+const MAX_OPEN_WORKSPACE_TABS = 8
 const WORKSPACE_NAVIGATION_PROBE_MS = 8_000
 type WorkspacePresenceChannel = ReturnType<ReturnType<typeof createSupabaseBrowserClient>["channel"]>
 
@@ -400,6 +408,8 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
     const departureAbortRef = useRef<AbortController | null>(null)
     const warmAbortRef = useRef<AbortController | null>(null)
     const residentTabIdsRef = useRef<string[]>([initialTab.id])
+    // Most recently activated first. Today layout only: picks which open destination to drop at the limit.
+    const tabRecencyRef = useRef<string[]>([initialTab.id])
     const [shellStorage] = useState(() => createWorkspaceShellStorage(() => sessionStorage, () => console.warn("Workspace tab preferences could not be persisted on this device.")))
     const nativeMessageRef = useRef<(message: WorkspaceTabFrameMessage) => void>(() => {})
     const nativeState = useMemo(() => ({
@@ -482,6 +492,26 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
     const [mobileContextKey, setMobileContextKey] = useState<string | null>(null)
     // Phones and tablets in the Today layout: the Today column as a left SideDrawer, mounted only while open.
     const [todaySheetOpen, setTodaySheetOpen] = useState(false)
+    // Mirrors tabRecencyRef for rendering the Today column's "Still open" list.
+    const [tabRecency, setTabRecency] = useState<string[]>([initialTab.id])
+    // Today layout, desktop only. `dock` is the loaded chat frame (at most one); `columnChat` is whether the client
+    // column is showing it. Switching back to Context only hides the frame, so returning to Chat is immediate.
+    const [dock, setDock] = useState<DockedChat | null>(null)
+    const [columnChat, setColumnChat] = useState(false)
+    const [dockNotice, setDockNotice] = useState("")
+    const dockHandleRef = useRef<DockedCommunicationsHandle>(null)
+    const dockChangeRef = useRef(0)
+    /** Replace or close the docked chat. The current one must first confirm its work is saved; otherwise it stays. */
+    const changeDock = useCallback(async (next: DockedChat | null) => {
+        const change = ++dockChangeRef.current
+        setDockNotice("")
+        const safe = await (dockHandleRef.current?.leave() ?? true)
+        if (change !== dockChangeRef.current) return false
+        if (!safe) { setDockNotice("This chat could not confirm that your message is saved. Send or clear it, then try again."); return false }
+        // The confirmation and the unmount share one task, so nothing can be typed in between.
+        flushSync(() => { setDock(next); setColumnChat(next?.place === "column") })
+        return true
+    }, [])
     const [contextOpenByTab, setContextOpenByTab] = useState<Record<string, boolean>>({})
     const [contextStatusByTab, setContextStatusByTab] = useState<Record<string, WorkspaceTabContextStatus>>({})
     const [contextObstructedByTab, setContextObstructedByTab] = useState<Record<string, boolean>>({})
@@ -616,6 +646,8 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
         nativeNavigationPerformance.activate(tabId)
         setMobileContextKey(null)
         setTodaySheetOpen(false)
+        tabRecencyRef.current = [tabId, ...tabRecencyRef.current.filter((id) => id !== tabId)].slice(0, 16)
+        setTabRecency(tabRecencyRef.current)
         const next = [tabId, ...residentTabIdsRef.current.filter((id) => id !== tabId)].slice(0, MAX_RESIDENT_WORKSPACE_FRAMES)
         residentTabIdsRef.current = next
         setResidentTabIds(next)
@@ -1237,11 +1269,79 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
         return committed
     }, [activateWorkspaceTab, postToTab, saveTabsState, prepareNativeLeave, shellStorage, workspace.slug])
 
+    /** Forget everything the shell holds for a destination that is leaving the open set (closed, or dropped at the limit). */
+    const discardWorkspaceTabState = useCallback((tabId: string) => {
+        tabFrameOrderRef.current = tabFrameOrderRef.current.filter((id) => id !== tabId)
+        setTabFrameOrder([...tabFrameOrderRef.current])
+        residentTabIdsRef.current = residentTabIdsRef.current.filter((id) => id !== tabId)
+        shellStorage.remove(workspaceTabContextStorageKey(workspace.slug, tabId))
+        setContextOpenByTab((current) => {
+            const next = { ...current }
+            delete next[tabId]
+            return next
+        })
+        loadedTabIdsRef.current.delete(tabId)
+        readyTabIdsRef.current.delete(tabId)
+        pendingNavigationRef.current.delete(tabId)
+        const navigationTimeout = navigationTimeoutRef.current.get(tabId)
+        navigationTimeout?.cancel()
+        navigationTimeoutRef.current.delete(tabId)
+        const softFallback = softNavigationFallbackRef.current.get(tabId)
+        if (softFallback) window.clearTimeout(softFallback)
+        softNavigationFallbackRef.current.delete(tabId)
+        navigationFallbackRef.current.delete(tabId)
+        navigationErrorRef.current.delete(tabId)
+        mutationIdsByTabRef.current.delete(tabId)
+        setLoadedTabIds(new Set(loadedTabIdsRef.current))
+        setRouteLoadingTabId((current) => current === tabId ? null : current)
+        setRefreshingTabIds((current) => {
+            if (!current.has(tabId)) return current
+            const next = new Set(current)
+            next.delete(tabId)
+            return next
+        })
+        setNavigationStateByTab((current) => {
+            if (!(tabId in current)) return current
+            const next = { ...current }
+            delete next[tabId]
+            return next
+        })
+        setBackgroundMutationCounts((current) => {
+            if (!(tabId in current)) return current
+            const next = { ...current }
+            delete next[tabId]
+            return next
+        })
+        delete contextStatusByTabRef.current[tabId]
+        delete contextObstructedByTabRef.current[tabId]
+        setContextStatusByTab((current) => {
+            if (!(tabId in current)) return current
+            const next = { ...current }
+            delete next[tabId]
+            return next
+        })
+        setContextObstructedByTab((current) => {
+            if (!(tabId in current)) return current
+            const next = { ...current }
+            delete next[tabId]
+            return next
+        })
+        tabRecencyRef.current = tabRecencyRef.current.filter((id) => id !== tabId)
+        setTabRecency(tabRecencyRef.current)
+    }, [shellStorage, workspace.slug])
+
     const openWorkspaceTab = useCallback(async (href: string, detailPreview?: WorkspaceDetailPreview, sourceTabId?: string) => {
         const intent = startNativeNavigation(href, "navigation", null)
         const url = normalizeWorkspaceUrl(href)
-        const requestedTabId = tabsRef.current.find((tab) => tab.url === url)?.id ?? (tabsRef.current.length >= 8 ? activeTabIdRef.current : createTabId())
-        const confirmDeparture = await prepareNativeLeave({ activateTabId: requestedTabId, destination: { tabId: requestedTabId, url } })
+        const openTabs = tabsRef.current
+        const alreadyOpen = openTabs.find((tab) => tab.url === url)
+        // Today layout at the limit: drop the least recently used destination that is not mounted, instead of replacing
+        // the one in front of the person. The tabbed layout keeps its rule, because its tabs are visible and theirs to close.
+        const evictTabId = layout === "today" && !alreadyOpen && openTabs.length >= MAX_OPEN_WORKSPACE_TABS
+            ? workspaceTabToEvict(openTabs.map((tab) => tab.id), tabRecencyRef.current, [activeTabIdRef.current, ...residentTabIdsRef.current])
+            : null
+        const requestedTabId = alreadyOpen?.id ?? (openTabs.length >= MAX_OPEN_WORKSPACE_TABS && !evictTabId ? activeTabIdRef.current : createTabId())
+        const confirmDeparture = await prepareNativeLeave({ activateTabId: requestedTabId, closeTabId: evictTabId ?? undefined, destination: { tabId: requestedTabId, url } })
         if (!confirmDeparture) { nativeNavigationPerformance.finish(intent, "failed"); return }
         const committed = confirmDeparture(() => {
             if (detailPreview) storeWorkspaceDetailPreview(url, detailPreview)
@@ -1269,9 +1369,14 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
                 return
             }
 
-            if (currentTabs.length >= 8) {
+            // Re-checked inside the commit: the destination chosen before the departure check must still be unmounted.
+            const evictable = evictTabId !== null && evictTabId !== previousTabId && !residentTabIdsRef.current.includes(evictTabId)
+                && !iframeRefs.current.has(evictTabId) && !nativeRefs.current.has(evictTabId) && currentTabs.some((tab) => tab.id === evictTabId)
+            if (currentTabs.length >= MAX_OPEN_WORKSPACE_TABS && !evictable) {
                 const tabId = activeTabIdRef.current
-                if (!tabId) { nativeNavigationPerformance.finish(intent, "aborted"); return }
+                // The departure check covered dropping evictTabId, not navigating the active destination: do nothing
+                // rather than leave it unchecked. The person's next click plans again from the current state.
+                if (!tabId || evictTabId !== null) { nativeNavigationPerformance.finish(intent, "aborted"); return }
                 nativeNavigationPerformance.bind(intent, tabId)
                 beginTabNavigation(tabId, url)
                 updateTabForShellNavigation(tabId, url, detailPreview)
@@ -1289,7 +1394,9 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
                 seenRevision: mutationRevisionRef.current,
                 detailPreview,
             }
-            const nextTabs = insertWorkspaceTabAfter(currentTabs, tab, sourceTabId ?? previousTabId)
+            const retainedTabs = evictable && currentTabs.length >= MAX_OPEN_WORKSPACE_TABS ? currentTabs.filter((candidate) => candidate.id !== evictTabId) : currentTabs
+            if (retainedTabs !== currentTabs && evictTabId) discardWorkspaceTabState(evictTabId)
+            const nextTabs = insertWorkspaceTabAfter(retainedTabs, tab, sourceTabId ?? previousTabId)
             nativeNavigationPerformance.bind(intent, tab.id)
             tabFrameOrderRef.current.push(tab.id)
             setTabFrameOrder([...tabFrameOrderRef.current])
@@ -1303,7 +1410,7 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
             window.requestAnimationFrame(() => postToTab(previousTabId, { type: "activate", active: false, refresh: false }))
         })
         if (!committed) { nativeNavigationPerformance.finish(intent, "failed"); return }
-    }, [activateWorkspaceTab, beginTabNavigation, normalizeWorkspaceUrl, postToTab, requestTabFrameNavigation, saveTabsState, titleForUrl, updateTabForShellNavigation, workspace.slug, prepareNativeLeave, startNativeNavigation, nativeNavigationPerformance, shellStorage])
+    }, [activateWorkspaceTab, beginTabNavigation, normalizeWorkspaceUrl, postToTab, requestTabFrameNavigation, saveTabsState, titleForUrl, updateTabForShellNavigation, workspace.slug, prepareNativeLeave, startNativeNavigation, nativeNavigationPerformance, shellStorage, layout, discardWorkspaceTabState])
 
     useEffect(() => {
         function openPortalledDetail(event: MouseEvent) {
@@ -2562,61 +2669,7 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
             if (!closedTab || !nextActiveTab) return
             closedTabsRef.current.push({ tab: closedTab, index: tabIndex, contextOpen: contextOpenByTab[tabId] ?? true })
             if (closedTabsRef.current.length > 20) closedTabsRef.current.shift()
-            tabFrameOrderRef.current = tabFrameOrderRef.current.filter((id) => id !== tabId)
-            setTabFrameOrder([...tabFrameOrderRef.current])
-            residentTabIdsRef.current = residentTabIdsRef.current.filter((id) => id !== tabId)
-            shellStorage.remove(workspaceTabContextStorageKey(workspace.slug, tabId))
-            setContextOpenByTab((current) => {
-                const next = { ...current }
-                delete next[tabId]
-                return next
-            })
-            loadedTabIdsRef.current.delete(tabId)
-            readyTabIdsRef.current.delete(tabId)
-            pendingNavigationRef.current.delete(tabId)
-            const navigationTimeout = navigationTimeoutRef.current.get(tabId)
-            navigationTimeout?.cancel()
-            navigationTimeoutRef.current.delete(tabId)
-            const softFallback = softNavigationFallbackRef.current.get(tabId)
-            if (softFallback) window.clearTimeout(softFallback)
-            softNavigationFallbackRef.current.delete(tabId)
-            navigationFallbackRef.current.delete(tabId)
-            navigationErrorRef.current.delete(tabId)
-            mutationIdsByTabRef.current.delete(tabId)
-            setLoadedTabIds(new Set(loadedTabIdsRef.current))
-            if (routeLoadingTabId === tabId) setRouteLoadingTabId(null)
-            setRefreshingTabIds((current) => {
-                if (!current.has(tabId)) return current
-                const next = new Set(current)
-                next.delete(tabId)
-                return next
-            })
-            setNavigationStateByTab((current) => {
-                if (!(tabId in current)) return current
-                const next = { ...current }
-                delete next[tabId]
-                return next
-            })
-            setBackgroundMutationCounts((current) => {
-                if (!(tabId in current)) return current
-                const next = { ...current }
-                delete next[tabId]
-                return next
-            })
-            delete contextStatusByTabRef.current[tabId]
-            delete contextObstructedByTabRef.current[tabId]
-            setContextStatusByTab((current) => {
-                if (!(tabId in current)) return current
-                const next = { ...current }
-                delete next[tabId]
-                return next
-            })
-            setContextObstructedByTab((current) => {
-                if (!(tabId in current)) return current
-                const next = { ...current }
-                delete next[tabId]
-                return next
-            })
+            discardWorkspaceTabState(tabId)
             activeTabIdRef.current = nextActiveTab.id
             tabsRef.current = nextTabs
             setTabs(nextTabs)
@@ -2647,6 +2700,11 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
         .filter((tab) => tab.id === activeTabId || residentTabIdSet.has(tab.id))
     const activeTab = visibleTabs.find((tab) => tab.id === activeTabId) ?? visibleTabs[0]
     const activeNativePanel = usesNativeCommunications(activeTab.url) || (nativePanelsEnabled && Boolean(nativeWorkspaceRoute(activeTab.url, workspace.slug)))
+    // Today layout: the other open destinations, most recently used first, so hidden tabs stay reachable.
+    const todayRecent = layout === "today" ? tabRecency.flatMap((id) => {
+        const tab = id === activeTab.id ? undefined : visibleTabs.find((candidate) => candidate.id === id)
+        return tab ? [{ id: tab.id, title: workspaceTabDisplayTitle(tab), url: tab.url }] : []
+    }) : []
     const todayLaunchChecked = useRef(false)
     useEffect(() => {
         // On a phone, opening the app at the queue or workspace home shows Today first. Runs once, a frame after mount,
@@ -2670,6 +2728,23 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
     const activeRelationshipContext = activeContextSupported && !activeContextObstructed ? activeContextStatus?.context ?? null : null
     const activePathname = new URL(activeTab.url, typeof window === "undefined" ? "http://localhost" : window.location.origin).pathname
     const activeRouteLoading = routeLoadingTabId === activeTabId
+    // Docked chat: Today layout at desktop width only, for people who can open Communications. Phones keep the full view.
+    const canDockChat = layout === "today" && todayColumnVisible && canAccessWorkspacePanel(workspacePanelByKey("communications"), workspaceRole, workspaceCapabilities)
+    const dockShown = Boolean(dock && (dock.place === "drawer"
+        || (columnChat && activeContextOpen && !activeRouteLoading && activeRelationshipContext?.id === dock.relationshipId)))
+    const openColumnChat = () => {
+        if (!activeRelationshipContext) return
+        if (dock?.place === "column" && dock.relationshipId === activeRelationshipContext.id) { setColumnChat(true); return }
+        void changeDock({ place: "column", relationshipId: activeRelationshipContext.id, title: activeRelationshipContext.business_name?.trim() || activeRelationshipContext.primary_person_name })
+    }
+    const dockLoaded = dock !== null
+    useEffect(() => {
+        // Narrowing below desktop width, or losing access, releases the dock once it confirms its work is saved.
+        if (canDockChat || !dockLoaded) return
+        let current = true
+        void Promise.resolve().then(() => { if (current) void changeDock(null) })
+        return () => { current = false }
+    }, [canDockChat, dockLoaded, changeDock])
     const activeNavigation = navigationStateByTab[activeTabId]
     const activeBackgroundSaving = (backgroundMutationCounts[activeTabId] ?? 0) > 0
     const currentPresenceMember = workspaceMembers.find((member) => member.id === currentUserId) ?? { id: currentUserId, name: username, avatarSrc: avatarSrc ?? null }
@@ -2949,6 +3024,8 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
                             </div>
                         )}
                     </div>
+                    {canDockChat ? <span className="hidden lg:inline-flex"><Button variant="secondary" size="sm" data-comms-drawer-button aria-expanded={dock?.place === "drawer"} aria-haspopup="dialog"
+                        onClick={() => { void changeDock(dock?.place === "drawer" ? null : { place: "drawer" }) }}>Comms<UnreadMessageCount count={communicationsUnreadCount} loading={readProtocol === "device-v1" && !communicationsUnreadLoaded} label="unread Communications messages" /></Button></span> : null}
                     <div className="hidden items-center gap-0.5 md:flex" aria-label="Create">
                         {canCreateRelationship && <button data-icon-button type="button" onClick={() => openCreate("relationship")} aria-label="Add relationship" title="Add relationship" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white md:h-9 md:w-9">
                             <RelationshipsIcon />
@@ -3016,6 +3093,10 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
                 {layout === "today" ? <button type="button" data-today-button aria-expanded={todaySheetOpen} onClick={event => { event.currentTarget.focus({ preventScroll: true }); setSidebarOpen(false); setMobileContextKey(null); setTodaySheetOpen(true) }}
                     className="mb-1 inline-flex h-9 shrink-0 items-center rounded-lg border border-neutral-700 px-3 text-sm font-medium text-neutral-100 hover:bg-neutral-900 lg:hidden">Today</button> : null}
                 <div className="relative h-full min-w-0 flex-1">
+                {layout === "today" ? <p data-today-destination className="pointer-events-none absolute inset-0 flex min-w-0 items-center gap-2 px-1 pb-1 text-sm font-medium text-neutral-200 lg:px-2">
+                    <span className="truncate">{workspaceTabDisplayTitle(activeTab)}</span>
+                    {navigationStateByTab[activeTab.id]?.status === "loading" || refreshingTabIds.has(activeTab.id) ? <span aria-label={navigationStateByTab[activeTab.id]?.status === "loading" ? "Loading" : "Refreshing"} className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-neutral-400" /> : null}
+                </p> : null}
                 <div ref={tabStripRef} role="tablist" aria-label="Workspace tabs" className="relative flex h-full min-w-0 flex-1 items-end gap-1 touch-pan-x overflow-x-auto overflow-y-hidden overscroll-x-contain md:overflow-hidden">
                     {visibleTabs.map((tab) => {
                         const active = tab.id === activeTabId
@@ -3139,20 +3220,21 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
             <div className="min-h-0 flex-1">
                 <TodayColumn workspaceSlug={workspace.slug} workspaceId={workspace.id} userId={currentUserId}
                     canSeeAttention={workspaceRole === "owner" || workspaceRole === "admin"} cache={nativeCache}
-                    activeUrl={activeTab.url} onOpen={(href) => { dismiss(); void openWorkspaceTab(href) }} />
+                    activeUrl={activeTab.url} recent={todayRecent} onOpen={(href) => { dismiss(); void openWorkspaceTab(href) }} />
             </div>
         </>}</SideDrawer> : null}
 
         {todayColumnVisible ? <div data-workspace-today-shell className="fixed bottom-0 top-14 z-30 hidden border-r border-neutral-800 bg-neutral-950 lg:block">
             <TodayColumn workspaceSlug={workspace.slug} workspaceId={workspace.id} userId={currentUserId}
                 canSeeAttention={workspaceRole === "owner" || workspaceRole === "admin"} cache={nativeCache}
-                activeUrl={activeTab.url} onOpen={(href) => { void openWorkspaceTab(href) }} />
+                activeUrl={activeTab.url} recent={todayRecent} onOpen={(href) => { void openWorkspaceTab(href) }} />
         </div> : null}
 
         {activeRelationshipContext && !activeRouteLoading && (
             <ShellRelationshipContextPanel
                 key={`${activeTab.id}:${activeTab.url}`}
-                desktopOpen={activeContextOpen}
+                desktopOpen={activeContextOpen && !(dockShown && dock?.place === "column")}
+                onChat={canDockChat ? openColumnChat : undefined}
                 mobileOpen={mobileContextKey === `${activeTab.id}:${activeTab.url}`}
                 onClose={() => setMobileContextKey(null)}
                 currentUrl={activeTab.url}
@@ -3162,6 +3244,24 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
                 workspaceCapabilities={workspaceCapabilities}
             />
         )}
+
+        {dock ? <aside data-workspace-docked-chat={dock.place} aria-label={dock.place === "drawer" ? "Comms" : `Chat with ${dock.title}`} inert={!dockShown}
+            onKeyDown={event => { if (event.key === "Escape" && dock.place === "drawer") void changeDock(null) }}
+            className={`fixed right-4 top-[7.75rem] h-[calc(100dvh-9.25rem)] flex-col overflow-hidden rounded-xl border border-card-border bg-[var(--color-surface-glass)] text-white shadow-card backdrop-blur-xl backdrop-saturate-150 sm:right-6 ${dock.place === "drawer" ? "betelgeze-popup-enter z-[36] w-[25rem]" : "z-[35] w-80"} ${dockShown ? "hidden lg:flex" : "hidden"}`}>
+            <header className="shrink-0 border-b border-white/[0.06] px-4 py-3">
+                <div className="flex items-center gap-2">
+                    <h2 className="min-w-0 flex-1 truncate text-base font-semibold">{dock.place === "drawer" ? "Comms" : dock.title}</h2>
+                    {dock.place === "drawer" ? <Button variant="ghost" size="sm" onClick={() => { void openWorkspaceTab(`/${workspace.slug}/communications`); void changeDock(null) }}>Open full view</Button> : null}
+                    <button data-icon-button type="button" onClick={() => void changeDock(null)} aria-label={dock.place === "drawer" ? "Close Comms" : "Close chat"} className="inline-flex h-8 w-8 shrink-0 items-center justify-center text-xl text-neutral-400 hover:text-white">×</button>
+                </div>
+                {dock.place === "column" ? <SegmentedSwitch label="Client column view" value="chat" options={DOCK_VIEWS} onChange={view => { if (view === "context") setColumnChat(false) }} className="mt-3" /> : null}
+                {dockNotice ? <p role="alert" className="mt-2 text-xs leading-5 text-red-200">{dockNotice}</p> : null}
+            </header>
+            <DockedCommunications key={dock.place === "drawer" ? "drawer" : dock.relationshipId} handle={dockHandleRef} shown={dockShown}
+                url={dock.place === "drawer" ? `/${workspace.slug}/communications` : `/${workspace.slug}/communications?mode=clients&conversation=${encodeURIComponent(dock.relationshipId)}`}
+                label={dock.place === "drawer" ? "Comms" : `Chat with ${dock.title}`} workspaceSlug={workspace.slug} readProtocol={readProtocol}
+                onOpenDestination={(href) => { void openWorkspaceTab(href) }} />
+        </aside> : null}
 
         {activeRouteLoading && !activeNativePanel && <LoadingOverlay />}
 

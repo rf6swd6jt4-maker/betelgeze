@@ -3026,6 +3026,9 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
                     </div>
                     {canDockChat ? <span className="hidden lg:inline-flex"><Button variant="secondary" size="sm" data-comms-drawer-button aria-expanded={dock?.place === "drawer"} aria-haspopup="dialog"
                         onClick={() => { void changeDock(dock?.place === "drawer" ? null : { place: "drawer" }) }}>Comms<UnreadMessageCount count={communicationsUnreadCount} loading={readProtocol === "device-v1" && !communicationsUnreadLoaded} label="unread Communications messages" /></Button></span> : null}
+                    {layout === "today" ? <button data-icon-button data-today-context-toggle type="button" onClick={toggleContextPanel} disabled={!activeContextSupported} aria-label={!activeContextSupported ? "Relationship context unavailable" : activeContextOpen ? "Hide relationship context" : "Show relationship context"} aria-pressed={activeContextSupported ? activeContextOpen : undefined} title="Client column" className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:text-neutral-400 lg:inline-flex">
+                        <ContextPanelIcon />
+                    </button> : null}
                     <div className="hidden items-center gap-0.5 md:flex" aria-label="Create">
                         {canCreateRelationship && <button data-icon-button type="button" onClick={() => openCreate("relationship")} aria-label="Add relationship" title="Add relationship" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white md:h-9 md:w-9">
                             <RelationshipsIcon />
@@ -3245,7 +3248,7 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
             />
         )}
 
-        {dock ? <aside data-workspace-docked-chat={dock.place} aria-label={dock.place === "drawer" ? "Comms" : `Chat with ${dock.title}`} inert={!dockShown}
+        {dock ? <aside data-workspace-docked-chat={dock.place} data-workspace-context-column="" aria-label={dock.place === "drawer" ? "Comms" : `Chat with ${dock.title}`} inert={!dockShown}
             onKeyDown={event => { if (event.key === "Escape" && dock.place === "drawer") void changeDock(null) }}
             className={`fixed right-4 top-[7.75rem] h-[calc(100dvh-9.25rem)] flex-col overflow-hidden rounded-xl border border-card-border bg-[var(--color-surface-glass)] text-white shadow-card backdrop-blur-xl backdrop-saturate-150 sm:right-6 ${dock.place === "drawer" ? "betelgeze-popup-enter z-[36] w-[25rem]" : "z-[35] w-80"} ${dockShown ? "hidden lg:flex" : "hidden"}`}>
             <header className="shrink-0 border-b border-white/[0.06] px-4 py-3">

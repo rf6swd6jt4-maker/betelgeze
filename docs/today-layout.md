@@ -78,5 +78,13 @@ first load. The Today layout keeps that model and hides only its strip:
      workspace at one moment: they exclude network, authentication and rendering, and are not a latency guarantee.
      The cost grows with members (bounded at 25) and with each person's queue. Not measured: the request end to end
      in the signed-in app.
+   - *Declutter, pass 1 (`today-declutter`).* Decided from a screenshot of the real pilot screen, where three dense
+     columns had equal weight. (a) From `lg` up the emptied tab strip row is removed (`display: none`), its height goes
+     to the work area and the client column, and the context toggle moves to the top bar; below `lg` the strip stays for
+     the Today and context buttons. The work-area title is gone at desktop width because every page states its own.
+     (b) The queue is the first section and Needs attention the second, capped at four rows; identical items (same
+     kind, title and client) merge into one row with a count that opens the full list. (c) The work item's
+     Dependencies field is top-aligned: as an inline-block it aligned by its last line, so a wrapped list was lifted
+     over the Parent row. No request, timer or resident owner changes; removing the strip removes one fixed layer.
 5. **Measure and roll out.** Pilot one workspace, compare its `workspace_interaction_metrics` against the baseline with the
    same query, then widen.

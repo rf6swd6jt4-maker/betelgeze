@@ -374,6 +374,21 @@ body[data-workspace-layout="today"] [data-workspace-tabbar] [role="tablist"] {
     left: calc(var(--workspace-sidebar-width) + var(--workspace-today-width));
     width: calc(100% - var(--workspace-sidebar-width) - var(--workspace-today-width));
   }
+
+  /* From lg up the strip has nothing left to show: its context toggle lives in the top bar and the page already
+     states its own title. Remove the row and give its height to the work area and the client column. */
+  body[data-workspace-layout="today"] [data-workspace-tabbar] {
+    display: none;
+  }
+
+  body[data-workspace-layout="today"] [data-workspace-tab-panels] {
+    top: 3.5rem;
+  }
+
+  body[data-workspace-layout="today"] [data-workspace-context-column] {
+    top: 5rem;
+    height: calc(100dvh - 6.5rem);
+  }
 }
 
 @media (min-width: 768px) {

@@ -28,7 +28,7 @@ const team = { available: true, truncated: false, people: [
 ] }
 const attention = { available: true, groups: [
     { kind: "waiting_on_reply", total: 1, items: [{ since: new Date(Date.now() - 2 * 86_400_000).toISOString(), relationshipId: id(30), client: "North Texas Shutters", title: "Client message waiting for a reply", recordId: id(30) }] },
-    { kind: "disputed_task", total: 16, items: [{ since: new Date(Date.now() - 5 * 3_600_000).toISOString(), relationshipId: null, client: null, title: "Bug: application page failed", recordId: id(200) }, { since: null, relationshipId: id(31), client: "PRO Construction", title: "Calculate budget assumptions", recordId: id(201) }] },
+    { kind: "disputed_task", total: 16, items: [{ since: new Date(Date.now() - 5 * 3_600_000).toISOString(), relationshipId: null, client: null, title: "Bug: application page failed", recordId: id(200) }, { since: new Date(Date.now() - 35 * 86_400_000).toISOString(), relationshipId: null, client: null, title: "Bug: application page failed", recordId: id(203) }, { since: new Date(Date.now() - 20 * 86_400_000).toISOString(), relationshipId: null, client: null, title: "Bug: application page failed", recordId: id(204) }, { since: null, relationshipId: id(31), client: "PRO Construction", title: "Calculate budget assumptions", recordId: id(201) }] },
     { kind: "overdue_task", total: 1, items: [{ since: null, relationshipId: null, client: null, title: "Familiarise yourself with Betelgeze", recordId: id(202) }] },
 ] }
 try {

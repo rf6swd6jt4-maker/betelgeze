@@ -34,7 +34,10 @@ test("the column frame changes only from lg up and only for the Today layout", (
     assert.ok(block.length > 0)
     const lg = block.slice(0, block.indexOf("\n}\n"))
     assert.match(css, /\nbody\[data-workspace-layout="today"\] \[data-workspace-tabbar\] \[role="tablist"\] \{\s*visibility: hidden;/, "tabs go at every width")
-    assert.doesNotMatch(lg, /\[data-workspace-tabbar\] \{\s*display: none/, "the strip stays, so the context-panel toggle stays")
+    assert.match(css, /\n  body\[data-workspace-layout="today"\] \[data-workspace-tabbar\] \{\s*display: none;/, "from lg up the emptied strip is removed")
+    assert.match(css, /body\[data-workspace-layout="today"\] \[data-workspace-tab-panels\] \{\s*top: 3\.5rem;/, "and its height goes to the work area")
+    assert.match(css, /body\[data-workspace-layout="today"\] \[data-workspace-context-column\] \{\s*top: 5rem;\s*height: calc\(100dvh - 6\.5rem\);/)
+    assert.match(source("components/workspace/WorkspaceTopBarClient.tsx"), /layout === "today" \? <button data-icon-button data-today-context-toggle type="button" onClick=\{toggleContextPanel\}/, "the context toggle moves to the top bar")
     assert.match(lg, /body\[data-workspace-layout="today"\] \[data-workspace-tabbar\],\s*body\[data-workspace-layout="today"\] \[data-workspace-tab-panels\] \{\s*left: calc\(var\(--workspace-sidebar-width\) \+ var\(--workspace-today-width\)\)/)
     assert.match(css, /--workspace-today-width: 22rem;/)
 })
@@ -198,4 +201,18 @@ test("the Team queue is owner/admin only, read on demand, and merged fairly", as
     assert.equal(teamQueueRows(queue, 2, now).length, 2)
     assert.equal(parseTeamQueue({ people: "no" }), null)
     assert.equal(parseTeamQueue({ people: [{ userId: 1, items: [] }] }), null)
+})
+
+test("Needs attention stays short: identical items merge and the queue comes first", () => {
+    const column = source("components/workspace/TodayColumn.tsx")
+    assert.match(column, /const ATTENTION_ROWS = 4\n/)
+    assert.match(column, /const key = `\$\{group\.kind\}\\u0000\$\{item\.title\}\\u0000\$\{item\.client \?\? ""\}`/)
+    assert.match(column, /const target = count > 1 \? attentionUrl : href/, "a merged row opens the full list, a single one opens its record")
+    assert.match(column, /attentionTotal > attentionShown/, "the remainder counts items, not rows")
+    assert.ok(column.indexOf('aria-labelledby="today-queue"') < column.indexOf('aria-labelledby="today-attention"'), "the queue is the first section")
+})
+
+test("a wrapped dependency list cannot be lifted over the Parent row", () => {
+    const fields = source("app/[workspaceSlug]/work-items/[id]/InlineWorkItemFields.tsx")
+    assert.match(fields, /<DetailField multiline label="Dependencies" icon="dependency"[^>]*><div className="relative block max-w-full">/)
 })

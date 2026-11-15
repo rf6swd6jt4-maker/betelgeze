@@ -32,7 +32,7 @@ export function useTodayColumnVisible(enabled: boolean) {
     )
 }
 const QUEUE_ROWS = 12
-const ATTENTION_ROWS = 8
+const ATTENTION_ROWS = 4
 const RECENT_ROWS = 5
 
 /** Another destination that is still open in the shell; choosing it is a memory switch, not a load. */
@@ -85,7 +85,7 @@ function Chevron({ open }: { open: boolean }) {
 }
 
 /**
- * The Today layout's left column: your queue and, for owners and admins, what needs attention. It never owns navigation:
+ * The Today layout's left column: your queue first, then, for owners and admins, what needs attention. It never owns navigation:
  * every item opens through the shell's openWorkspaceTab, so resident destinations, draft checks and context stay intact.
  */
 export function TodayColumn({ workspaceSlug, workspaceId, userId, canSeeAttention, cache, activeUrl, recent = [], onOpen }: {
@@ -185,9 +185,21 @@ export function TodayColumn({ workspaceSlug, workspaceId, userId, canSeeAttentio
     const activePath = pathOf(activeUrl)
     const queue = queueSnapshot.data?.kind === "queue" ? queueSnapshot.data as PersonalQueueSnapshot : null
     const queueItems = useMemo(() => queue ? rankQueue(queue.items).filter(item => item.state === "Ready" || item.state === "In progress" || item.state === "Blocked" || item.state === "Disputed").slice(0, QUEUE_ROWS) : [], [queue])
-    const attentionRows = attention.status === "ready"
-        ? attention.groups.flatMap(group => group.items.map(item => ({ group, item, href: attentionHref(workspaceSlug, group.kind, item) }))).slice(0, ATTENTION_ROWS)
-        : []
+    // Identical items (the same kind, title and client) read as one line with a count, so a repeated report cannot
+    // fill the column. The oldest occurrence supplies the waiting time; one occurrence opens directly, several open the list.
+    const attentionRows = useMemo(() => {
+        if (attention.status !== "ready") return []
+        const merged = new Map<string, { group: AttentionGroup; item: AttentionGroup["items"][number]; href: string | null; count: number }>()
+        for (const group of attention.groups) for (const item of group.items) {
+            const key = `${group.kind}\u0000${item.title}\u0000${item.client ?? ""}`
+            const existing = merged.get(key)
+            if (!existing) { merged.set(key, { group, item, href: attentionHref(workspaceSlug, group.kind, item), count: 1 }); continue }
+            existing.count++
+            if (item.since && (!existing.item.since || item.since < existing.item.since)) existing.item = { ...existing.item, since: item.since }
+        }
+        return [...merged.values()].slice(0, ATTENTION_ROWS)
+    }, [attention, workspaceSlug])
+    const attentionShown = attentionRows.reduce((sum, row) => sum + row.count, 0)
     const attentionTotal = attention.status === "ready" ? attention.groups.reduce((sum, group) => sum + group.total, 0) : 0
     const attentionUrl = `/${workspaceSlug}/queue/attention`
 
@@ -203,39 +215,6 @@ export function TodayColumn({ workspaceSlug, workspaceId, userId, canSeeAttentio
     const recentRows = recent.filter(destination => pathOf(destination.url) !== activePath).slice(0, RECENT_ROWS)
 
     return <aside data-workspace-today-column aria-label="Today" className="flex h-full flex-col gap-5 overflow-y-auto overscroll-contain px-3 pb-6 pt-3">
-        {canSeeAttention ? <section aria-labelledby="today-attention">
-            <div className="mb-2 flex min-h-9 items-center gap-1 px-1">
-                <button type="button" data-today-attention-toggle aria-expanded={!attentionCollapsed} aria-controls="today-attention-list" onClick={toggleAttention}
-                    className="flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-neutral-500">
-                    <h2 id="today-attention" className="text-sm font-semibold text-neutral-100">Needs attention</h2>
-                    {attention.status === "ready" && attentionTotal > 0 ? <RoundPill tone="red" className="tabular-nums">{attentionTotal > 99 ? "99+" : attentionTotal}</RoundPill> : null}
-                    <Chevron open={!attentionCollapsed} />
-                </button>
-                <Button variant="ghost" size="sm" onClick={() => onOpen(attentionUrl)}>See all</Button>
-            </div>
-            {attentionCollapsed ? null : <div id="today-attention-list">
-                {attention.status === "loading" ? <LoadingRows label="Loading what needs attention" />
-                    : attention.status === "unavailable" ? <Notice>Needs a database update.</Notice>
-                    : attention.status === "error" ? <Notice tone="error">{attention.message} <button type="button" className="underline underline-offset-2" onClick={() => void loadAttention()}>Retry</button></Notice>
-                    : attentionRows.length === 0 ? <Notice><Status label="Nothing needs attention" tone="green" /></Notice>
-                    : <List flush ariaLabel="Needs attention">
-                        {attentionRows.map(({ group, item, href }) => {
-                            const meta = ATTENTION_LABELS[group.kind]
-                            const clientFirst = group.kind === "waiting_on_reply" || group.kind === "stalled_onboarding"
-                            const waiting = waitingLabel(item.since, now)
-                            return <ListCompactItem key={`${group.kind}:${item.recordId}`}
-                                current={href ? pathOf(href) === activePath : false}
-                                onOpen={href ? () => onOpen(href) : undefined}
-                                meta={<><Status label={meta.label} tone={meta.tone} />{waiting ? <span className="ml-auto shrink-0 tabular-nums" title={`Waiting ${waiting}`}>{waiting}</span> : null}</>}
-                                title={clientFirst ? item.client ?? item.title : item.title}
-                                supporting={!clientFirst && item.client ? <span className="truncate">{item.client}</span> : undefined} />
-                        })}
-                        {attentionTotal > attentionRows.length ? <ListCompactItem onOpen={() => onOpen(attentionUrl)} current={pathOf(attentionUrl) === activePath}
-                            title={<span className="font-normal text-neutral-300">{attentionTotal - attentionRows.length} more in Needs attention</span>} /> : null}
-                    </List>}
-            </div>}
-        </section> : null}
-
         <section aria-labelledby="today-queue">
             <SectionHeading id="today-queue" title={showTeam ? "Team queue" : "Your queue"}
                 count={showTeam ? (team.status === "ready" ? <span className="text-sm tabular-nums text-neutral-400">{teamReady}</span> : null)
@@ -286,6 +265,43 @@ export function TodayColumn({ workspaceSlug, workspaceId, userId, canSeeAttentio
                         </> : undefined} />
                 })}</List>}
         </section>
+
+        {canSeeAttention ? <section aria-labelledby="today-attention">
+            <div className="mb-2 flex min-h-9 items-center gap-1 px-1">
+                <button type="button" data-today-attention-toggle aria-expanded={!attentionCollapsed} aria-controls="today-attention-list" onClick={toggleAttention}
+                    className="flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-neutral-500">
+                    <h2 id="today-attention" className="text-sm font-semibold text-neutral-100">Needs attention</h2>
+                    {attention.status === "ready" && attentionTotal > 0 ? <RoundPill tone="red" className="tabular-nums">{attentionTotal > 99 ? "99+" : attentionTotal}</RoundPill> : null}
+                    <Chevron open={!attentionCollapsed} />
+                </button>
+                <Button variant="ghost" size="sm" onClick={() => onOpen(attentionUrl)}>See all</Button>
+            </div>
+            {attentionCollapsed ? null : <div id="today-attention-list">
+                {attention.status === "loading" ? <LoadingRows label="Loading what needs attention" />
+                    : attention.status === "unavailable" ? <Notice>Needs a database update.</Notice>
+                    : attention.status === "error" ? <Notice tone="error">{attention.message} <button type="button" className="underline underline-offset-2" onClick={() => void loadAttention()}>Retry</button></Notice>
+                    : attentionRows.length === 0 ? <Notice><Status label="Nothing needs attention" tone="green" /></Notice>
+                    : <List flush ariaLabel="Needs attention">
+                        {attentionRows.map(({ group, item, href, count }) => {
+                            const meta = ATTENTION_LABELS[group.kind]
+                            const clientFirst = group.kind === "waiting_on_reply" || group.kind === "stalled_onboarding"
+                            const waiting = waitingLabel(item.since, now)
+                            const target = count > 1 ? attentionUrl : href
+                            return <ListCompactItem key={`${group.kind}:${item.recordId}`}
+                                current={target ? pathOf(target) === activePath : false}
+                                onOpen={target ? () => onOpen(target) : undefined}
+                                meta={<><Status label={meta.label} tone={meta.tone} />{waiting ? <span className="ml-auto shrink-0 tabular-nums" title={`Waiting ${waiting}`}>{waiting}</span> : null}</>}
+                                title={clientFirst ? item.client ?? item.title : item.title}
+                                supporting={count > 1 || (!clientFirst && item.client) ? <>
+                                    {!clientFirst && item.client ? <span className="min-w-0 truncate">{item.client}</span> : null}
+                                    {count > 1 ? <span className="ml-auto shrink-0 tabular-nums">{count} the same</span> : null}
+                                </> : undefined} />
+                        })}
+                        {attentionTotal > attentionShown ? <ListCompactItem onOpen={() => onOpen(attentionUrl)} current={pathOf(attentionUrl) === activePath}
+                            title={<span className="font-normal text-neutral-300">{attentionTotal - attentionShown} more in Needs attention</span>} /> : null}
+                    </List>}
+            </div>}
+        </section> : null}
 
         {recentRows.length ? <section aria-labelledby="today-recent">
             <SectionHeading id="today-recent" title="Still open" />

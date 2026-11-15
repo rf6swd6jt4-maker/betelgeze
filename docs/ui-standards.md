@@ -37,6 +37,8 @@ Radius follows a fixed rule rather than its own token — Tailwind's default sca
 
 Only on top-level BE app launch, before the shell arrives, `AppStartupScreen` shows a centred white Betelgeze diamond on `#171717`, using inline SVG and styles so it does not wait for assets. It disappears as soon as the shell is present and cannot reappear during navigation or retries. Client-facing loading uses the agency logo, never the BE diamond. Every panel has its own route-specific skeleton, shared between its route fallback and shell opening state. Tab loading stays inside the shell on a dark canvas; an iframe's document-load event alone must not reveal it before its app bridge is mounted.
 
+In the Today layout from `lg` up there is no tab bar row: the work area and the client column start directly under the top bar (`body[data-workspace-layout="today"]` rules in `app/globals.css`), and the context toggle is a top-bar icon button. Do not put a page title in shell chrome; the page header owns it.
+
 Keep the shell stacking order explicit: tab content `30`, relationship context `35`, tab bar `40`, mobile sidebar dismiss surface `45`, sidebar `50`, top bar and its dropdowns `55`, notices `60`, and dialogs `90` or higher. The top bar creates a stacking context, so increasing a dropdown's own z-index cannot lift it above a sibling sidebar. Keep the entire top bar above the sidebar so account and desktop/mobile search popups stay visible and clickable. Use `AnchoredPopup` for editors that must escape an iframe or clipping ancestor; loading overlays remain above all interactive surfaces.
 
 Top-bar mutation feedback uses short, bounded labels (`Saving…`, `Saved`, `Action failed`). Full error details stay in the originating form and the status tooltip/accessibility label; they must never expand the header or displace search, navigation, presence, or account controls.
@@ -495,6 +497,11 @@ inside `List flush` (`flush` drops the list's top margin when a section heading 
 
 This variant is for companion columns only. Panel collections keep the two-band anatomy, and a companion list never
 gains per-row menus, pills or secondary actions.
+
+In the Today column the person's own queue is always the first section. Needs attention follows, shows at most four
+rows, and merges identical items (same kind, title and client) into one row whose supporting line ends with the count
+(`3 the same`); a merged row opens the full list rather than one record. A team-wide list must never push the queue
+below the fold.
 
 ### Reference mappings
 

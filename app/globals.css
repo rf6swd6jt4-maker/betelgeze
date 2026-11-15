@@ -4,6 +4,7 @@
   --background: #0a0a0a;
   --foreground: #ededed;
   --workspace-sidebar-width: 5rem;
+  --workspace-today-width: 22rem;
 }
 
 @theme inline {
@@ -353,6 +354,28 @@ html:is([data-mobile-conversation-phase="open"], [data-mobile-conversation-phase
     width: calc(100% - var(--workspace-sidebar-width));
   }
 
+  /* Today layout (docs/today-layout.md) from lg up: hide the tab strip and place the Today column between the sidebar
+     and the work area. Below lg the tabbed frame is unchanged. Only the frame moves; the resident tabs stay mounted. */
+}
+
+@media (min-width: 1024px) {
+  [data-workspace-today-shell] {
+    left: var(--workspace-sidebar-width);
+    width: var(--workspace-today-width);
+  }
+
+  body[data-workspace-layout="today"] [data-workspace-tabbar] {
+    display: none;
+  }
+
+  body[data-workspace-layout="today"] [data-workspace-tab-panels] {
+    top: 3.5rem;
+    left: calc(var(--workspace-sidebar-width) + var(--workspace-today-width));
+    width: calc(100% - var(--workspace-sidebar-width) - var(--workspace-today-width));
+  }
+}
+
+@media (min-width: 768px) {
   /* Native panels already sit inside the inset tab container. Only legacy
      document pages need a separate main-content sidebar inset. */
   body[data-workspace-sidebar-open] main:not([data-onboarding-full-window-preview]):not([data-workspace-loading-root]):not([data-client-portal-main]):not([data-native-workspace-tab] main) {

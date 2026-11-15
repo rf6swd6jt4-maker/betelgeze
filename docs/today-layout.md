@@ -68,7 +68,15 @@ first load. The Today layout keeps that model and hides only its strip:
      members and 100 rows; descriptions are not sent. The read costs one personal queue read per other member, so it
      runs only when Team is chosen (never at shell start; the switch always opens on Mine) and is reused for a minute.
      Until the migration `20261115190000_team_work_queue.sql` is applied the Team view says "Needs a database update".
-     `scripts/validate-team-queue-full-schema.mjs` checks it against every committed migration in CI. Its production
-     cost has not been measured.
+     `scripts/validate-team-queue-full-schema.mjs` checks it against every committed migration in CI.
+   - *Team read on production (15 November 2026).* The migration was applied through the Supabase SQL Editor after a
+     read-only check that the function was absent and its dependencies present. Installed as security definer,
+     executable by `service_role` only. Measured with `explain analyze` for the pilot owner in the pilot workspace
+     (7 memberships): Team read 309-341 ms execution over four runs; one personal queue read 49 ms; the membership
+     count 0.15 ms. So the cost is about one personal read per other member, as designed. At the time it returned 2
+     people with 7 ready items, at most 4 per person, not truncated. These are database execution times for one
+     workspace at one moment: they exclude network, authentication and rendering, and are not a latency guarantee.
+     The cost grows with members (bounded at 25) and with each person's queue. Not measured: the request end to end
+     in the signed-in app.
 5. **Measure and roll out.** Pilot one workspace, compare its `workspace_interaction_metrics` against the baseline with the
    same query, then widen.

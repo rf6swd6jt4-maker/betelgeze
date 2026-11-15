@@ -40,7 +40,7 @@ const cache=new WorkspaceRecordCache();
 document.body.dataset.workspaceLayout="today";document.documentElement.style.setProperty("--workspace-sidebar-width","5rem");
 function Shell(){const[url,setUrl]=useState("/fixture/queue");const visible=useTodayColumnVisible(true);const staff=new URLSearchParams(location.search).has("staff");return <>
 <header className="fixed inset-x-0 top-0 z-40 h-14 border-b border-neutral-800 bg-neutral-950" />
-<div data-workspace-tabbar className="fixed top-14 z-40 h-11 bg-red-900">TAB STRIP (hidden in Today layout from lg)</div>
+<div data-workspace-tabbar className="fixed top-14 z-40 flex h-11 items-center border-b border-neutral-800 bg-neutral-950 px-2"><div role="tablist" aria-label="Workspace tabs" className="flex-1 bg-red-900 text-xs">TABS (hidden in Today layout)</div><button type="button" aria-label="Show relationship context" className="h-8 w-8 rounded bg-neutral-800">C</button></div>
 {visible?<div data-workspace-today-shell className="fixed bottom-0 top-14 z-30 hidden border-r border-neutral-800 bg-neutral-950 lg:block">
 <TodayColumn workspaceSlug="fixture" workspaceId="${ws}" userId="${me}" canSeeAttention={!staff} cache={cache} activeUrl={url} onOpen={(href)=>{(window.fixtureOpened??=[]).push(href);setUrl(href)}}/></div>:null}
 <div data-workspace-tab-panels className="fixed bottom-0 top-[6.25rem] z-30 overflow-hidden bg-neutral-950 p-6"><p data-fixture-work-area>Work area: {url}</p></div></>}

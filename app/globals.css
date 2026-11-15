@@ -364,12 +364,13 @@ html:is([data-mobile-conversation-phase="open"], [data-mobile-conversation-phase
     width: var(--workspace-today-width);
   }
 
-  body[data-workspace-layout="today"] [data-workspace-tabbar] {
-    display: none;
+  /* Only the tabs go: the strip keeps its context-panel controls. */
+  body[data-workspace-layout="today"] [data-workspace-tabbar] [role="tablist"] {
+    visibility: hidden;
   }
 
+  body[data-workspace-layout="today"] [data-workspace-tabbar],
   body[data-workspace-layout="today"] [data-workspace-tab-panels] {
-    top: 3.5rem;
     left: calc(var(--workspace-sidebar-width) + var(--workspace-today-width));
     width: calc(100% - var(--workspace-sidebar-width) - var(--workspace-today-width));
   }

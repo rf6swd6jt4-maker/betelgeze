@@ -22,7 +22,7 @@ first load. The Today layout keeps that model and hides only its strip:
 
 ## Slices
 
-1. **Frame and Today column (this slice).** From `lg` up: hide the tab strip, add the Today column between the sidebar
+1. **Frame and Today column (this slice).** From `lg` up: hide the tabs (the strip stays for its context-panel controls), add the Today column between the sidebar
    and the work area, open items through `openWorkspaceTab`, mark the active item. Below `lg` the layout keeps the tab
    strip and no column (phones are slice 2). Nothing changes when the switch is off.
 2. **Phones and tablets.** The Today column as the default screen with the work area pushed over it; back returns.

@@ -33,8 +33,9 @@ test("the frame changes only from lg up and only for the Today layout", () => {
     const block = css.slice(css.indexOf("@media (min-width: 1024px) {\n  [data-workspace-today-shell]"))
     assert.ok(block.length > 0)
     const lg = block.slice(0, block.indexOf("\n}\n"))
-    assert.match(lg, /body\[data-workspace-layout="today"\] \[data-workspace-tabbar\] \{\s*display: none;/)
-    assert.match(lg, /body\[data-workspace-layout="today"\] \[data-workspace-tab-panels\] \{\s*top: 3\.5rem;/)
+    assert.match(lg, /body\[data-workspace-layout="today"\] \[data-workspace-tabbar\] \[role="tablist"\] \{\s*visibility: hidden;/)
+    assert.doesNotMatch(lg, /\[data-workspace-tabbar\] \{\s*display: none/, "the strip stays, so the context-panel toggle stays")
+    assert.match(lg, /body\[data-workspace-layout="today"\] \[data-workspace-tabbar\],\s*body\[data-workspace-layout="today"\] \[data-workspace-tab-panels\] \{\s*left: calc\(var\(--workspace-sidebar-width\) \+ var\(--workspace-today-width\)\)/)
     assert.match(css, /--workspace-today-width: 22rem;/)
 })
 

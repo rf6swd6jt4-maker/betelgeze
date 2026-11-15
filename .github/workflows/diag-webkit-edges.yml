@@ -1,0 +1,46 @@
+name: Diagnose WebKit comms edge crash
+
+on:
+  push:
+    branches: [claude/diag-webkit-edges]
+
+permissions:
+  contents: read
+
+jobs:
+  loop:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020
+        with:
+          node-version: 24.16.0
+          cache: npm
+      - run: |
+          npm ci
+          npm ci --prefix scripts/browser --ignore-scripts
+          node scripts/browser/node_modules/playwright/cli.js install --with-deps webkit
+      - name: Loop action edges on WebKit
+        env:
+          DEBUG: pw:browser
+        run: |
+          failures=0
+          for i in $(seq 1 12); do
+            echo "::group::iteration $i"
+            if ! node scripts/browser/run-comms-action-edges.mjs webkit > "iter-$i.log" 2>&1; then
+              failures=$((failures+1)); echo "ITERATION $i FAILED"; echo "::endgroup::"
+              grep -v "pw:browser.*<\(launching\|launched\)" "iter-$i.log" | tail -150
+            else
+              echo "iteration $i passed"; echo "::endgroup::"
+            fi
+          done
+          echo "failures=$failures"
+          free -m
+          test "$failures" = 0

@@ -34,6 +34,13 @@ try {
             })
             const page = await context.newPage()
             page.on("pageerror", error => errors.push(error.message))
+            const t0 = Date.now()
+            page.on("console", message => { if (message.text().startsWith("[diag]")) console.log(`+${Date.now() - t0}ms`, message.text()) })
+            page.on("crash", () => console.log(`+${Date.now() - t0}ms [diag] PAGE CRASH event`))
+            await context.addInitScript(() => {
+                let hb = 0
+                setInterval(() => console.log(`[diag] hb ${++hb}`), 1000)
+            })
             const surface = () => page.locator("[data-mobile-conversation-surface]:not([hidden])")
             const editor = () => surface().locator("[data-chat-composer]")
             const popup = () => page.locator("[data-message-action-popup]")
@@ -43,6 +50,25 @@ try {
                 await page.goto(origin)
                 if (mode === "client") await page.getByRole("tab", { name: "Clients", exact: true }).click()
                 await choose(mode === "team" ? "Project team" : "Northstar Studio")
+                await page.evaluate(() => {
+                    // Diagnostic: detect fetch calls that never yield a task.
+                    const mock = window.fetch
+                    let calls = 0, tick = false, reported = false
+                    const channel = new MessageChannel()
+                    channel.port1.onmessage = () => { calls = 0; tick = false }
+                    const recent = []
+                    window.fetch = (input, init) => {
+                        const url = typeof input === "string" ? input : input.url
+                        recent.push(`${init?.method ?? "GET"} ${url}`); if (recent.length > 30) recent.shift()
+                        if (!tick) { tick = true; channel.port2.postMessage(0) }
+                        if (++calls > 200) {
+                            if (!reported) { reported = true; console.log(`[diag] SPIN ${calls} fetches without a task: ${JSON.stringify(recent)} STACK ${new Error().stack}`) }
+                            return new Promise(() => {})
+                        }
+                        return mock(input, init)
+                    }
+                    console.log("[diag] opened")
+                })
                 await page.evaluate(() => {
                     const fetchLocal = window.fetch
                     window.edgeRequests = []
@@ -101,6 +127,7 @@ try {
                 assert(Math.abs(geometry.header) < 1 && geometry.scroll === 0, JSON.stringify(geometry))
             }
             async function check(name, run) {
+                console.log(`+${Date.now() - t0}ms [diag] start ${name}`)
                 try { await run(); results.push({ engine, name, passed: true }); console.log(`${engine}: ${name}`) }
                 catch (error) {
                     console.error(`${engine}: ${name}:`, error)

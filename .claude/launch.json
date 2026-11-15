@@ -35,6 +35,14 @@
         "scripts/serve-today-column-fixture.mjs"
       ],
       "port": 3109
+    },
+    {
+      "name": "docked-chat-fixture",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "scripts/serve-docked-chat-fixture.mjs"
+      ],
+      "port": 3111
     }
   ]
 }

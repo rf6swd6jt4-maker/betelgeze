@@ -11,7 +11,12 @@ export function workspaceDocumentIsActive(nativeTabId?: string) {
             const id = new URLSearchParams(window.location.search).get(WORKSPACE_TAB_FRAME_PARAM)
                 ?? (window.name.startsWith(WORKSPACE_TAB_FRAME_NAME_PREFIX) ? window.name.slice(WORKSPACE_TAB_FRAME_NAME_PREFIX.length) : null)
             if (!id) return false
-            const selected = window.parent.document.body.dataset.workspaceActiveTabId
+            const host = window.parent.document.body.dataset
+            // Today layout (app-alerts.md, docked chat, 15 November 2026): the one chat docked beside the active
+            // destination is in front of the person while the shell shows it. The shell names it only while it is
+            // displayed; every other reading condition (focus, newest row visible, not covered) is unchanged.
+            if (host.workspaceDockedTabId && host.workspaceDockedTabId === id) return !frame.hidden
+            const selected = host.workspaceActiveTabId
             return selected ? selected === id : !frame.hidden && document.body.dataset.workspaceTabActive === "true"
         } catch { return false }
     }

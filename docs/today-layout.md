@@ -30,9 +30,36 @@ first load. The Today layout keeps that model and hides only its strip:
    The sheet opens by itself once at launch when the shell starts on the workspace home or queue. It mounts only while
    open (no fetches while closed), closes on navigation, tab switches and the other drawers, and reuses Needs
    attention and the queue cache when reopened within a minute.
-3. **Resident limit.** Replace the "replace the active tab when eight are open" rule with least-recently-used eviction
-   that never evicts a destination with unsaved drafts.
-4. **Comms in the context column and drawer.** Changes when messages count as read; needs the user's explicit
-   permission under `app-alerts.md` before any work starts.
+3. **Open-item limit and finish.** Built on `today-layout-finish`.
+   - *Limit.* With eight destinations open, opening a ninth drops the least recently used destination that is not
+     mounted (`workspaceTabToEvict` in `lib/workspace-tabs.ts`) instead of replacing the one in front of the person.
+     Mounted (resident) and active destinations are never candidates: an unmounted destination has no live owner and
+     already passed its departure check when it left residency, so no unsaved draft can be dropped. The eviction rides
+     the same `prepareNativeLeave` check and commit as the open, and is re-validated inside the commit; if the plan no
+     longer holds, nothing happens. The tabbed layout keeps its old rule because its tabs are visible and closable.
+   - *Column.* Rows use `ListCompactItem`: status and waiting time or effort, a title of up to two lines, then the
+     client and deadline. The open record carries `aria-current` and the selection marker. Needs attention collapses
+     (remembered per person and workspace on the device), shows its total as a red count and links to the rest. First
+     loads show placeholder rows. Relative wording comes from `lib/today-column.ts` and its clock advances only with a
+     Needs attention read, so no timer is added.
+   - *Still open.* The other open destinations, most recently used first (at most five), so hidden tabs stay
+     reachable. Choosing one re-activates it through `openWorkspaceTab`: a memory switch, no request.
+   - *Work-area bar.* The strip shows the current destination's title and its loading mark where the tabs were.
+   - Speed: no request, subscription, timer or resident owner is added. The column still makes one shared queue read
+     and one Needs attention read; "Still open" and the title render from shell state already in memory.
+4. **Comms in the client column and drawer.** Built on `today-layout-finish`; desktop width only. Authorized in
+   `app-alerts.md` (docked chat, 15 November 2026) and `app_speed.md` section 7.
+   - The client column gains a Context / Chat switch (`SegmentedSwitch`). Chat docks that client's conversation; the top
+     bar's Comms button opens the conversation list as a floating drawer over the same column position.
+   - Both are one `DockedCommunications` frame showing the existing Communications page at its phone layout, so reads,
+     unread counts, drafts, sends and alerts run the page's own code. At most one dock exists. Nothing loads until it is
+     asked for.
+   - Returning to Context hides the dock without unloading it. Closing it, docking another client or opening the drawer
+     first runs the frame's departure check; a chat that cannot confirm its work is saved stays, with a notice.
+   - Record links inside the dock open in the work area through `openWorkspaceTab`. If the docked page navigates away
+     from Communications, that destination opens in the work area and the dock returns to its chat.
+   - Below `lg` there is no dock: Communications stays the full view from the sidebar.
+   - Not verified without a signed-in session: the real page inside the dock (layout at 20rem, composer, realtime),
+     WebKit, and real read and alert behaviour. Check these in the pilot before widening.
 5. **Measure and roll out.** Pilot one workspace, compare its `workspace_interaction_metrics` against the baseline with the
    same query, then widen.

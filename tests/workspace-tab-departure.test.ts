@@ -277,11 +277,13 @@ test("actual successful close bounds frame/context bookkeeping while preserving 
         setContextOpenByTab: (update: (value: typeof contextOpen) => typeof contextOpen) => { contextOpen = update(contextOpen) },
         loadedTabIdsRef: { current: new Set() }, readyTabIdsRef: { current: new Set() }, pendingNavigationRef: { current: new Map() },
         navigationTimeoutRef: { current: new Map() }, softNavigationFallbackRef: { current: new Map() }, navigationFallbackRef: { current: new Map() }, navigationErrorRef: { current: new Map() }, mutationIdsByTabRef: { current: new Map() },
-        setLoadedTabIds() {}, routeLoadingTabId: null, setRefreshingTabIds() {}, setNavigationStateByTab() {}, setBackgroundMutationCounts() {},
+        setLoadedTabIds() {}, setRouteLoadingTabId() {}, tabRecencyRef: { current: ["live", "closing"] }, setTabRecency() {}, useCallback: (fn: unknown) => fn, setRefreshingTabIds() {}, setNavigationStateByTab() {}, setBackgroundMutationCounts() {},
         contextStatusByTabRef: { current: { closing: {} } }, contextManualClosedByTabRef: { current: { closing: true } }, contextObstructedByTabRef: { current: { closing: true } },
         setContextStatusByTab() {}, setContextObstructedByTab() {}, activeTabIdRef: { current: "live" }, setTabs() {}, activateWorkspaceTab() {}, saveTabsState() {},
     }
-    await evaluate("closeTab", fixture)("closing")
+    // closeTab delegates its bookkeeping to the shell's shared discard owner; run both real functions together.
+    await evaluate("closeTab", { ...fixture, discardWorkspaceTabState: evaluate("discardWorkspaceTabState", fixture) })("closing")
+    assert.deepEqual(fixture.tabRecencyRef.current, ["live"])
     assert.deepEqual(order.current, ["live"]); assert.deepEqual(residents.current, ["live"])
     assert.deepEqual(removed, ["context:closing"]); assert.deepEqual(contextOpen, { live: false })
     assert.equal(closed.current.length, 20)

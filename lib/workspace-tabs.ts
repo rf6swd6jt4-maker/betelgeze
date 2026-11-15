@@ -322,3 +322,23 @@ export function workspaceTabDisplayTitle(tab: { title: string; customTitle?: str
     }
     return tab.title
 }
+
+/**
+ * Today layout: which open destination to drop when the open-item limit is reached. Pass every mounted (resident) and
+ * active destination as protected. An unmounted destination has no live owner, and it passed its departure check when it
+ * left residency, so dropping it cannot lose an unsaved draft. Never-activated destinations go first (oldest strip
+ * position first), then the least recently activated. Returns null when every destination is protected.
+ */
+export function workspaceTabToEvict(tabIds: string[], recency: string[], protectedIds: Iterable<string>) {
+    const keep = new Set(protectedIds)
+    const rank = (id: string) => { const index = recency.indexOf(id); return index < 0 ? Number.POSITIVE_INFINITY : index }
+    let evict: string | null = null
+    for (const id of tabIds) if (!keep.has(id) && (evict === null || rank(id) > rank(evict))) evict = id
+    return evict
+}
+
+/**
+ * Identity of the one chat frame the Today layout can dock beside the active destination (client column or Comms
+ * drawer). It is never a member of the open-destination list, so the shell's tab receiver ignores its messages.
+ */
+export const WORKSPACE_DOCKED_CHAT_TAB_ID = "docked-chat"

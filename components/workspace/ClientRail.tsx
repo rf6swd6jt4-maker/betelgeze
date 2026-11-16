@@ -48,10 +48,12 @@ function Destination({ item, onOpen }: { item: RailDestination; onOpen: (item: R
  * destinations below stay within reach. It never navigates on its own: every choice goes back to
  * the shell, so resident destinations, departure checks and drafts keep their one owner.
  */
-export function ClientRail({ workspaceSlug, userId, activePath, online, today, destinations, refreshKey, onOpenClient, onOpenDestination }: {
+export function ClientRail({ workspaceSlug, userId, activePath, activeClientId, online, today, destinations, refreshKey, onOpenClient, onOpenDestination }: {
     workspaceSlug: string; userId: string
     /** Pathname of the destination in front of the person, without a trailing slash. */
     activePath: string
+    /** The client the destination in front of the person belongs to (their page, or a record of theirs), if any. */
+    activeClientId?: string | null
     online: boolean
     today: RailDestination
     destinations: RailDestination[]
@@ -108,8 +110,10 @@ export function ClientRail({ workspaceSlug, userId, activePath, online, today, d
     const shown = useMemo(() => filterRailClients(clients, query), [clients, query])
     const primary = destinations.filter(item => item.primary)
     const secondary = destinations.filter(item => !item.primary)
-    // The destination in front of the person is never hidden behind More.
-    const moreShown = moreOpen || secondary.some(item => item.active)
+    // The rail never rearranges itself: More opens and closes only when the person presses it. A destination behind a
+    // closed More marks the More row instead.
+    const moreShown = moreOpen
+    const hiddenCurrent = !moreOpen && secondary.some(item => item.active)
     const relationshipsHref = `/${workspaceSlug}/relationships`
 
     return <div data-client-rail-content className="flex flex-col gap-1 md:min-h-0 md:flex-1">
@@ -128,7 +132,7 @@ export function ClientRail({ workspaceSlug, userId, activePath, online, today, d
                 {state.status === "error" ? <p data-rail-wide role="alert" className="px-2 py-2 text-xs leading-5 text-red-200">{state.message} <button type="button" className="underline underline-offset-2" onClick={() => void load()}>Retry</button></p> : null}
                 {shown.map(client => {
                     const href = `/${workspaceSlug}/relationships/${client.id}`
-                    const current = activePath === href
+                    const current = activePath === href || client.id === activeClientId
                     return <div role="listitem" key={client.id}>
                         <a href={href} data-global-loading="false" data-rail-client aria-current={current ? "page" : undefined} aria-disabled={!online || undefined}
                             onClick={event => { if (!plainClick(event)) return; event.preventDefault(); if (online) onOpenClient(href) }}
@@ -153,7 +157,7 @@ export function ClientRail({ workspaceSlug, userId, activePath, online, today, d
         <div className="flex shrink-0 flex-col gap-1 border-t border-card-border pt-1">
             {primary.map(item => <Destination key={item.key} item={item} onOpen={onOpenDestination} />)}
             {secondary.length ? <button type="button" data-icon-button aria-expanded={moreShown} aria-controls="client-rail-more" onClick={() => setMoreOpen(open => !open)}
-                className={`${rowClass} ${idleRow}`}>
+                className={`${rowClass} ${hiddenCurrent ? currentRow : idleRow}`}>
                 <span className={tileClass}><MoreIcon /></span>
                 <span data-rail-label className="min-w-0 flex-1 truncate">More</span>
             </button> : null}

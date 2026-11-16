@@ -89,5 +89,11 @@ first load. The Today layout keeps that model and hides only its strip:
      kind, title and client) merge into one row with a count that opens the full list. (c) The work item's
      Dependencies field is top-aligned: as an inline-block it aligned by its last line, so a wrapped list was lifted
      over the Parent row. No request, timer or resident owner changes; removing the strip removes one fixed layer.
+   - *Declutter, pass 2: top bar (`today-top-bar`).* In the Today layout the five create icons become one `New` menu
+     (`ListActionMenu` with a labelled trigger; each entry keeps its own permission and the menu is absent for someone
+     who can create nothing), and presence shows three people, connected first, with the rest as a `+N` count whose
+     tooltip names them. Back, forward, reload, search, Comms, the context toggle and the account menu are unchanged.
+     The tabbed layout keeps its icon row and full presence. No request or subscription changes: the same presence
+     roster is rendered shorter.
 5. **Measure and roll out.** Pilot one workspace, compare its `workspace_interaction_metrics` against the baseline with the
    same query, then widen.

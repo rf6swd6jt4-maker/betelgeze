@@ -229,3 +229,23 @@ test("the docked chat column widens with the window and the work area reserves i
     assert.match(shell, /if \(!dockColumnShown\) return\s*document\.body\.dataset\.workspaceDock = "column"/, "the wider reservation applies only while the column shows the chat")
     assert.match(source("components/workspace/ShellRelationshipContextPanel.tsx"), /hidden w-80 flex-col/, "the context reference keeps its 20rem width")
 })
+
+test("the Today top bar has one New menu and a short presence stack", async () => {
+    const shell = source("components/workspace/WorkspaceTopBarClient.tsx")
+    assert.match(shell, /layout === "today" \? \(canCreateRelationship \|\| canCreateLibraryItem \|\| canCreateOkr\) && <ListActionMenu allowBelow label="Create something new"/, "one menu in the Today layout, and none for people who can create nothing")
+    assert.match(shell, /canCreateOkr && \{ label: "OKR", onSelect: \(\) => openCreate\("okr"\) \}/, "each entry keeps its own permission")
+    assert.match(shell, /\]\} \/> : <div className="hidden items-center gap-0\.5 md:flex" aria-label="Create">/, "the tabbed layout keeps its icon row")
+    assert.match(shell, /max=\{layout === "today" \? 3 : undefined\}/)
+    assert.match(shell, /sort\(\(left, right\) => Number\(right\.active\) - Number\(left\.active\)\)/, "connected people are shown first")
+
+    // @ts-expect-error Node's built-in TypeScript test runner requires the source extension.
+    const { anchoredPopupPosition } = await import("../components/ui/anchored-popup-position.ts")
+    const viewport = { left: 0, top: 0, width: 1280, height: 800 }
+    const base = { popupWidth: 208, popupHeight: 180, viewport, align: "end" as const, allowBelow: true }
+    assert.equal(anchoredPopupPosition({ ...base, trigger: { left: 1100, right: 1170, top: 10 } }).top, 16, "without a bottom edge a flipped menu keeps its old position")
+    assert.equal(anchoredPopupPosition({ ...base, trigger: { left: 1100, right: 1170, top: 10, bottom: 46 } }).top, 52, "with it, the menu opens beneath the whole trigger")
+    assert.equal(anchoredPopupPosition({ ...base, trigger: { left: 1100, right: 1170, top: 400, bottom: 436 } }).top, 400 - 6 - 180, "and still opens above when there is room")
+    const menu = source("components/list/ListActionMenu.tsx")
+    assert.match(menu, /clearTrigger=\{Boolean\(trigger\)\}/, "only a labelled trigger asks for it")
+    assert.match(source("components/ui/AnchoredPopup.tsx"), /\.\.\.\(clearTrigger \? \{ bottom: rect\.bottom \} : \{\}\)/)
+})

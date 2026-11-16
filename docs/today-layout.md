@@ -30,7 +30,9 @@ had no single organising idea. Now you work on a client, and each thing has one 
   sidebar toggle pins it open, which does move the page as before. Touch tablets have no hover, so they keep the narrow
   rail until pinned. Below `md` it is the existing slide-in drawer with names. Order: **Today**; clients; then Library,
   Staff and Settings, with Relationships, Onboarding, Client Connections, Onboarding Builder and Admin behind **More**
-  (the destination in front of the person is never hidden behind it). A find box appears from nine clients.
+  (More opens only when pressed; a destination behind a closed More marks the More row). The rail never rearranges
+  itself, and a client's tile is marked on their page and on any record of theirs. Framed pages reserve room for the
+  client column only while it is really beside them (`context-set`), so the docked Comms panel leaves no gap. A find box appears from nine clients.
 - **Client list read** (`GET /api/workspaces/<slug>/client-rail`, `lib/client-rail.ts`). Three columns of current
   (non-archived) relationships the person may open, in name order, at most 60; a longer list says so and links to
   Relationships. It follows `relationships_workspace_person_idx` and stops after the limit, instead of the

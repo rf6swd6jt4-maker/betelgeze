@@ -17,6 +17,9 @@ test("the client rail opens everything through the shell's resident tab owner", 
     assert.doesNotMatch(shell, /data-workspace-today-shell|TodayColumn|todaySheetOpen/, "the Today column and its phone sheet are gone")
     const rail = source("components/workspace/ClientRail.tsx")
     assert.doesNotMatch(rail, /router\.push|window\.location|useRouter/, "the rail never navigates on its own")
+    assert.match(rail, /const moreShown = moreOpen\n/, "the rail never rearranges itself: More opens only when pressed")
+    assert.match(rail, /const current = activePath === href \|\| client\.id === activeClientId/, "a client stays marked on records that belong to them")
+    assert.match(shell, /const todayFrameContextOpen = layout === "today" && activeContextSupported \? activeContextOpen && !dockShown : null/, "framed pages give the column's room back when the docked panel takes that side")
     assert.match(rail, /if \(!plainClick\(event\)\) return; event\.preventDefault\(\); if \(online\) onOpenClient\(href\)/, "a modified click keeps the browser's own behaviour")
 })
 

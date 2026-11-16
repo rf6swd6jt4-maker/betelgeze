@@ -1788,8 +1788,6 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
                 }
 
                 setTabContextStatus(message.tabId, { url: message.url, supported: true, relationshipId, context: message.context ?? null })
-                // Today layout: the client column has no hide control, so a framed page always keeps its room for it.
-                if (document.body.dataset.workspaceLayout === "today") postToTab(message.tabId, { type: "context-set", open: true })
             }
 
             if (message.type === "context-obstruction") {
@@ -2729,6 +2727,13 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
         document.body.dataset.workspaceDock = "shown"
         return () => { delete document.body.dataset.workspaceDock }
     }, [dockShown])
+    // Today layout: a framed page reserves room for the client column only while the column is really beside it, so
+    // nothing is left empty when the docked Comms panel takes that side.
+    const todayFrameContextOpen = layout === "today" && activeContextSupported ? activeContextOpen && !dockShown : null
+    useEffect(() => {
+        if (todayFrameContextOpen === null) return
+        postToTab(activeTab.id, { type: "context-set", open: todayFrameContextOpen })
+    }, [todayFrameContextOpen, activeTab.id, activeTab.url, postToTab])
     const dockLoaded = dock !== null
     useEffect(() => {
         // Narrowing below desktop width, or losing access, releases the dock once it confirms its work is saved.
@@ -3317,7 +3322,7 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
                         <SearchIcon />
                     </button>
                 </div>
-                {layout === "today" ? <ClientRail workspaceSlug={workspace.slug} userId={currentUserId} activePath={activePathname.replace(/\/$/, "")} online={online}
+                {layout === "today" ? <ClientRail workspaceSlug={workspace.slug} userId={currentUserId} activePath={activePathname.replace(/\/$/, "")} activeClientId={activeRelationshipContext?.id ?? null} online={online}
                     today={railToday} destinations={railDestinations} refreshKey={clientRailRevision}
                     onOpenClient={(href) => { void openWorkspaceTab(href); closeSidebarAfterNavigation() }} onOpenDestination={openRailDestination} /> : sidebarItems.map((item) => {
                     const offlineBlocked = !online && !item.href.includes("/communications")

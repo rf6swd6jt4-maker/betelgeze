@@ -3259,6 +3259,7 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
                 key={`${activeTab.id}:${activeTab.url}`}
                 desktopOpen={activeContextOpen && !(dockShown && dock?.place === "column")}
                 onChat={canDockChat ? openColumnChat : undefined}
+                dense={layout === "today"}
                 mobileOpen={mobileContextKey === `${activeTab.id}:${activeTab.url}`}
                 onClose={() => setMobileContextKey(null)}
                 currentUrl={activeTab.url}

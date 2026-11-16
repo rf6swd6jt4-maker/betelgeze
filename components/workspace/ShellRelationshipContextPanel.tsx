@@ -22,11 +22,13 @@ type Props = {
     standalone?: boolean
     /** Today layout, desktop only: offers the Context / Chat switch. Choosing Chat hands the column to the docked chat. */
     onChat?: () => void
+    /** Today layout: the quieter client column. One line per service and contact, no panel label or record id. */
+    dense?: boolean
 }
 
 const CONTEXT_VIEWS = [{ value: "context", label: "Context" }, { value: "chat", label: "Chat" }] as const
 
-function ContactValue({ label, value }: { label: "Phone" | "Email" | "Website"; value: string }) {
+function ContactValue({ label, value, dense = false }: { label: "Phone" | "Email" | "Website"; value: string; dense?: boolean }) {
     const [feedback, setFeedback] = useState("")
     const href = relationshipContactHref(label, value)
     useEffect(() => {
@@ -34,9 +36,10 @@ function ContactValue({ label, value }: { label: "Phone" | "Email" | "Website"; 
         const timeout = window.setTimeout(() => setFeedback(""), 2400)
         return () => window.clearTimeout(timeout)
     }, [feedback])
-    return <div className="py-2">
-        <dt className="text-xs text-neutral-500">{label}</dt>
-        <dd className="mt-1 flex items-start gap-2 text-sm">
+    return <div className={dense ? "py-0.5" : "py-2"}>
+        {/* Dense: an address, number or URL says what it is; the label stays for assistive technology. */}
+        <dt className={dense ? "sr-only" : "text-xs text-neutral-500"}>{label}</dt>
+        <dd className={`flex gap-2 text-sm ${dense ? "items-center" : "mt-1 items-start"}`}>
             {href ? <a href={href} target={label === "Website" ? "_blank" : undefined} rel={label === "Website" ? "noopener noreferrer" : undefined} className="min-w-0 flex-1 break-words text-neutral-200 underline decoration-neutral-700 underline-offset-4 hover:text-white">{value}</a>
                 : <span className="min-w-0 flex-1 break-words text-neutral-300">{value}</span>}
             <button data-icon-button type="button" title={`Copy ${label.toLowerCase()}`} aria-label={`Copy ${label.toLowerCase()}`} className="inline-flex h-7 w-7 shrink-0 items-center justify-center text-neutral-500 hover:text-white focus-visible:outline focus-visible:outline-neutral-400" onClick={async () => {
@@ -50,7 +53,7 @@ function ContactValue({ label, value }: { label: "Phone" | "Email" | "Website"; 
     </div>
 }
 
-function ContextContent({ currentUrl, context, workspaceSlug, workspaceCapabilities, onNavigate, onClose, onChat }: Pick<Props, "currentUrl" | "context" | "workspaceSlug" | "workspaceCapabilities" | "onNavigate" | "onChat"> & { onClose?: () => void }) {
+function ContextContent({ currentUrl, context, workspaceSlug, workspaceCapabilities, onNavigate, onClose, onChat, dense = false }: Pick<Props, "currentUrl" | "context" | "workspaceSlug" | "workspaceCapabilities" | "onNavigate" | "onChat" | "dense"> & { onClose?: () => void }) {
     const company = context.business_name?.trim()
     const details = [
         { label: "Industry", value: context.industry_value?.replace(/_/g, " ") },
@@ -67,11 +70,16 @@ function ContextContent({ currentUrl, context, workspaceSlug, workspaceCapabilit
 
     return <>
         <header className="shrink-0 border-b border-white/[0.06] px-4 py-3">
-            <div className="flex items-center justify-between gap-2">
-                <p className="text-xs text-neutral-500">Relationship context <span className="ml-1 font-mono text-neutral-600">{shortId(context.id)}</span></p>
-                {onClose ? <button data-icon-button type="button" autoFocus onClick={onClose} aria-label="Close relationship context" className="inline-flex h-8 w-8 items-center justify-center text-xl text-neutral-400 hover:text-white">×</button> : null}
-            </div>
-            <h2 className="mt-2 break-words text-base font-semibold">{company || context.primary_person_name}</h2>
+            {dense ? <div className="flex items-start justify-between gap-2">
+                <h2 className="min-w-0 break-words text-base font-semibold">{company || context.primary_person_name}</h2>
+                {onClose ? <button data-icon-button type="button" autoFocus onClick={onClose} aria-label="Close relationship context" className="-mr-2 -mt-1 inline-flex h-8 w-8 shrink-0 items-center justify-center text-xl text-neutral-400 hover:text-white">×</button> : null}
+            </div> : <>
+                <div className="flex items-center justify-between gap-2">
+                    <p className="text-xs text-neutral-500">Relationship context <span className="ml-1 font-mono text-neutral-600">{shortId(context.id)}</span></p>
+                    {onClose ? <button data-icon-button type="button" autoFocus onClick={onClose} aria-label="Close relationship context" className="inline-flex h-8 w-8 items-center justify-center text-xl text-neutral-400 hover:text-white">×</button> : null}
+                </div>
+                <h2 className="mt-2 break-words text-base font-semibold">{company || context.primary_person_name}</h2>
+            </>}
             {company || context.primary_contact_role?.trim() ? <p className="mt-1 break-words text-xs leading-5 text-neutral-400">{[company ? context.primary_person_name : null, context.primary_contact_role?.trim()].filter(Boolean).join(" · ")}</p> : null}
             {Object.hasOwn(relationshipPhaseTones, context.lifecycle_phase) ? <RelationshipStage phase={context.lifecycle_phase as RelationshipPhase} className="mt-3" /> : null}
             {onChat ? <SegmentedSwitch label="Client column view" value="context" options={CONTEXT_VIEWS} onChange={view => { if (view === "chat") onChat() }} className="mt-3" /> : null}
@@ -80,12 +88,27 @@ function ContextContent({ currentUrl, context, workspaceSlug, workspaceCapabilit
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">
             {contacts.length ? <section className="mb-4 border-b border-white/[0.06] pb-3">
                 <h3 className="text-xs font-medium text-neutral-400">Contact</h3>
-                <dl>{contacts.map((contact) => <ContactValue key={`${context.id}-${contact.label}-${contact.value}`} label={contact.label} value={contact.value!.trim()} />)}</dl>
+                <dl>{contacts.map((contact) => <ContactValue key={`${context.id}-${contact.label}-${contact.value}`} label={contact.label} value={contact.value!.trim()} dense={dense} />)}</dl>
             </section> : null}
 
             <section aria-label="Services and team">
                 <h3 className="text-xs font-medium text-neutral-400">Services and team</h3>
-                {context.teamUnavailable ? <p className="mt-2 text-xs text-neutral-500">Services and team could not be loaded. Reload to try again.</p> : <>
+                {context.teamUnavailable ? <p className="mt-2 text-xs text-neutral-500">Services and team could not be loaded. Reload to try again.</p> : dense ? <>
+                    {/* One line each: what it is on the left, who holds it on the right. Still field pairs, not a record list. */}
+                    <dl className="mt-2">
+                        <div className="flex min-h-8 items-center justify-between gap-2">
+                            <dt className="text-xs text-neutral-400">Manager</dt>
+                            <dd className="min-w-0">{context.manager ? <Assignee name={context.manager.name} avatarSrc={context.manager.avatarSrc} /> : <span className="text-xs text-neutral-400">Unassigned</span>}</dd>
+                        </div>
+                        {context.services?.map((service) => <div key={service.id} className="flex min-h-8 items-center justify-between gap-2">
+                            {/* The service name gives way first; the stage and the owner always stay whole. */}
+                            <dt title={service.name} className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden"><RoundPill tone="emerald" className="min-w-0 shrink">{service.name}</RoundPill><ServiceStage stage={service.stage ?? null} /></dt>
+                            <dd className="shrink-0">{service.assignee ? <Assignee compact name={service.assignee.name} avatarSrc={service.assignee.avatarSrc} /> : <span className="text-xs text-neutral-400">Unassigned</span>}</dd>
+                        </div>)}
+                    </dl>
+                    {context.servicesHasMore && shortcuts.some(item => item.key === "relationships") ? <button type="button" onClick={() => onNavigate(`/${workspaceSlug}/relationships/${context.id}`)} className="py-2 text-xs text-neutral-400 underline">View all services</button> : null}
+                    {!context.services?.length ? <p className="mt-2 text-xs text-neutral-500">No services available to show.</p> : null}
+                </> : <>
                     <div className="mt-3"><p className="mb-1.5 text-xs text-neutral-500">Fulfilment manager</p>{context.manager ? <Assignee name={context.manager.name} avatarSrc={context.manager.avatarSrc} /> : <span className="text-xs text-neutral-400">Unassigned</span>}</div>
                     {/* These are attached service/assignee field pairs, not a navigable record collection. */}
                     <dl className="mt-3 divide-y divide-white/[0.06]">

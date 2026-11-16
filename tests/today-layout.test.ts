@@ -249,3 +249,13 @@ test("the Today top bar has one New menu and a short presence stack", async () =
     assert.match(menu, /clearTrigger=\{Boolean\(trigger\)\}/, "only a labelled trigger asks for it")
     assert.match(source("components/ui/AnchoredPopup.tsx"), /\.\.\.\(clearTrigger \? \{ bottom: rect\.bottom \} : \{\}\)/)
 })
+
+test("the Today client column is the dense form and other surfaces keep the full one", () => {
+    const panel = source("components/workspace/ShellRelationshipContextPanel.tsx")
+    assert.match(panel, /dense \? <div className="flex items-start justify-between gap-2">\s*<h2/, "dense starts with the client's name, with no panel label or record id above it")
+    assert.match(panel, /<dt className=\{dense \? "sr-only" : "text-xs text-neutral-500"\}>\{label\}<\/dt>/, "contact labels stay for assistive technology")
+    assert.match(panel, /<Assignee compact name=\{service\.assignee\.name\}/, "service owners are avatar-only, named by tooltip")
+    assert.match(panel, /<RoundPill tone="emerald" className="min-w-0 shrink">\{service\.name\}<\/RoundPill><ServiceStage/, "the service name truncates before the stage or owner")
+    assert.match(panel, /Relationship context <span className="ml-1 font-mono text-neutral-600">\{shortId\(context\.id\)\}<\/span>/, "the full form is still there for the tabbed layout and standalone pages")
+    assert.match(source("components/workspace/WorkspaceTopBarClient.tsx"), /dense=\{layout === "today"\}/)
+})

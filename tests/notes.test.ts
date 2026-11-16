@@ -25,7 +25,9 @@ test("note creation is available in both shell quick-action placements and stays
         readFile("app/[workspaceSlug]/notes/page.tsx", "utf8"),
         readFile("app/[workspaceSlug]/notes/[id]/page.tsx", "utf8"),
     ])
-    assert.equal((shell.match(/openCreate\("note"\)/g) ?? []).length, 2)
+    // Top bar (the icon row, or the Today layout's New menu in its place) and the sidebar.
+    assert.equal((shell.match(/openCreate\("note"\)/g) ?? []).length, 3)
+    assert.match(shell, /canCreateLibraryItem && \{ label: "Note", onSelect: \(\) => openCreate\("note"\) \}/)
     assert.match(shell, /aria-label="Add note" title="Add note"/)
     assert.match(shell, /<span>Add note<\/span>/)
     assert.match(topBar, /createNoteFromModal/)

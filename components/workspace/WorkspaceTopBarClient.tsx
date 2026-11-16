@@ -36,6 +36,7 @@ import { TodayColumn, useTodayColumnVisible } from "./TodayColumn"
 import { DockedCommunications, type DockedCommunicationsHandle } from "./DockedCommunications"
 import { SegmentedSwitch } from "@/components/ui/SegmentedSwitch"
 import { Button } from "@/components/ui/Button"
+import { ListActionMenu } from "@/components/list/ListActionMenu"
 import { SideDrawer } from "@/components/ui/SideDrawer"
 import { nativeWorkspaceRoute } from "@/lib/workspace-native"
 import { AccountMenu } from "@/components/account/AccountMenu"
@@ -215,7 +216,10 @@ function WorkspaceMutationStatus({ state, error }: { state: "idle" | "saving" | 
     return <span aria-live="polite" title={error ?? undefined} aria-label={state === "error" ? error || label : label} className={`hidden max-w-24 shrink-0 truncate text-[11px] md:inline ${state === "error" ? "text-red-300" : "text-neutral-500"}`}>{label}</span>
 }
 
-function WorkspacePresenceAvatars({ members, state, error, onOpenProfile }: { members: WorkspacePresenceRosterMember[]; state: WorkspacePresenceState; error: string | null; onOpenProfile: (userId: string) => void }) {
+function WorkspacePresenceAvatars({ members: roster, state, error, onOpenProfile, max }: { members: WorkspacePresenceRosterMember[]; state: WorkspacePresenceState; error: string | null; onOpenProfile: (userId: string) => void; /** Today layout: show this many people (connected first) and summarise the rest as a count. */ max?: number }) {
+    const ordered = max ? [...roster].sort((left, right) => Number(right.active) - Number(left.active)) : roster
+    const members = max ? ordered.slice(0, max) : ordered
+    const hidden = ordered.slice(members.length)
     if (!members.length) {
         if (state === "live") return null
         const label = state === "connecting" ? "Workspace presence connecting" : state === "reconnecting" ? "Workspace presence reconnecting" : error || "Workspace presence offline"
@@ -225,6 +229,7 @@ function WorkspacePresenceAvatars({ members, state, error, onOpenProfile }: { me
         {members.map((member, index) => <button data-icon-button type="button" key={member.id} onClick={() => onOpenProfile(member.id)} aria-label={`Open ${member.name} profile`} title={`${member.name} — ${member.active ? "Connected" : "Disconnected"}`} className="relative h-[30px] w-[30px] shrink-0 aspect-square overflow-hidden rounded-full border-2 border-neutral-950 bg-neutral-900 p-0 outline-none focus-visible:ring-2 focus-visible:ring-neutral-500 md:h-7 md:w-7" style={{ zIndex: index + 1 }}>
             <span className={`block h-full w-full ${member.active ? "" : "grayscale opacity-35"}`}><Avatar src={member.avatarSrc} name={member.name} className="h-full w-full" /></span>
         </button>)}
+        {hidden.length ? <span data-presence-more title={hidden.map(member => `${member.name} — ${member.active ? "Connected" : "Disconnected"}`).join("\n")} aria-label={`${hidden.length} more: ${hidden.map(member => member.name).join(", ")}`} className="relative flex h-[30px] min-w-[30px] shrink-0 items-center justify-center rounded-full border-2 border-neutral-950 bg-neutral-800 px-1.5 text-[11px] font-medium tabular-nums text-neutral-300">+{hidden.length}</span> : null}
         {state !== "live" ? <span aria-label="Workspace presence reconnecting" title={error || "Workspace presence reconnecting"} className="ml-2 h-2 w-2 animate-pulse rounded-full bg-amber-400" /> : null}
     </div>
 }
@@ -3004,7 +3009,7 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
                         <input ref={desktopSearchInputRef} value={query} role="combobox" aria-autocomplete="list" aria-expanded={searchOpen} aria-controls={`${searchMenuId}-desktop`} aria-activedescendant={searchOpen && search.state.status === "results" ? `${searchMenuId}-desktop-${search.state.selectedIndex}` : undefined} maxLength={200} onKeyDown={submitSearch} onChange={(event) => { setQuery(event.target.value); openDesktopSearch() }} onFocus={openDesktopSearch} aria-label="Search Betelgeze" placeholder="Search relationships, work, files..." className="h-9 w-full rounded-lg border border-neutral-800 bg-neutral-900 px-3 pl-9 pr-16 text-sm text-neutral-300 outline-none transition placeholder:text-neutral-600 focus:border-neutral-600 focus:ring-2 focus:ring-white/10" />
                         <span className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 rounded border border-neutral-800 px-1.5 py-0.5 text-[10px] leading-none text-neutral-500">{searchShortcutLabel}</span>
                     </label>
-                    <WorkspacePresenceAvatars members={workspacePresenceMembers} state={presenceState} error={presenceError} onOpenProfile={setProfileUserId} />
+                    <WorkspacePresenceAvatars members={workspacePresenceMembers} state={presenceState} error={presenceError} onOpenProfile={setProfileUserId} max={layout === "today" ? 3 : undefined} />
                     <WorkspaceMutationStatus state={activeBackgroundSaving ? "saving" : backgroundMutationState} error={backgroundMutationError} />
                     {searchOpen && (
                         <div className="betelgeze-popup-enter absolute left-[6.5rem] right-0 top-11 z-[70] max-h-[32rem] overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950 shadow-2xl shadow-black/40">
@@ -3036,7 +3041,16 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
                     {layout === "today" ? <button data-icon-button data-today-context-toggle type="button" onClick={toggleContextPanel} disabled={!activeContextSupported} aria-label={!activeContextSupported ? "Relationship context unavailable" : activeContextOpen ? "Hide relationship context" : "Show relationship context"} aria-pressed={activeContextSupported ? activeContextOpen : undefined} title="Client column" className="hidden h-9 w-9 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:text-neutral-400 lg:inline-flex">
                         <ContextPanelIcon />
                     </button> : null}
-                    <div className="hidden items-center gap-0.5 md:flex" aria-label="Create">
+                    {layout === "today" ? (canCreateRelationship || canCreateLibraryItem || canCreateOkr) && <ListActionMenu allowBelow label="Create something new" className="hidden md:block"
+                        triggerClassName="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-[var(--color-border-strong)] px-3 text-sm font-medium text-neutral-100 outline-none hover:bg-[var(--color-surface-hover)] focus-visible:ring-2 focus-visible:ring-neutral-500"
+                        trigger={<><svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-2"><path d="M12 5v14M5 12h14" strokeLinecap="round" /></svg>New</>}
+                        actions={[
+                            canCreateRelationship && { label: "Relationship", onSelect: () => openCreate("relationship") },
+                            canCreateLibraryItem && { label: "Work item", onSelect: () => openCreate("work-item") },
+                            canCreateLibraryItem && { label: "Asset", onSelect: () => openCreate("asset") },
+                            canCreateLibraryItem && { label: "Note", onSelect: () => openCreate("note") },
+                            canCreateOkr && { label: "OKR", onSelect: () => openCreate("okr") },
+                        ]} /> : <div className="hidden items-center gap-0.5 md:flex" aria-label="Create">
                         {canCreateRelationship && <button data-icon-button type="button" onClick={() => openCreate("relationship")} aria-label="Add relationship" title="Add relationship" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white md:h-9 md:w-9">
                             <RelationshipsIcon />
                         </button>}
@@ -3052,7 +3066,7 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
                         {canCreateOkr && <button data-icon-button type="button" onClick={() => openCreate("okr")} aria-label="Create OKR" title="Create OKR" className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white md:h-9 md:w-9">
                             <OkrIcon />
                         </button>}
-                    </div>
+                    </div>}
                     <WorkspaceOfflineStatus userId={currentUserId} />
                     <div className="flex h-9 items-center -space-x-2 md:space-x-0">
                         <div className="flex h-9 items-center md:hidden"><WorkspacePresenceAvatars members={workspacePresenceMembers} state={presenceState} error={presenceError} onOpenProfile={setProfileUserId} /></div>

@@ -54,6 +54,7 @@ export function AnchoredPopup({
     anchorPoint,
     dismissOnScroll = false,
     allowBelow = false,
+    clearTrigger = false,
 }: {
     anchor: HTMLElement | null
     children: ReactNode
@@ -68,6 +69,8 @@ export function AnchoredPopup({
     dismissOnScroll?: boolean
     /** Flip below the trigger instead of squeezing to fit above it when there is truly no room above (e.g. a trigger flush against a fixed top edge). Default behavior keeps opening above and scrolling internally. */
     allowBelow?: boolean
+    /** With allowBelow: open a flipped popup beneath the whole trigger instead of just under its top edge, for a labelled trigger that must stay readable. */
+    clearTrigger?: boolean
 }) {
     const navigation = useWorkspaceNavigation()
     const active = navigation?.active !== false
@@ -81,7 +84,9 @@ export function AnchoredPopup({
         if (!active || !anchor || !popup || !popup.isConnected || popup.hidden) return
         const currentHost = popupHost(anchor)
         const rect = anchorRectInHost(anchor, currentHost.frameRect)
-        const triggerRect = anchorPoint ? { left: rect.left + anchorPoint.x, right: rect.left + anchorPoint.x, top: rect.top + anchorPoint.y } : rect
+        const triggerRect = anchorPoint ? { left: rect.left + anchorPoint.x, right: rect.left + anchorPoint.x, top: rect.top + anchorPoint.y }
+            // A DOMRect also carries `bottom`; pass it only on request so existing flipped menus keep their position.
+            : { left: rect.left, right: rect.right, top: rect.top, ...(clearTrigger ? { bottom: rect.bottom } : {}) }
         const visualViewport = currentHost.window.visualViewport
         const viewportLeft = visualViewport?.offsetLeft ?? 0
         const viewportTop = visualViewport?.offsetTop ?? 0
@@ -105,7 +110,7 @@ export function AnchoredPopup({
             fallbackBelow: Boolean(anchorPoint),
             allowBelow,
         }))
-    }, [active, align, anchor, anchorPoint, allowBelow])
+    }, [active, align, anchor, anchorPoint, allowBelow, clearTrigger])
 
     useLayoutEffect(() => {
         const popup = popupRef.current

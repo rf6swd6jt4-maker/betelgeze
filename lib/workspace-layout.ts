@@ -11,8 +11,8 @@ type LayoutSettings = Record<string, string | undefined> & {
 }
 
 /**
- * Which workspace layout a person gets. "today" is the redesigned shell (Today column, work area, context column, no
- * tabs) and is off unless WORKSPACE_TODAY_LAYOUT names the workspace (or "all"). WORKSPACE_TODAY_LAYOUT_USERS optionally
+ * Which workspace layout a person gets. "today" is the redesigned shell (client rail, work area, docked Comms, no
+ * tabs; docs/today-layout.md) and is off unless WORKSPACE_TODAY_LAYOUT names the workspace (or "all"). WORKSPACE_TODAY_LAYOUT_USERS optionally
  * narrows it to listed people. It builds on the native panel renderer, so it also requires the native panel gates.
  * Rollout selection only: every read and command keeps its usual authorization.
  */

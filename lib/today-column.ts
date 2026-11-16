@@ -1,4 +1,4 @@
-// Short, scannable wording for the Today column's rows. Pure: the caller supplies the clock.
+// Short, scannable wording for the Today page's side rows. Pure: the caller supplies the clock.
 
 const HOUR = 3_600_000
 const DAY = 24 * HOUR

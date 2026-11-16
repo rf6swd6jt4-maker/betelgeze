@@ -6,40 +6,72 @@ function source(path: string) {
     return readFileSync(new URL(`../${path}`, import.meta.url), "utf8")
 }
 
-test("the Today column opens everything through the shell's resident tab owner", () => {
+test("the client rail opens everything through the shell's resident tab owner", () => {
     const shell = source("components/workspace/WorkspaceTopBarClient.tsx")
-    assert.match(shell, /const todayColumnVisible = useTodayColumnVisible\(layout === "today"\)/)
-    assert.match(shell, /todayColumnVisible \? <div data-workspace-today-shell/, "a hidden column is not mounted, so it never fetches")
-    assert.match(source("components/workspace/TodayColumn.tsx"), /WIDE_QUERY = "\(min-width: 1024px\)"/)
-    assert.match(shell, /onOpen=\{\(href\) => \{ void openWorkspaceTab\(href\) \}\}/)
-    assert.match(shell, /cache=\{nativeCache\}/)
+    assert.match(shell, /\{layout === "today" \? <ClientRail workspaceSlug=\{workspace\.slug\}/, "the rail replaces the panel list only in the Today layout")
+    assert.match(shell, /onOpenClient=\{\(href\) => \{ void openWorkspaceTab\(href\); closeSidebarAfterNavigation\(\) \}\}/)
+    assert.match(shell, /if \(current && inPanel\(current\.url\)\) \{ void navigateActiveTab\(href\); return \}/, "already there: go to its first page")
+    assert.match(shell, /if \(open\) \{ void switchTab\(open\); return \}/, "open elsewhere: a memory switch back to it")
+    assert.match(shell, /\.filter\(\(item\) => item\.key !== "queue" && \(item\.key !== "communications" \|\| !canDockChat\)\)/, "Today and the docked Comms panel are not repeated among the destinations")
     assert.match(shell, /document\.body\.dataset\.workspaceLayout = layout/)
-    const column = source("components/workspace/TodayColumn.tsx")
-    assert.doesNotMatch(column, /router\.push|window\.location|<a\b|href=\{/, "the column never navigates on its own")
+    assert.doesNotMatch(shell, /data-workspace-today-shell|TodayColumn|todaySheetOpen/, "the Today column and its phone sheet are gone")
+    const rail = source("components/workspace/ClientRail.tsx")
+    assert.doesNotMatch(rail, /router\.push|window\.location|useRouter/, "the rail never navigates on its own")
+    assert.match(rail, /if \(!plainClick\(event\)\) return; event\.preventDefault\(\); if \(online\) onOpenClient\(href\)/, "a modified click keeps the browser's own behaviour")
 })
 
-test("the Today column shares the Queue panel's cache and never polls", () => {
-    const column = source("components/workspace/TodayColumn.tsx")
-    assert.match(column, /nativePanelCacheKey\(userId, workspaceId, queueUrl\)/)
-    assert.match(column, /cache\.load\(queueKey, \(signal\) => readNativePanel\(\{ url: queueUrl/)
-    assert.doesNotMatch(column, /setInterval|setTimeout\(|subscribe\(\s*["']realtime/)
-    assert.match(column, /ATTENTION_REFRESH_MS = 60_000/)
-    assert.match(column, /document\.visibilityState === "visible" && Date\.now\(\) - lastAttention\.current >= ATTENTION_REFRESH_MS/)
-    assert.match(column, /if \(!canSeeAttention\) return/, "staff never request team-wide attention")
+test("the client rail reads one bounded list by name and never polls", async () => {
+    const route = source("app/api/workspaces/[workspaceSlug]/client-rail/route.ts")
+    assert.match(route, /requireWorkspaceAccess\(workspaceSlug\)/)
+    assert.match(route, /x-workspace-user/)
+    assert.match(route, /canAccessWorkspacePanel\(workspacePanelByKey\("relationships"\), role, access\.capabilities\)\) return Response\.json\(\{ allowed: false, clients: \[\]/, "people who cannot open relationships get no client names")
+    assert.match(route, /const allowed = await accessibleRelationshipIds\(access\)/, "a scoped member sees only their own relationships")
+    assert.match(route, /\.select\("id, primary_person_name, business_name"\)/, "three columns, not the Relationships panel's full list")
+    assert.match(route, /\.eq\("workspace_id", workspace\.id\)\.neq\("status", "archived"\)/)
+    assert.match(route, /\.order\("primary_person_name", \{ ascending: true \}\)/, "name order, which the existing workspace and person index serves")
+    assert.match(route, /CLIENT_RAIL_LIMIT \+ 1 : SCOPED_SCAN_LIMIT/)
+    assert.doesNotMatch(route, /export async function (POST|PUT|PATCH|DELETE)/)
+    const rail = source("components/workspace/ClientRail.tsx")
+    assert.doesNotMatch(rail, /setInterval|setTimeout\(|subscribe\(\s*["']realtime/)
+    assert.match(rail, /const STALE_MS = 5 \* 60_000/)
+    assert.match(rail, /document\.visibilityState === "visible" && Date\.now\(\) - lastRead\.current >= STALE_MS/, "one read per shell, then only when the window returns after five minutes")
+    assert.match(rail, /const railMemory = new Map</, "reopening the phone drawer reuses the list")
+
+    // @ts-expect-error Node's built-in TypeScript test runner requires the source extension.
+    const { CLIENT_RAIL_LIMIT, clientInitials, filterRailClients, parseClientRail } = await import("../lib/client-rail.ts")
+    assert.equal(clientInitials("Bruce Laing"), "BL")
+    assert.equal(clientInitials("Mary Jane van der Berg"), "MB", "first and last word, as Communications shows them")
+    assert.equal(clientInitials("Tariq"), "TA")
+    assert.equal(clientInitials("élodie marchand"), "ÉM")
+    assert.equal(clientInitials("  — "), "?")
+    const rail1 = parseClientRail({ truncated: false, clients: [{ id: "a", name: " Bruce Laing ", business: "PRO Construction" }, { id: "b", name: "", business: "Howdy Lighting" }, { id: "c", name: null, business: null }] })
+    assert.deepEqual(rail1, { truncated: false, clients: [{ id: "a", name: "Bruce Laing", business: "PRO Construction" }, { id: "b", name: "Howdy Lighting", business: null }, { id: "c", name: "Unnamed client", business: null }] })
+    assert.equal(parseClientRail({ clients: "no" }), null)
+    assert.equal(parseClientRail({ clients: [{ name: "No id" }] }), null)
+    const long = parseClientRail({ clients: Array.from({ length: CLIENT_RAIL_LIMIT + 5 }, (_, index) => ({ id: `id-${index}`, name: `Client ${index}` })) })
+    assert.equal(long.clients.length, CLIENT_RAIL_LIMIT)
+    assert.equal(long.truncated, true)
+    assert.deepEqual(filterRailClients(rail1.clients, " pro ").map((client: { id: string }) => client.id), ["a"], "the business name matches too")
+    assert.deepEqual(filterRailClients(rail1.clients, "HOWDY").map((client: { id: string }) => client.id), ["b"])
+    assert.equal(filterRailClients(rail1.clients, "").length, 3)
+    assert.deepEqual(filterRailClients([{ id: "e", name: "Élodie Marchand", business: null }], "elodie").map((client: { id: string }) => client.id), ["e"], "accents do not block a match")
 })
 
-test("the column frame changes only from lg up and only for the Today layout", () => {
+test("the frame changes only for the Today layout, and the rail widens without moving the page", () => {
     const css = source("app/globals.css")
-    const block = css.slice(css.indexOf("@media (min-width: 1024px) {\n  [data-workspace-today-shell]"))
-    assert.ok(block.length > 0)
-    const lg = block.slice(0, block.indexOf("\n}\n"))
     assert.match(css, /\nbody\[data-workspace-layout="today"\] \[data-workspace-tabbar\] \[role="tablist"\] \{\s*visibility: hidden;/, "tabs go at every width")
     assert.match(css, /\n  body\[data-workspace-layout="today"\] \[data-workspace-tabbar\] \{\s*display: none;/, "from lg up the emptied strip is removed")
     assert.match(css, /body\[data-workspace-layout="today"\] \[data-workspace-tab-panels\] \{\s*top: 3\.5rem;/, "and its height goes to the work area")
     assert.match(css, /body\[data-workspace-layout="today"\] \[data-workspace-context-column\] \{\s*top: 5rem;\s*height: calc\(100dvh - 6\.5rem\);/)
-    assert.match(source("components/workspace/WorkspaceTopBarClient.tsx"), /layout === "today" \? <button data-icon-button data-today-context-toggle type="button" onClick=\{toggleContextPanel\}/, "the context toggle moves to the top bar")
-    assert.match(lg, /body\[data-workspace-layout="today"\] \[data-workspace-tabbar\],\s*body\[data-workspace-layout="today"\] \[data-workspace-tab-panels\] \{\s*left: calc\(var\(--workspace-sidebar-width\) \+ var\(--workspace-today-width\)\)/)
-    assert.match(css, /--workspace-today-width: 22rem;/)
+    assert.doesNotMatch(css, /--workspace-today-width|data-workspace-today-shell/, "no Today column is left in the frame")
+    const hover = css.slice(css.indexOf("@media (min-width: 768px) and (hover: hover) {"), css.indexOf("@media (min-width: 768px) and (hover: none) {"))
+    assert.match(hover, /\[data-workspace-sidebar\]\[data-client-rail\]\[data-collapsed="true"\]:is\(:hover, :has\(:focus-visible\)\) \{\s*width: 17rem;/)
+    assert.doesNotMatch(hover, /--workspace-sidebar-width/, "hovering never changes the offset the page is laid out against")
+    assert.match(hover, /:not\(:hover, :has\(:focus-visible\)\) \[data-rail-label\] \{\s*position: absolute;/, "names are clipped, not removed, so they stay in the accessibility tree")
+    assert.match(css, /@media \(min-width: 768px\) and \(hover: none\) \{\s*\[data-workspace-sidebar\]\[data-client-rail\]\[data-collapsed="true"\] \[data-rail-wide\] \{\s*display: none;/, "touch tablets keep the narrow rail until it is pinned")
+    const shell = source("components/workspace/WorkspaceTopBarClient.tsx")
+    assert.match(shell, /<aside data-workspace-sidebar data-client-rail=\{layout === "today" \? "" : undefined\}/)
+    assert.doesNotMatch(shell, /data-today-context-toggle/, "the client column has no toggle in the Today layout")
 })
 
 test("the Needs attention route is owner/admin only, account-checked and read-only", () => {
@@ -50,22 +82,26 @@ test("the Needs attention route is owner/admin only, account-checked and read-on
     assert.doesNotMatch(route, /export async function (POST|PUT|PATCH|DELETE)/)
 })
 
-test("below lg the Today column opens as a left sheet from the Today button", () => {
+test("Today is the queue page, with the team's sections beside it for owners and admins", () => {
+    const page = source("components/workspace/NativeQueuePanel.tsx")
+    assert.match(page, /const today = useTodayLayout\(\)\n    if \(!today\) return <div className="mx-auto max-w-7xl px-4 pb-7 text-white sm:px-6"><PersonalWorkQueue data=\{data\} \/><\/div>/, "the tabbed layout keeps the Work Queue page exactly")
+    assert.match(page, /<PersonalWorkQueue data=\{data\} title="Today" \/>/, "the same full queue, so nothing it shows is lost")
+    assert.match(page, /\{data\.canSeeAttention \? <div className="min-w-0 @4xl:pt-6"><TodaySide /, "staff get the queue alone")
+    assert.ok(page.indexOf("<PersonalWorkQueue data={data} title") < page.indexOf("<TodaySide "), "the person's own queue comes first")
+    assert.match(source("components/work-queue/PersonalWorkQueue.tsx"), /<PanelTabHeader title=\{title\} /)
     const shell = source("components/workspace/WorkspaceTopBarClient.tsx")
-    assert.match(shell, /layout === "today" \? <button type="button" data-today-button/)
-    assert.match(shell, /lg:hidden">Today<\/button>/)
-    assert.match(shell, /layout === "today" && todaySheetOpen && !todayColumnVisible \? <SideDrawer side="left" label="Today"/, "the sheet mounts only while open and never alongside the column")
-    assert.match(shell, /onOpen=\{\(href\) => \{ dismiss\(\); void openWorkspaceTab\(href\) \}\}/)
-    assert.match(shell, /window\.matchMedia\("\(min-width: 1024px\)"\)\.matches\) return/, "opens by default only on narrow screens")
-    const drawer = source("components/ui/SideDrawer.tsx")
-    assert.match(drawer, /side = "right"/)
-    assert.match(source("app/globals.css"), /\.betelgeze-drawer-left \{/)
+    assert.match(shell, /layout === "today" \? <button type="button" data-today-button onClick=\{event => \{ event\.currentTarget\.focus\(\{ preventScroll: true \}\); setSidebarOpen\(false\); openTodayDestination\(todayHref\) \}\}/)
+    assert.match(shell, /md:hidden">Today<\/button>/, "phones only: from md up the rail's Today is always on screen")
+    assert.match(shell, /<TodayLayoutProvider value=\{todayShell\}>/)
+    assert.match(shell, /const todayShell = useMemo<TodayLayoutShell \| null>\(\(\) => layout === "today" \? \{/, "pages in the tabbed layout get no Today shell")
 })
 
-test("reopening the sheet within a minute reuses Needs attention", () => {
-    const column = source("components/workspace/TodayColumn.tsx")
-    assert.match(column, /const attentionMemory = new Map</)
-    assert.match(column, /if \(Date\.now\(\) - lastAttention\.current >= ATTENTION_REFRESH_MS\) void loadAttention\(controller\.signal\)/)
+test("returning to Today within a minute reuses Needs attention", () => {
+    const side = source("components/workspace/TodaySide.tsx")
+    assert.match(side, /const attentionMemory = new Map</)
+    assert.match(side, /const REFRESH_MS = 60_000/)
+    assert.match(side, /document\.visibilityState === "visible" && Date\.now\(\) - lastAttention\.current >= REFRESH_MS\) void loadAttention\(controller\.signal\)/)
+    assert.doesNotMatch(side, /setInterval|setTimeout\(|router\.push|window\.location|<a\b|href=\{/, "no timers, and it never navigates on its own")
 })
 
 test("at the open-item limit the Today layout drops the least recently used unmounted destination", async () => {
@@ -108,17 +144,14 @@ test("Today column wording is short and relative to the person's day", async () 
     assert.equal(dueLabel(null, now), null)
 })
 
-test("the Today column's rows are single activation targets and add no timers", () => {
-    const column = source("components/workspace/TodayColumn.tsx")
-    assert.match(column, /<ListCompactItem key=\{item\.id\} current=\{pathOf\(href\) === activePath\} onOpen=\{\(\) => onOpen\(href\)\}/)
-    assert.match(column, /recent\.filter\(destination => pathOf\(destination\.url\) !== activePath\)\.slice\(0, RECENT_ROWS\)/)
-    assert.doesNotMatch(column, /setInterval|setTimeout\(/)
+test("the Today side sections use single-target compact rows", () => {
+    const side = source("components/workspace/TodaySide.tsx")
+    assert.match(side, /<ListCompactItem key=\{item\.id\} onOpen=\{\(\) => onOpen\(`\/\$\{workspaceSlug\}\/work-items\/\$\{item\.id\}`\)\}/)
     const list = source("components/list/List.tsx")
     assert.match(list, /export function ListCompactItem/)
     assert.match(list, /aria-current=\{current \? "page" : undefined\}/)
     const shell = source("components/workspace/WorkspaceTopBarClient.tsx")
     assert.match(shell, /layout === "today" \? <p data-today-destination/)
-    assert.match(shell, /recent=\{todayRecent\}/)
 })
 
 test("a docked chat is the active chat only while the shell names it and its frame is shown", async () => {
@@ -135,7 +168,7 @@ test("a docked chat is the active chat only while the shell names it and its fra
         host.document.body.dataset.workspaceDockedTabId = "docked-chat"
         assert.equal(workspaceDocumentIsActive(), true)
         frame.hidden = true
-        assert.equal(workspaceDocumentIsActive(), false, "hidden behind Context reads nothing")
+        assert.equal(workspaceDocumentIsActive(), false, "a hidden dock reads nothing")
         frame.hidden = false
         host.document.body.dataset.workspaceDockedTabId = "another"
         assert.equal(workspaceDocumentIsActive(), false)
@@ -155,11 +188,14 @@ test("only the dock owner names the docked chat, and only while it is displayed 
     assert.match(owner, /hidden=\{!shown\}/)
     assert.match(owner, /prepareWorkspaceFrameDeparture\(node, WORKSPACE_DOCKED_CHAT_TAB_ID, window\) && confirmWorkspaceFrameDeparture\(node\)/)
     assert.doesNotMatch(owner, /setInterval|location\.reload/, "no polling and no automatic reload")
-    const writers = ["components/workspace/WorkspaceTopBarClient.tsx", "components/workspace/ShellRelationshipContextPanel.tsx", "components/workspace/TodayColumn.tsx"]
+    const writers = ["components/workspace/WorkspaceTopBarClient.tsx", "components/workspace/ShellRelationshipContextPanel.tsx", "components/workspace/TodaySide.tsx", "components/workspace/ClientRail.tsx", "components/relationships/ClientSummary.tsx"]
     for (const path of writers) assert.doesNotMatch(source(path), /workspaceDockedTabId/, `${path} must not name the dock itself`)
 
     const shell = source("components/workspace/WorkspaceTopBarClient.tsx")
-    assert.match(shell, /const canDockChat = layout === "today" && todayColumnVisible && canAccessWorkspacePanel\(workspacePanelByKey\("communications"\)/, "Today layout, desktop width, Communications access")
+    assert.match(shell, /const canDockChat = layout === "today" && todayWide && canAccessWorkspacePanel\(workspacePanelByKey\("communications"\)/, "Today layout, desktop width, Communications access")
+    assert.match(shell, /const dockShown = Boolean\(dock && \(dock\.place === "drawer"\s*\|\| \(!activeRouteLoading && activeRelationshipContext\?\.id === dock\.relationshipId\)\)\)/, "a client's chat is on screen only beside that client's own pages")
+    assert.match(source("components/workspace/TodayLayout.tsx"), /const WIDE_QUERY = "\(min-width: 1024px\)"/)
+    assert.doesNotMatch(shell, /Open full view/, "the docked panel is the one way to Comms at desktop width")
     assert.match(shell, /\{dock \? <aside data-workspace-docked-chat=/, "nothing is mounted until a dock is asked for")
     assert.match(shell, /const safe = await \(dockHandleRef\.current\?\.leave\(\) \?\? true\)/)
     assert.match(shell, /if \(!safe\) \{ setDockNotice\(/, "a chat that cannot confirm stays mounted")
@@ -178,11 +214,10 @@ test("the Team queue is owner/admin only, read on demand, and merged fairly", as
     assert.match(sql, /entry\.position <= 4/)
     assert.match(sql, /revoke all on function public\.read_team_work_queue\(uuid, uuid\) from public, anon, authenticated/)
 
-    const column = source("components/workspace/TodayColumn.tsx")
-    assert.match(column, /useState<"mine" \| "team">\("mine"\)/, "Team is never the starting scope, so it is never read at shell start")
-    assert.match(column, /const showTeam = canSeeAttention && scope === "team"/)
-    assert.match(column, /if \(!showTeam\) return/)
-    assert.match(column, /\{canSeeAttention \? <SegmentedSwitch label="Queue scope"/, "staff are not offered Team")
+    const side = source("components/workspace/TodaySide.tsx")
+    assert.match(side, /const \[teamOpen, setTeamOpen\] = useState\(false\)/, "the Team queue always starts closed, so it is never read at shell start")
+    assert.match(side, /if \(!teamOpen\) return/)
+    assert.match(source("components/workspace/NativeQueuePanel.tsx"), /\{data\.canSeeAttention \? <div className="min-w-0 @4xl:pt-6"><TodaySide /, "staff are not offered the Team queue")
 
     // @ts-expect-error Node's built-in TypeScript test runner requires the source extension.
     const { parseTeamQueue, teamQueueRows } = await import("../lib/team-queue.ts")
@@ -203,13 +238,12 @@ test("the Team queue is owner/admin only, read on demand, and merged fairly", as
     assert.equal(parseTeamQueue({ people: [{ userId: 1, items: [] }] }), null)
 })
 
-test("Needs attention stays short: identical items merge and the queue comes first", () => {
-    const column = source("components/workspace/TodayColumn.tsx")
-    assert.match(column, /const ATTENTION_ROWS = 4\n/)
-    assert.match(column, /const key = `\$\{group\.kind\}\\u0000\$\{item\.title\}\\u0000\$\{item\.client \?\? ""\}`/)
-    assert.match(column, /const target = count > 1 \? attentionUrl : href/, "a merged row opens the full list, a single one opens its record")
-    assert.match(column, /attentionTotal > attentionShown/, "the remainder counts items, not rows")
-    assert.ok(column.indexOf('aria-labelledby="today-queue"') < column.indexOf('aria-labelledby="today-attention"'), "the queue is the first section")
+test("Needs attention stays short: identical items merge into one row", () => {
+    const side = source("components/workspace/TodaySide.tsx")
+    assert.match(side, /const ATTENTION_ROWS = 4\n/)
+    assert.match(side, /const key = `\$\{group\.kind\}\\u0000\$\{item\.title\}\\u0000\$\{item\.client \?\? ""\}`/)
+    assert.match(side, /const target = count > 1 \? attentionUrl : href/, "a merged row opens the full list, a single one opens its record")
+    assert.match(side, /attentionTotal > attentionShown/, "the remainder counts items, not rows")
 })
 
 test("a wrapped dependency list cannot be lifted over the Parent row", () => {
@@ -217,16 +251,16 @@ test("a wrapped dependency list cannot be lifted over the Parent row", () => {
     assert.match(fields, /<DetailField multiline label="Dependencies" icon="dependency"[^>]*><div className="relative block max-w-full">/)
 })
 
-test("the docked chat column widens with the window and the work area reserves its width", () => {
+test("the docked Comms panel widens with the window and the work area ends where it begins", () => {
     const css = source("app/globals.css")
     assert.match(css, /--workspace-dock-width: 20rem;/)
     assert.match(css, /@media \(min-width: 1280px\) \{ :root \{ --workspace-dock-width: 24rem; \} \}/)
     assert.match(css, /@media \(min-width: 1440px\) \{ :root \{ --workspace-dock-width: 26rem; \} \}/)
     assert.match(css, /@media \(min-width: 1680px\) \{ :root \{ --workspace-dock-width: 30rem; \} \}/)
-    assert.match(css, /body\[data-workspace-dock="column"\] \[data-native-context-open="true"\] \[data-native-context-spacer\] \{ width: var\(--workspace-dock-width\); \}/)
+    assert.match(css, /body\[data-workspace-layout="today"\]\[data-workspace-dock="shown"\] \[data-workspace-tab-panels\] \{\s*width: calc\(100% - var\(--workspace-sidebar-width\) - var\(--workspace-dock-width\)\);/, "native panels and framed pages alike are never covered")
     const shell = source("components/workspace/WorkspaceTopBarClient.tsx")
-    assert.match(shell, /"z-\[35\] w-\[var\(--workspace-dock-width\)\]"/)
-    assert.match(shell, /if \(!dockColumnShown\) return\s*document\.body\.dataset\.workspaceDock = "column"/, "the wider reservation applies only while the column shows the chat")
+    assert.match(shell, /fixed bottom-0 right-0 top-14 z-\[35\] w-\[var\(--workspace-dock-width\)\]/)
+    assert.match(shell, /if \(!dockShown\) return\s*document\.body\.dataset\.workspaceDock = "shown"/, "the work area gives up the width only while the panel is on screen")
     assert.match(source("components/workspace/ShellRelationshipContextPanel.tsx"), /hidden w-80 flex-col/, "the context reference keeps its 20rem width")
 })
 
@@ -250,14 +284,32 @@ test("the Today top bar has one New menu and a short presence stack", async () =
     assert.match(source("components/ui/AnchoredPopup.tsx"), /\.\.\.\(clearTrigger \? \{ bottom: rect\.bottom \} : \{\}\)/)
 })
 
-test("the Today client column is the dense form and other surfaces keep the full one", () => {
+test("the Today client column is the dense form, shown beside records but not on the client's own page", () => {
     const panel = source("components/workspace/ShellRelationshipContextPanel.tsx")
     assert.match(panel, /dense \? <div className="flex items-start justify-between gap-2">\s*<h2/, "dense starts with the client's name, with no panel label or record id above it")
     assert.match(panel, /<dt className=\{dense \? "sr-only" : "text-xs text-neutral-500"\}>\{label\}<\/dt>/, "contact labels stay for assistive technology")
     assert.match(panel, /<Assignee compact name=\{service\.assignee\.name\}/, "service owners are avatar-only, named by tooltip")
     assert.match(panel, /<RoundPill tone="emerald" className="min-w-0 shrink">\{service\.name\}<\/RoundPill><ServiceStage/, "the service name truncates before the stage or owner")
     assert.match(panel, /Relationship context <span className="ml-1 font-mono text-neutral-600">\{shortId\(context\.id\)\}<\/span>/, "the full form is still there for the tabbed layout and standalone pages")
-    assert.match(source("components/workspace/WorkspaceTopBarClient.tsx"), /dense=\{layout === "today"\}/)
+    assert.match(panel, /\{onChat \? <div className="mt-3"><Button variant="secondary" size="sm" data-context-chat onClick=\{onChat\}>Chat<\/Button><\/div> : null\}/, "Chat is one button, not a two-way switch")
+    const shell = source("components/workspace/WorkspaceTopBarClient.tsx")
+    assert.match(shell, /dense=\{layout === "today"\}/)
+    assert.match(shell, /const activeIsClientPage = layout === "today" && isClientPage\(activeTab\.url\)/)
+    assert.match(shell, /\{activeRelationshipContext && !activeRouteLoading && !activeIsClientPage && \(\s*<ShellRelationshipContextPanel/, "work items, assets, notes and onboarding keep the column; the client's page does not repeat itself")
+    assert.match(shell, /desktopOpen=\{activeContextOpen && !dockShown\}/, "the docked Comms panel takes the column's place while it is open")
+    assert.match(shell, /contextOpen=\{layout === "today" \? !isClientPage\(tab\.url\) && !dockShown : contextOpenByTab\[tab\.id\] \?\? true\}/, "native pages reserve the column's width only while it is shown")
+})
+
+test("the client's own page carries what the client column showed", () => {
+    const page = source("components/workspace/NativeRelationshipsPanel.tsx")
+    assert.match(page, /const context = today \? data\.context : null/, "only in the Today layout")
+    assert.match(page, /\{context \? <ClientSummary context=\{context\} workspaceSlug=\{data\.workspaceSlug\}/)
+    assert.match(page, /today && Object\.hasOwn\(relationshipPhaseTones, record\.phase\) \? <RelationshipStage phase=/, "the lifecycle stage is a header label")
+    const summary = source("components/relationships/ClientSummary.tsx")
+    assert.match(summary, /<DetailFields>/, "contact, manager and source use the shared fields block")
+    assert.match(summary, /destination\.key !== "relationships" && context\.allowedDestinations\?\.includes\(destination\.key\)/, "onward links keep their permissions and never point at this page")
+    assert.match(summary, /\{onChat \? <Button size="sm" data-client-chat onClick=\{onChat\}>Chat<\/Button> : <Button size="sm" data-client-chat href=\{chatHref\}>Chat<\/Button>\}/, "where the dock is not offered, Chat opens the full conversation")
+    assert.doesNotMatch(summary, /fetch\(/, "it renders the context the page already loaded; no request is added")
 })
 
 test("record pages are quieter in the Today layout without losing save state", () => {

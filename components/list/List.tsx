@@ -34,7 +34,7 @@ export function ListTrailing({ children, className = "" }: { children: ReactNode
 }
 
 /**
- * A record in a narrow shell companion column (the Today column). The whole record is one activation target with a
+ * A record in a narrow shell companion column (the Today page's side sections). The whole record is one activation target with a
  * meta line, a title of at most two lines and one supporting line; `current` marks the record open in the work area.
  * Panel collections keep the two-band anatomy above. See docs/ui-standards.md, "Compact companion lists".
  */

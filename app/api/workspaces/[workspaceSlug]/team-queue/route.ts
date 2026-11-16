@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic"
 
 const headers = { "Cache-Control": "private, no-store" }
 
-/** Other people's ready work for the Today column's Team view. Owners and admins only; read-only. */
+/** Other people's ready work for the Today page's Team queue. Owners and admins only; read-only. */
 export async function GET(request: Request, context: { params: Promise<{ workspaceSlug: string }> }) {
     const { workspaceSlug } = await context.params
     const { workspace, user } = await requireWorkspace(workspaceSlug, "admin")

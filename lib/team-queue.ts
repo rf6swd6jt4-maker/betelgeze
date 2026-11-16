@@ -1,4 +1,4 @@
-// Shapes for the Today column's Team queue. The read itself is read_team_work_queue (owners and admins only).
+// Shapes for the Today page's Team queue. The read itself is read_team_work_queue (owners and admins only).
 // @ts-expect-error Node's built-in TypeScript test runner requires the source extension.
 import { rankQueue, type QueueItem, type RankedQueueItem } from "./work-queue/ranking.ts"
 

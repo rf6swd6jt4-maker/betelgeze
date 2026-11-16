@@ -16,11 +16,14 @@ import { MobileAssignedServices } from "@/components/list/MobileAssignedServices
 import { FilterRail, FilterRailCount, FilterRailLink } from "@/components/panel/FilterRail"
 import { PanelTabHeader } from "@/components/panel/PanelTabHeader"
 import { RelationshipValues } from "@/components/relationships/RelationshipValues"
-import { Button, RoundPill, SquarePill, Status } from "@/components/ui"
+import { Button, RelationshipStage, RoundPill, SquarePill, Status, relationshipPhaseTones } from "@/components/ui"
+import { ClientSummary } from "@/components/relationships/ClientSummary"
+import type { RelationshipPhase } from "@/lib/relationship-phases"
 import { SERVICE_STAGES } from "@/lib/service-stages"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import type { NativeRelationshipsSnapshot } from "@/lib/workspace-native-relationships"
 import { useSearchParams } from "./WorkspaceNavigation"
+import { useTodayLayout } from "./TodayLayout"
 
 type ListSnapshot = Extract<NativeRelationshipsSnapshot, { kind: "relationships" }>
 type DetailSnapshot = Extract<NativeRelationshipsSnapshot, { kind: "relationship-detail" }>
@@ -78,8 +81,13 @@ function RelationshipList({ data }: { data: ListSnapshot }) {
 
 function RelationshipDetail({ data }: { data: DetailSnapshot }) {
     const record = data.record
+    // Today layout: this page is the client's home, so it carries what the client column showed beside it.
+    const today = useTodayLayout()
+    const context = today ? data.context : null
+    const chatTitle = record.businessName?.trim() || record.name
     return <main className="min-h-full bg-neutral-950 px-4 py-6 text-white sm:px-6"><div className="mx-auto max-w-[92rem]"><div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto]"><div className="min-w-0">
-        <DetailPageHeader category="Relationship" reference={shortId(record.id)} title={record.name} subtitle={record.businessName ?? "No company saved"} labels={<>{record.isTest ? <SquarePill tone="yellow">Test</SquarePill> : null}</>} updated={formatRelativeTime(record.updatedAt)} summary={<RelationshipValues values={data.services.values} showAllTime={data.canImport} workspaceSlug={data.workspaceSlug} relationshipId={record.id} userId={data.userId} />} />
+        <DetailPageHeader category="Relationship" reference={shortId(record.id)} title={record.name} subtitle={record.businessName ?? "No company saved"} labels={<>{today && Object.hasOwn(relationshipPhaseTones, record.phase) ? <RelationshipStage phase={record.phase as RelationshipPhase} /> : null}{record.isTest ? <SquarePill tone="yellow">Test</SquarePill> : null}</>} updated={formatRelativeTime(record.updatedAt)} summary={<RelationshipValues values={data.services.values} showAllTime={data.canImport} workspaceSlug={data.workspaceSlug} relationshipId={record.id} userId={data.userId} />} />
+        {context ? <ClientSummary context={context} workspaceSlug={data.workspaceSlug} onChat={today?.chat ? () => today.chat?.({ id: record.id, title: chatTitle }) : undefined} /> : null}
         <RelationshipBackgroundEditor key={`${data.userId}:${record.id}:background`} workspaceSlug={data.workspaceSlug} relationshipId={record.id} userId={data.userId} initial={data.background} updatedAt={record.updatedAt} canEdit={data.canEdit} commandsEnabled={data.backgroundCommandsEnabled}>
         <RelationshipServicesWorkspace key={`${data.userId}:${record.id}:services`} workspaceSlug={data.workspaceSlug} relationshipId={record.id} userId={data.userId} initial={data.services} canAdd={data.canAdd} canImport={data.canImport} canSeeHistory={data.canSeeHistory} legacy={data.legacy} />
         <RelationshipEngagement key={`${data.userId}:${record.id}:engagement`} workspaceSlug={data.workspaceSlug} relationshipId={record.id} userId={data.userId} />

@@ -51,7 +51,7 @@ function DetailFieldIconMark({ kind }: { kind: DetailFieldIcon }) {
         activity: <><path d="M4 12h4l2-6 4 12 2-6h4" /></>,
         timeline: <><path d="M7 3v3M17 3v3M4 9h16" /><rect x="4" y="5" width="16" height="15" rx="2" /></>,
     }
-    return <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0">{paths[kind]}</svg>
+    return <svg aria-hidden="true" data-detail-field-icon viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0">{paths[kind]}</svg>
 }
 
 export function DetailFields({ children, surface = "dark", columns = 2, className = "" }: { children: ReactNode; surface?: "dark" | "light"; columns?: 1 | 2; className?: string }) {

@@ -365,6 +365,15 @@ body[data-workspace-layout="today"] [data-workspace-tabbar] [role="tablist"] {
   visibility: hidden;
 }
 
+/* Quiet record pages in the Today layout, at every width: the reference line, the "Updated" stamp and the icon beside
+   each field label are hidden. The reference stays in the title's tooltip. Native panels only; framed pages are
+   separate documents and keep the full form. */
+body[data-workspace-layout="today"] [data-detail-reference],
+body[data-workspace-layout="today"] [data-detail-updated],
+body[data-workspace-layout="today"] [data-detail-field-icon] {
+  display: none;
+}
+
 @media (min-width: 1024px) {
   [data-workspace-today-shell] {
     left: var(--workspace-sidebar-width);

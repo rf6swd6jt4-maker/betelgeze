@@ -19,10 +19,11 @@ import type { PersonalQueueSnapshot } from "@/lib/work-queue/server"
 import { isQueueCommandRequest, type QueueCommandRequest } from "@/lib/shared-service-queue"
 
 const button = "min-h-11 rounded-lg border border-neutral-700 px-3 py-2 text-sm text-neutral-200 hover:bg-neutral-800 disabled:opacity-50"
-export function PersonalWorkQueue({ data }: { data: PersonalQueueSnapshot }) {
-    return <PersonalWorkQueueOwner key={`${data.workspaceId}:${data.userId}`} data={data} />
+/** `title` names the page: "Work Queue" by default, "Today" where the Today layout presents the queue as its home. */
+export function PersonalWorkQueue({ data, title = "Work Queue" }: { data: PersonalQueueSnapshot; title?: string }) {
+    return <PersonalWorkQueueOwner key={`${data.workspaceId}:${data.userId}`} data={data} title={title} />
 }
-function PersonalWorkQueueOwner({ data }: { data: PersonalQueueSnapshot }) {
+function PersonalWorkQueueOwner({ data, title }: { data: PersonalQueueSnapshot; title: string }) {
     const [snapshot,setSnapshot] = useState(data)
     const [previousData,setPreviousData] = useState(data)
     const [view,setView] = useState<"ready"|"deferred">(data.view ?? "ready")
@@ -135,7 +136,7 @@ function PersonalWorkQueueOwner({ data }: { data: PersonalQueueSnapshot }) {
 
     const tone = (item: RankedQueueItem) => item.state === "In progress" ? "yellow" as const : item.state === "Ready" ? "green" as const : "grey" as const
     return <>
-        <PanelTabHeader title="Work Queue" description="Your assigned and shared service work, ordered by readiness and priority." tabs={snapshot.canSeeAttention ? <QueuePanelTabs workspaceSlug={snapshot.workspaceSlug} active="queue" /> : undefined} />
+        <PanelTabHeader title={title} description="Your assigned and shared service work, ordered by readiness and priority." tabs={snapshot.canSeeAttention ? <QueuePanelTabs workspaceSlug={snapshot.workspaceSlug} active="queue" /> : undefined} />
         <QuickStats ariaLabel="Your queue statistics" items={[{label:"Ready",value:snapshot.ready},{label:"Waiting",value:snapshot.deferred},{label:"Open work",value:snapshot.total}]} />
         <FilterRail ariaLabel="Your work"><FilterRailButton selected={view==="ready"} disabled={Boolean(busy)} onClick={()=>void refresh(false,"ready")}>Ready <FilterRailCount>{snapshot.ready}</FilterRailCount></FilterRailButton><FilterRailButton selected={view==="deferred"} disabled={Boolean(busy)} onClick={()=>void refresh(false,"deferred")}>Waiting & scheduled <FilterRailCount>{snapshot.deferred}</FilterRailCount></FilterRailButton></FilterRail>
         {recovery ? <p role="status" className="mt-4 text-sm text-neutral-300">A shared work action needs confirmation. <button className="min-h-11 underline" disabled={Boolean(busy)} onClick={() => void command({id: recovery.id, updated_at: recovery.version, shared: true}, recovery.action)}>Retry same action</button></p> : null}

@@ -1,9 +1,11 @@
 # Today layout
 
-The redesigned workspace shell: a **Today column** (your queue and, for owners and admins, what needs attention), a
-**work area** showing what you opened, and the **client context** beside it, with no visible tab strip. It is selected
-per workspace by `WORKSPACE_TODAY_LAYOUT` (see `.env.example` and `lib/workspace-layout.ts`); everyone else keeps the
-tabbed shell. Mockup: https://claude.ai/artifact/TE7Yan13qkzgMzDv2f37Rn
+The redesigned workspace shell: a **client rail** on the left (Today, then your clients as initials, then the other
+destinations), a **work area** showing what you opened, and **Comms docked on the right** when you ask for it, with no
+visible tab strip. It is selected per workspace by `WORKSPACE_TODAY_LAYOUT` (see `.env.example` and
+`lib/workspace-layout.ts`); everyone else keeps the tabbed shell. Mockups: the first cockpit
+(https://claude.ai/artifact/TE7Yan13qkzgMzDv2f37Rn) and the client rail that replaced its Today column
+(https://claude.ai/artifact/XK4YHnSgRiqYViDYQPjUhK).
 
 ## Principle: change what surrounds the work area, not how it works
 
@@ -11,16 +13,71 @@ Measured speed (`docs/performance-baseline/shell-revamp-baseline-2026-11-15.md`)
 model: up to eight destinations stay mounted, so returning to one is a 30-160 ms p95 switch instead of a 1.3-2.6 s
 first load. The Today layout keeps that model and hides only its strip:
 
-- Opening anything from the Today column, a link or the context panel goes through the existing `openWorkspaceTab`.
-  An already-resident destination is re-activated (memory switch); a new one becomes a hidden resident tab.
-- Draft departure checks, history, scroll and filters per destination, native panel caching and the context panel are
-  unchanged, because they belong to the same owners as before.
-- The Today column reads the queue through the shell's existing `nativeCache` entry for `/<workspace>/queue`, so it
-  shares data and in-flight requests with the Queue panel instead of fetching twice. Needs attention uses its own
-  authenticated GET route (`workspace_needs_attention`, 1.6-5 ms); it loads once per shell and refreshes when the window
-  returns to the foreground, at most once a minute. No polling, subscriptions or hidden-tab work are added.
+- Opening anything from the rail, the Today page, a link or the client column goes through the shell's existing
+  owners (`openWorkspaceTab`, `switchTab`, `navigateActiveTab`). An already-resident destination is re-activated
+  (memory switch); a new one becomes a hidden resident tab.
+- Draft departure checks, history, scroll and filters per destination and native panel caching are unchanged, because
+  they belong to the same owners as before.
 
-## Slices
+## Client rail (built on `client-rail`, 16 November 2026)
+
+Decided with the person after the declutter passes: the same thing was reachable from too many buttons, and the screen
+had no single organising idea. Now you work on a client, and each thing has one way in.
+
+- **Rail** (`components/workspace/ClientRail.tsx`). It takes the sidebar's place in the Today layout, in the same frosted
+  box. From `md` up it is 4rem of initials; with a mouse it widens to 17rem **over** the page on hover (CSS only:
+  `--workspace-sidebar-width` does not change, so nothing moves and the shell does not re-render), and the top bar's
+  sidebar toggle pins it open, which does move the page as before. Touch tablets have no hover, so they keep the narrow
+  rail until pinned. Below `md` it is the existing slide-in drawer with names. Order: **Today**; clients; then Library,
+  Staff and Settings, with Relationships, Onboarding, Client Connections, Onboarding Builder and Admin behind **More**
+  (the destination in front of the person is never hidden behind it). A find box appears from nine clients.
+- **Client list read** (`GET /api/workspaces/<slug>/client-rail`, `lib/client-rail.ts`). Three columns of current
+  (non-archived) relationships the person may open, in name order, at most 60; a longer list says so and links to
+  Relationships. It follows `relationships_workspace_person_idx` and stops after the limit, instead of the
+  Relationships panel's whole list with its service, work, channel and creator lookups. Members whose access is scoped
+  get only their relationships; people who cannot open Relationships get no names. One read per shell, a quiet re-read
+  when the window returns after five minutes, and one when a relationship is created. No polling. Legacy clients that
+  have no relationship record are not in the rail; they remain in Relationships.
+- **Opening rule.** A client opens its relationship page through `openWorkspaceTab`, so each client is its own resident
+  destination. A rail destination (`openTodayDestination`) is a place to return to: if you are already in it you go to
+  its first page; if it is open elsewhere you switch back to it as you left it; otherwise it opens as a new resident.
+- **Today is a page.** The queue destination, titled Today, is the same `PersonalWorkQueue` as before, so nothing it
+  shows is lost. For owners and admins `TodaySide` sits beside it (below it when the work area is narrower than 56rem):
+  Needs attention (at most four rows, identical items merged) and the Team queue, which always starts closed and is read
+  only when opened. The Today column, its phone sheet, the "Still open" list and the Open queue / Open staff buttons are
+  gone. Needs attention is read when Today is shown, at most once a minute, not at every shell start.
+- **The client's own page** carries what the client column showed beside it (`ClientSummary`): email and phone with
+  copy, manager and source as `DetailFields`, the lifecycle stage as a header label, then Chat, Onboarding, Fulfilment
+  and Client Connections. It renders the context the page already loads; no request is added.
+- **The client column stays beside records that belong to a client** (work items, assets, notes, onboarding), in its
+  dense form, and is not shown on the client's own page. It has no hide control in this layout. Its Chat is one button.
+- **Comms is a docked panel**, flush to the right edge under the top bar, `--workspace-dock-width` wide. `Comms` in the
+  top bar opens the conversation list; Chat on a client's page or in the client column opens that client's
+  conversation, which is on screen only beside that client's own pages. While the panel is on screen the work area ends
+  where it begins (`body[data-workspace-dock="shown"]`), so framed pages are no longer overlapped, and the client
+  column gives way to it. There is no "Open full view" and, where the panel is offered, no Communications entry in the
+  rail. Below `lg` the panel is not offered and Communications is the full destination, reached from the rail.
+- **Unchanged here:** the docked frame, its owner (`DockedCommunications`), when it is named as on screen, the read
+  rule and every Communications file. Only where its buttons live and where it sits changed. `app-alerts.md` (entry of
+  16 November 2026) and `app_speed.md` section 7 describe the panel; their wording was updated with the person's
+  permission ("Ship, update contracts"), with no rule change.
+- **Not built:** the phone bottom bar from the mockup. It changes the space the phone chat lives in
+  (`html[data-workspace-viewport-locked]` geometry), which `app-alerts.md` protects, so it needs explicit permission
+  and a signed-in device check. Phones use the drawer. Per-client unread marks on the rail are also not built: the
+  shell's unread owner exposes only a total, and widening it is an alerts change.
+- **Speed.** Launch in this layout adds the client list read (above) and no longer reads Needs attention unless Today is
+  shown. The rail adds no subscription or timer, and hovering it runs no script. Nothing was measured signed in; the
+  pilot comparison in slice 5 still applies.
+- **Checked:** unit tests (`tests/today-layout.test.ts`), and `scripts/serve-client-rail-fixture.mjs`, which runs the
+  real rail, Today sections, client summary and client column with synthetic data. **Not checked:** the signed-in app,
+  WebKit, real data volumes, a phone.
+
+## History: the slices before the client rail
+
+Kept as the record of how the layout was built. The Today column, its sheet, "Still open" and the Context / Chat switch
+described below were replaced by the section above; the resident model, the open-item limit, the docked frame and its
+owner, the Team read and the declutter passes still apply.
+
 
 1. **Frame and Today column.** From `lg` up: hide the tabs (the strip stays for its context-panel controls), add the Today column between the sidebar
    and the work area, open items through `openWorkspaceTab`, mark the active item. Below `lg` the layout keeps the tab

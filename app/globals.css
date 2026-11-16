@@ -4,8 +4,7 @@
   --background: #0a0a0a;
   --foreground: #ededed;
   --workspace-sidebar-width: 5rem;
-  --workspace-today-width: 22rem;
-  /* Docked chat column (Today layout). The context reference stays 20rem; chat gets more room as the window allows. */
+  /* Docked Comms panel (Today layout). It gets more room as the window allows; see the min-width steps below. */
   --workspace-dock-width: 20rem;
 }
 
@@ -356,11 +355,10 @@ html:is([data-mobile-conversation-phase="open"], [data-mobile-conversation-phase
     width: calc(100% - var(--workspace-sidebar-width));
   }
 
-  /* Today layout (docs/today-layout.md) from lg up: hide the tab strip and place the Today column between the sidebar
-     and the work area. Below lg the tabbed frame is unchanged. Only the frame moves; the resident tabs stay mounted. */
 }
 
-/* Today layout at every width: the tabs go, the strip keeps its Today and context-panel controls. */
+/* Today layout (docs/today-layout.md) at every width: the tabs go. Below lg the strip stays for the page title and,
+   on phones, the Today button. Only the frame changes; the resident tabs stay mounted. */
 body[data-workspace-layout="today"] [data-workspace-tabbar] [role="tablist"] {
   visibility: hidden;
 }
@@ -375,19 +373,8 @@ body[data-workspace-layout="today"] [data-detail-field-icon] {
 }
 
 @media (min-width: 1024px) {
-  [data-workspace-today-shell] {
-    left: var(--workspace-sidebar-width);
-    width: var(--workspace-today-width);
-  }
-
-  body[data-workspace-layout="today"] [data-workspace-tabbar],
-  body[data-workspace-layout="today"] [data-workspace-tab-panels] {
-    left: calc(var(--workspace-sidebar-width) + var(--workspace-today-width));
-    width: calc(100% - var(--workspace-sidebar-width) - var(--workspace-today-width));
-  }
-
-  /* From lg up the strip has nothing left to show: its context toggle lives in the top bar and the page already
-     states its own title. Remove the row and give its height to the work area and the client column. */
+  /* From lg up the strip has nothing left to show: every page states its own title. Remove the row and give its
+     height to the work area. */
   body[data-workspace-layout="today"] [data-workspace-tabbar] {
     display: none;
   }
@@ -396,9 +383,68 @@ body[data-workspace-layout="today"] [data-detail-field-icon] {
     top: 3.5rem;
   }
 
+  /* The client column (shown beside records that belong to a client) starts under the top bar too. */
   body[data-workspace-layout="today"] [data-workspace-context-column] {
     top: 5rem;
     height: calc(100dvh - 6.5rem);
+  }
+
+  /* Docked Comms panel: while it is on screen the work area ends where the panel begins, so native panels and framed
+     pages alike are never covered. Dimensions change without a transition. */
+  body[data-workspace-layout="today"][data-workspace-dock="shown"] [data-workspace-tab-panels] {
+    width: calc(100% - var(--workspace-sidebar-width) - var(--workspace-dock-width));
+  }
+}
+
+/* Client rail (Today layout). From md up the sidebar is a narrow rail of initials: names and anything marked
+   data-rail-wide are hidden until the rail is pinned open (data-collapsed="false"), hovered with a mouse, or reached
+   by keyboard. Hovering widens it over the page; --workspace-sidebar-width does not change, so nothing moves.
+   Labels stay in the accessibility tree while clipped. */
+@media (min-width: 768px) {
+  [data-workspace-sidebar][data-client-rail][data-collapsed="true"] {
+    transition: width 140ms ease;
+  }
+}
+
+@media (min-width: 768px) and (hover: hover) {
+  [data-workspace-sidebar][data-client-rail][data-collapsed="true"]:is(:hover, :has(:focus-visible)) {
+    width: 17rem;
+    transition-delay: 90ms;
+  }
+
+  [data-workspace-sidebar][data-client-rail][data-collapsed="true"]:not(:hover, :has(:focus-visible)) [data-rail-wide] {
+    display: none;
+  }
+
+  [data-workspace-sidebar][data-client-rail][data-collapsed="true"]:not(:hover, :has(:focus-visible)) [data-rail-label] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+/* Touch tablets have no hover: the rail stays narrow until it is pinned open from the top bar. */
+@media (min-width: 768px) and (hover: none) {
+  [data-workspace-sidebar][data-client-rail][data-collapsed="true"] [data-rail-wide] {
+    display: none;
+  }
+
+  [data-workspace-sidebar][data-client-rail][data-collapsed="true"] [data-rail-label] {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-workspace-sidebar][data-client-rail][data-collapsed="true"] {
+    transition: none;
   }
 }
 
@@ -608,9 +654,7 @@ details:not([open]) > .betelgeze-popup-enter {
 /* Native panels retain the existing relationship context column. */
 [data-native-context-open="false"] [data-native-context-spacer] { width: 0; }
 
-/* While the client column shows the docked chat, the work area reserves the chat's width instead of the 20rem
-   context width, so the wider chat never covers the work. Dimensions change without a transition. */
+/* The docked Comms panel widens with the window. */
 @media (min-width: 1280px) { :root { --workspace-dock-width: 24rem; } }
 @media (min-width: 1440px) { :root { --workspace-dock-width: 26rem; } }
 @media (min-width: 1680px) { :root { --workspace-dock-width: 30rem; } }
-body[data-workspace-dock="column"] [data-native-context-open="true"] [data-native-context-spacer] { width: var(--workspace-dock-width); }

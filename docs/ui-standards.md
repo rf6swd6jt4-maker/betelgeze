@@ -37,15 +37,24 @@ Radius follows a fixed rule rather than its own token — Tailwind's default sca
 
 Only on top-level BE app launch, before the shell arrives, `AppStartupScreen` shows a centred white Betelgeze diamond on `#171717`, using inline SVG and styles so it does not wait for assets. It disappears as soon as the shell is present and cannot reappear during navigation or retries. Client-facing loading uses the agency logo, never the BE diamond. Every panel has its own route-specific skeleton, shared between its route fallback and shell opening state. Tab loading stays inside the shell on a dark canvas; an iframe's document-load event alone must not reveal it before its app bridge is mounted.
 
-In the Today layout from `lg` up there is no tab bar row: the work area and the client column start directly under the top bar (`body[data-workspace-layout="today"]` rules in `app/globals.css`), and the context toggle is a top-bar icon button. Do not put a page title in shell chrome; the page header owns it.
+In the Today layout from `lg` up there is no tab bar row: the work area, the client column and the docked Comms panel start directly under the top bar (`body[data-workspace-layout="today"]` rules in `app/globals.css`). The client column has no toggle there. Do not put a page title in shell chrome; the page header owns it.
 
 Keep the shell stacking order explicit: tab content `30`, relationship context `35`, tab bar `40`, mobile sidebar dismiss surface `45`, sidebar `50`, top bar and its dropdowns `55`, notices `60`, and dialogs `90` or higher. The top bar creates a stacking context, so increasing a dropdown's own z-index cannot lift it above a sibling sidebar. Keep the entire top bar above the sidebar so account and desktop/mobile search popups stay visible and clickable. Use `AnchoredPopup` for editors that must escape an iframe or clipping ancestor; loading overlays remain above all interactive surfaces.
 
-In the Today layout the top bar carries, in order: workspace identity and the sidebar toggle; back, forward, reload and search; at most three presence avatars (connected first) and a `+N` count; `Comms`; the context toggle; one `New` menu; the account menu. Do not add another always-visible control to it without removing one.
+In the Today layout the top bar carries, in order: workspace identity and the sidebar toggle; back, forward, reload and search; at most three presence avatars (connected first) and a `+N` count; `Comms`; one `New` menu; the account menu. Do not add another always-visible control to it without removing one.
 
 Top-bar mutation feedback uses short, bounded labels (`Saving…`, `Saved`, `Action failed`). Full error details stay in the originating form and the status tooltip/accessibility label; they must never expand the header or displace search, navigation, presence, or account controls.
 
 The sidebar (`data-workspace-sidebar`) is a floating, inset box: `rounded-2xl`, 0.5rem from the left, below the top bar and above the bottom edge, with the frosted popup face (`--color-surface-glass`, `backdrop-blur-xl`, `backdrop-saturate-150`, `border-card-border`, `shadow-card`). From `md` up it is always present and has two states: expanded (17rem, icon + label) and collapsed to a 4rem icon rail where only the labels are hidden (kept as `sr-only` text, with a `title` tooltip, and the Communications unread count moves to the icon's corner). `--workspace-sidebar-width` (18rem expanded, 5rem collapsed, including gutters) offsets the tab bar, tab panels and legacy `main` content. Below `md` it is a slide-in drawer that is fully hidden (`invisible`, `aria-hidden`) when closed. Its active/hover items use translucent white washes (`bg-white/[0.06]`, `--color-surface-hover`). The sidebar blur is static; only transform/visibility (drawer) and the width/offset change (rail, matched with the 200ms content shift) transition.
+
+### Client rail (Today layout)
+
+In the Today layout the same box holds `ClientRail` instead of the panel list. Each thing has one way in: **Today** first; then the person's clients; then Library, Staff and Settings, with the remaining destinations behind a **More** disclosure row. A row is a 2.5rem tile and a label on one activation target (`min-h-11` from `md`, `min-h-12` below).
+
+- A client's tile is a `bg-neutral-800` circle with two initials in `text-xs font-semibold` (first letter of the first and last word of the person's name, as Communications shows them); the label is the person's name with the business beneath in `text-xs text-neutral-400`. The client open in the work area has `aria-current="page"`, the `bg-white/[0.06]` wash and an inverted tile (`bg-neutral-100 text-neutral-950`), so it reads even when only tiles show. Today's tile is an outlined circle; other destinations use their existing icons without a circle.
+- Collapsed (4rem), labels are clipped but stay in the accessibility tree (`data-rail-label`), and wide-only content such as the find box is removed (`data-rail-wide`). With a mouse the rail widens to 17rem over the page on hover or keyboard focus, after 90ms, in 140ms; `--workspace-sidebar-width` does not change, so the page never moves. Pinning from the top bar is the only thing that moves the page. Reduced motion removes the transition. Never drive this from React state in the shell: it is CSS on `[data-client-rail][data-collapsed]`.
+- Do not add a second route to anything the rail already reaches (no "Open queue", "Open staff" or "Open full view" buttons), and do not add per-client badges or menus to tiles.
+- Loading shows four `LoadingPulse` circles; a failed read shows a short red line with Retry when wide; a list cut at 60 says so and links to Relationships.
 
 ## Panel loading
 
@@ -485,7 +494,7 @@ The two dividers are deliberately different weights of the same soft hairline la
 
 ### Compact companion lists
 
-A shell companion column (the Today column, 22rem wide) cannot hold the two-band row. Its records use `ListCompactItem`
+A shell companion column (the Today page's side sections, 21rem wide) cannot hold the two-band row. Its records use `ListCompactItem`
 inside `List flush` (`flush` drops the list's top margin when a section heading sits directly above it):
 
 - The whole record is one activation target. It never contains a second control, so use plain text rather than an
@@ -501,10 +510,11 @@ inside `List flush` (`flush` drops the list's top margin when a section heading 
 This variant is for companion columns only. Panel collections keep the two-band anatomy, and a companion list never
 gains per-row menus, pills or secondary actions.
 
-In the Today column the person's own queue is always the first section. Needs attention follows, shows at most four
-rows, and merges identical items (same kind, title and client) into one row whose supporting line ends with the count
-(`3 the same`); a merged row opens the full list rather than one record. A team-wide list must never push the queue
-below the fold.
+On the Today page the person's own queue is the main column and always comes first; `TodaySide` sits beside it from a
+56rem work area and below it when narrower. Each side section's heading is its disclosure control (title, optional
+count, chevron) and nothing else. Needs attention shows at most four rows and merges identical items (same kind, title
+and client) into one row whose supporting line ends with the count (`3 the same`); a merged row opens the full list
+rather than one record. The Team queue starts closed. A team-wide list must never push the queue below the fold.
 
 ### Reference mappings
 
@@ -575,6 +585,8 @@ The record-specific middle remains flexible. The header, fields, and destructive
 In the Today layout, native panels hide the reference line and `Updated …` and the icon beside each `DetailField` label (`body[data-workspace-layout="today"]` rules in `app/globals.css`); the record reference stays available as the title's tooltip. The components still render them, so the tabbed layout, framed pages and client-facing summaries are unchanged. Do not remove them from the components.
 
 Autosaving text fields (`WorkItemTextField`) say nothing at rest. The status line speaks only for an unsaved change, a save in flight, a just-confirmed save, a draft needing review or a failure, and keeps its height reserved so it never shifts the page. Do not add an idle "saves automatically" note to a field.
+
+In the Today layout a relationship's page is the client's home, so `ClientSummary` follows its header: a `DetailFields` block with only what the page does not already edit below (email and phone as link plus copy control, manager as `Assignee`, source), then one row of small buttons: primary `Chat`, then secondary links to Onboarding, Fulfilment and Client Connections, each under its existing permission. The lifecycle stage is a `RelationshipStage` header label there. Do not repeat name, company, role, location, notes or services in it.
 
 `DetailPageHeader` is distinct from `PanelTabHeader`: a panel-tab header names a workspace view or collection, while a detail header identifies one record. A detail route nested under a panel may retain the panel's shared tab navigation above it, but must not use a second panel heading as the record header.
 
@@ -705,34 +717,34 @@ Settings > Teams uses the shared `Assignee` treatment with compact Seller and Ma
 
 The relationship context is a companion reference, not a record detail page or a collection of navigable records. The shell and standalone pages share `ShellRelationshipContextPanel`: company/contact identity and `RelationshipStage`, services paired with `Assignee`, saved relationship notes, actionable contact details, optional secondary metadata, and `QuickStats`. Attached services use `RoundPill`; missing ownership reads `Unassigned`. Hide absent optional contact and metadata rows. Never label a failed data load as an empty service list or unassigned team.
 
-In the Today layout the panel renders `dense`: no "Relationship context" label or record id above the name; contact values without their per-value label (kept for assistive technology), one line each with the copy control; and one line per responsibility, with what it is on the left and who holds it on the right. The manager is a named `Assignee`; each service is its `RoundPill` and `ServiceStage` with a compact avatar-only `Assignee` whose tooltip is the name, or `Unassigned`. A long service name truncates first (its full name is the row's tooltip) so the stage and the owner always stay whole. The tabbed layout and standalone pages keep the fuller form.
+In the Today layout the panel renders `dense`, beside records that belong to a client (work items, assets, notes, onboarding) and never on the client's own page, which shows `ClientSummary` instead (see Detail pages). It has no hide control there, and offers one secondary `Chat` button under the stage. `dense` means: no "Relationship context" label or record id above the name; contact values without their per-value label (kept for assistive technology), one line each with the copy control; and one line per responsibility, with what it is on the left and who holds it on the right. The manager is a named `Assignee`; each service is its `RoundPill` and `ServiceStage` with a compact avatar-only `Assignee` whose tooltip is the name, or `Unassigned`. A long service name truncates first (its full name is the row's tooltip) so the stage and the owner always stay whole. The tabbed layout and standalone pages keep the fuller form.
 
 Keep permission-aware shortcuts in a compact two-column navigation area outside the scrolling body; mark the current destination. Client Connections links to its supported collection with a relationship filter, never an invented detail route. That shortcut also requires a matching service and an eligible relationship. Service data respects the viewer's relationship/service scope. Use the existing relationship description as the notes source.
 
 At `lg` and above, retain the desktop sidebar preference and reserve its width in the page. Below `lg`, context opens explicitly from the tab-bar icon in the shared `SideDrawer`: a right-edge `240ms` slide on the shared `cubic-bezier(0.22, 1, 0.36, 1)` ease, matching the left navigation's own slide timing, bounded below the intact interactive top bar using the existing shell viewport measurements. Its stationary dimmed dismiss surface covers only the area below that bar. Covered panel/tab content is inert while open; focus moves into the drawer and returns on dismissal without stealing focus from a header action. Use a nonmodal dialog inside the shell, never a portalled top-layer modal. Left and right navigation close each other. Escape/backdrop dismissal is supported. Reduced motion disables the slide; dismissal is immediate. Opening this drawer does not change the desktop preference. Close it on navigation, tab switches, and desktop resizing. Identity and lifecycle come first, followed by contact details, services/team, notes and secondary metadata. Contact values wrap and offer link/copy actions with visible success or failure feedback. Context messages carry their route identity so a late response or cleanup cannot replace another destination's reference. Unsupported routes do not erase the desktop preference.
 
-`SideDrawer` takes `side="left"` for a left-edge sheet with the same surface, timing, inertness, focus and dismissal rules (`betelgeze-drawer-left`, also disabled under reduced motion). The Today layout uses it below `lg` for its Today sheet; the context drawer stays on the right.
+`SideDrawer` takes `side="left"` for a left-edge sheet with the same surface, timing, inertness, focus and dismissal rules (`betelgeze-drawer-left`, also disabled under reduced motion). Nothing uses the left side at present; the context drawer stays on the right.
 
-### Docked chat and SegmentedSwitch
+### Docked Comms panel and SegmentedSwitch
 
-In the Today layout at `lg` and above, the client column can show a docked chat in place of the context reference, and
-the top bar's `Comms` button (`Button` secondary, with `UnreadMessageCount`) opens the conversation list as a drawer.
-Both use the context panel's surface and position: frosted `--color-surface-glass`, `rounded-xl`, `border-card-border`,
-`shadow-card`, below the tab bar. The column dock is `--workspace-dock-width` wide at level `35`: 20rem, then 24rem from
-1280px, 26rem from 1440px and 30rem from 1680px. While it shows, native panels reserve that width in place of the 20rem
-context width (`body[data-workspace-dock="column"]`), so the chat never covers the work; the context reference itself
-stays 20rem. The drawer is at least 25rem at `36`, opens with
-`betelgeze-popup-enter` and closes immediately. Neither dims or makes the work area inert, and neither is offered
-below `lg`. The header carries the client or `Comms`, a close control, and for the drawer `Open full view`.
+In the Today layout at `lg` and above, Comms is a docked panel: flush to the right edge, from the top bar to the bottom,
+`border-l border-neutral-800` on the page canvas (`bg-neutral-950`), at level `35`. It is not a floating card. It is
+`--workspace-dock-width` wide: 20rem, then 24rem from 1280px, 26rem from 1440px and 30rem from 1680px. While it is on
+screen the work area ends where it begins (`body[data-workspace-dock="shown"]`), so no page, native or framed, is
+covered, and the client column gives way to it. Nothing dims or becomes inert. It is not offered below `lg`.
+
+The top bar's `Comms` button (`Button` secondary, with `UnreadMessageCount`) opens the conversation list; `Chat` on a
+client's page or in the client column opens that client's conversation, which shows only beside that client's own
+pages. The header carries `Comms` or the client's name and a close control, nothing else: there is no "Open full view".
 
 `SegmentedSwitch` is the control for two or three views of one companion surface: a canvas-coloured track with a
 `border-card-border` edge, 30px segments, the selected segment on `bg-neutral-800` with primary text. It reports
-`aria-pressed`, never navigates and never filters a collection; use `PanelTabs` or `FilterRail` for those. The column's
-switch reads `Context` / `Chat` in both the context panel and the docked chat so it stays in the same place.
+`aria-pressed`, never navigates and never filters a collection; use `PanelTabs` or `FilterRail` for those. Nothing uses
+it at present; do not use it for a one-way action such as opening a chat.
 
-While the dock opens it shows message-shaped `LoadingPulse` placeholders on the dark canvas, never a white frame. A dock
-that cannot confirm its work is saved stays open with a short red notice in its header. `app-alerts.md` governs when a
-docked chat counts as read.
+While the panel opens it shows message-shaped `LoadingPulse` placeholders on the dark canvas, never a white frame. A
+panel that cannot confirm its work is saved stays open with a short red notice in its header. `app-alerts.md` governs
+when a docked chat counts as read.
 
 ## Client portal calendar
 

@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Assignee, ServiceStage, RoundPill, RelationshipStage, SegmentedSwitch, SideDrawer } from "@/components/ui"
+import { Assignee, Button, ServiceStage, RoundPill, RelationshipStage, SideDrawer } from "@/components/ui"
 import { QuickStats } from "@/components/panel/QuickStats"
 import { shortId } from "@/lib/ui/relative-time"
 import { relationshipContactHref, relationshipContextDestinations, relationshipContextHref, relationshipContextRouteKey } from "@/lib/relationship-context"
@@ -20,13 +20,11 @@ type Props = {
     mobileOpen: boolean
     onClose: () => void
     standalone?: boolean
-    /** Today layout, desktop only: offers the Context / Chat switch. Choosing Chat hands the column to the docked chat. */
+    /** Today layout, desktop only: offers Chat, which hands this side of the window to that client's docked conversation. */
     onChat?: () => void
     /** Today layout: the quieter client column. One line per service and contact, no panel label or record id. */
     dense?: boolean
 }
-
-const CONTEXT_VIEWS = [{ value: "context", label: "Context" }, { value: "chat", label: "Chat" }] as const
 
 function ContactValue({ label, value, dense = false }: { label: "Phone" | "Email" | "Website"; value: string; dense?: boolean }) {
     const [feedback, setFeedback] = useState("")
@@ -82,7 +80,7 @@ function ContextContent({ currentUrl, context, workspaceSlug, workspaceCapabilit
             </>}
             {company || context.primary_contact_role?.trim() ? <p className="mt-1 break-words text-xs leading-5 text-neutral-400">{[company ? context.primary_person_name : null, context.primary_contact_role?.trim()].filter(Boolean).join(" · ")}</p> : null}
             {Object.hasOwn(relationshipPhaseTones, context.lifecycle_phase) ? <RelationshipStage phase={context.lifecycle_phase as RelationshipPhase} className="mt-3" /> : null}
-            {onChat ? <SegmentedSwitch label="Client column view" value="context" options={CONTEXT_VIEWS} onChange={view => { if (view === "chat") onChat() }} className="mt-3" /> : null}
+            {onChat ? <div className="mt-3"><Button variant="secondary" size="sm" data-context-chat onClick={onChat}>Chat</Button></div> : null}
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">

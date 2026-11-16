@@ -29,10 +29,10 @@
       "port": 3108
     },
     {
-      "name": "today-column-fixture",
+      "name": "client-rail-fixture",
       "runtimeExecutable": "node",
       "runtimeArgs": [
-        "scripts/serve-today-column-fixture.mjs"
+        "scripts/serve-client-rail-fixture.mjs"
       ],
       "port": 3109
     },

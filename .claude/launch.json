@@ -43,6 +43,14 @@
         "scripts/serve-docked-chat-fixture.mjs"
       ],
       "port": 3111
+    },
+    {
+      "name": "context-column-fixture",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "scripts/serve-context-overlays-fixture.mjs"
+      ],
+      "port": 3112
     }
   ]
 }

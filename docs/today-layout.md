@@ -95,5 +95,10 @@ first load. The Today layout keeps that model and hides only its strip:
      tooltip names them. Back, forward, reload, search, Comms, the context toggle and the account menu are unchanged.
      The tabbed layout keeps its icon row and full presence. No request or subscription changes: the same presence
      roster is rendered shorter.
+   - *Declutter, pass 3: client column (`today-client-column`).* `ShellRelationshipContextPanel` takes `dense`, set
+     only by the Today layout: the "Relationship context" label and record id are gone, contact values lose their
+     per-value labels, and manager and services are one line each (service and stage left, owner right; avatar only
+     for service owners). In the fixture this took a three-service client from eleven lines to four. The same data is
+     rendered; no request changes. The tabbed layout and standalone pages are unchanged.
 5. **Measure and roll out.** Pilot one workspace, compare its `workspace_interaction_metrics` against the baseline with the
    same query, then widen.

@@ -572,6 +572,10 @@ The record-specific middle remains flexible. The header, fields, and destructive
 - The header owns its `border-neutral-800`, `pb-4`, and internal `gap-3`. A page must not wrap it in a second card, add another record title, or override its typography and spacing.
 - Use `surface="light"` for client-facing record summaries; it preserves the same header geometry with readable light-surface text and dividers.
 
+In the Today layout, native panels hide the reference line and `Updated …` and the icon beside each `DetailField` label (`body[data-workspace-layout="today"]` rules in `app/globals.css`); the record reference stays available as the title's tooltip. The components still render them, so the tabbed layout, framed pages and client-facing summaries are unchanged. Do not remove them from the components.
+
+Autosaving text fields (`WorkItemTextField`) say nothing at rest. The status line speaks only for an unsaved change, a save in flight, a just-confirmed save, a draft needing review or a failure, and keeps its height reserved so it never shifts the page. Do not add an idle "saves automatically" note to a field.
+
 `DetailPageHeader` is distinct from `PanelTabHeader`: a panel-tab header names a workspace view or collection, while a detail header identifies one record. A detail route nested under a panel may retain the panel's shared tab navigation above it, but must not use a second panel heading as the record header.
 
 ### DetailFields

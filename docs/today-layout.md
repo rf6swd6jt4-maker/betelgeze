@@ -100,5 +100,10 @@ first load. The Today layout keeps that model and hides only its strip:
      per-value labels, and manager and services are one line each (service and stage left, owner right; avatar only
      for service owners). In the fixture this took a three-service client from eleven lines to four. The same data is
      rendered; no request changes. The tabbed layout and standalone pages are unchanged.
+   - *Declutter, pass 4: small noise (`today-quiet-details`).* In the Today layout's native panels the record
+     reference line, the "Updated" stamp and the icon beside each field label are hidden by CSS; the reference is the
+     title's tooltip. Everywhere, autosaving text fields no longer show an idle "saves automatically" note: the line
+     appears only for an unsaved change, a save in flight, a confirmed save or a failure, with its height reserved.
+     Pending and error wording is unchanged, so nothing is reported as saved earlier than before.
 5. **Measure and roll out.** Pilot one workspace, compare its `workspace_interaction_metrics` against the baseline with the
    same query, then widen.

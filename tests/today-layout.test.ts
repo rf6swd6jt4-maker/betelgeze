@@ -259,3 +259,16 @@ test("the Today client column is the dense form and other surfaces keep the full
     assert.match(panel, /Relationship context <span className="ml-1 font-mono text-neutral-600">\{shortId\(context\.id\)\}<\/span>/, "the full form is still there for the tabbed layout and standalone pages")
     assert.match(source("components/workspace/WorkspaceTopBarClient.tsx"), /dense=\{layout === "today"\}/)
 })
+
+test("record pages are quieter in the Today layout without losing save state", () => {
+    const css = source("app/globals.css")
+    assert.match(css, /\nbody\[data-workspace-layout="today"\] \[data-detail-reference\],\nbody\[data-workspace-layout="today"\] \[data-detail-updated\],\nbody\[data-workspace-layout="today"\] \[data-detail-field-icon\] \{\n  display: none;/, "hidden by layout, at every width")
+    const header = source("components/detail/DetailPageHeader.tsx")
+    assert.match(header, /<p data-detail-reference [^>]*>\{category\} \{reference\}<\/p>/, "the component still renders the reference for other layouts")
+    assert.match(header, /<h1 title=\{`\$\{category\} \$\{reference\}`\}/, "and it stays one hover away")
+    assert.match(header, /<span data-detail-updated /)
+    const field = source("components/work-items/WorkItemTextField.tsx")
+    assert.doesNotMatch(field, /saves automatically`/, "no idle autosave note")
+    for (const state of [/Review this draft before saving/, /`Saving \$\{label\.toLowerCase\(\)\}…`/, /Could not save automatically/, /will save automatically/, /`\$\{label\} saved`/]) assert.match(field, state, "every real save state is still reported")
+    assert.match(field, /className=\{`min-h-4 text-xs/, "the line keeps its height so text never shifts the page")
+})

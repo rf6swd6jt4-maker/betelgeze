@@ -180,6 +180,58 @@ html[data-workspace-viewport-locked="true"] [data-mobile-comms-viewport="true"] 
   }
 }
 
+/* Phone bottom bar (Today layout, below md; components/workspace/PhoneBottomBar.tsx). Every rule here applies only
+   while the bar is on screen (body[data-workspace-phone-bar="shown"]); the rules above are untouched, so without the
+   bar the shell is sized exactly as before. The work area and the drawers end where the bar begins, in the same
+   visual-viewport coordinates the shell already uses. An open phone conversation is a body-level layer with its own
+   geometry owner; the bar is hidden for as long as it is open. */
+@media (max-width: 767px) {
+  body[data-workspace-phone-bar="shown"] {
+    --workspace-bottom-bar: calc(3.5rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  body[data-workspace-phone-bar="shown"] [data-workspace-tab-panels] {
+    bottom: var(--workspace-bottom-bar);
+  }
+
+  html[data-workspace-viewport-locked="true"] body[data-workspace-phone-bar="shown"] [data-workspace-tab-panels] {
+    height: max(0px, calc(var(--workspace-visual-viewport-bottom, 100dvh) - 6.25rem - var(--workspace-bottom-bar)));
+  }
+
+  html[data-workspace-viewport-locked="true"] body[data-workspace-phone-bar="shown"] [data-mobile-comms-viewport="true"] [data-workspace-tab-panels] {
+    height: max(0px, calc(var(--mobile-workspace-height) - var(--mobile-workspace-header-height) - var(--mobile-workspace-tabs-height) - var(--workspace-bottom-bar)));
+  }
+
+  body[data-workspace-phone-bar="shown"] [data-workspace-shell-root] :is([data-workspace-side-drawer], [data-workspace-sidebar-dismiss]) {
+    height: max(0px, calc(var(--workspace-visual-viewport-bottom, 100dvh) - 3.5rem - var(--workspace-bottom-bar)));
+  }
+
+  body[data-workspace-phone-bar="shown"] [data-workspace-shell-root] [data-workspace-sidebar] {
+    height: max(0px, calc(var(--workspace-visual-viewport-bottom, 100dvh) - 4.5rem - var(--workspace-bottom-bar)));
+  }
+
+  body[data-workspace-phone-bar="shown"] [data-workspace-shell-root][data-mobile-comms-viewport="true"] :is([data-workspace-side-drawer], [data-workspace-sidebar-dismiss]) {
+    height: max(0px, calc(var(--mobile-workspace-height) - var(--mobile-workspace-header-height) - var(--workspace-bottom-bar)));
+  }
+
+  body[data-workspace-phone-bar="shown"] [data-workspace-shell-root][data-mobile-comms-viewport="true"] [data-workspace-sidebar] {
+    height: max(0px, calc(var(--mobile-workspace-height) - var(--mobile-workspace-header-height) - 1rem - var(--workspace-bottom-bar)));
+  }
+
+  html[data-workspace-viewport-locked="true"] [data-workspace-bottom-bar] {
+    top: calc(var(--workspace-visual-origin-offset, 0px) + var(--workspace-visual-viewport-bottom, 100dvh) - 3.5rem - env(safe-area-inset-bottom, 0px));
+    bottom: auto;
+  }
+
+  html[data-workspace-viewport-locked="true"] [data-mobile-comms-viewport="true"] [data-workspace-bottom-bar] {
+    top: calc(var(--mobile-workspace-top) + var(--mobile-workspace-height) - 3.5rem - env(safe-area-inset-bottom, 0px));
+  }
+
+  html[data-mobile-conversation-open="true"] [data-workspace-bottom-bar] {
+    display: none;
+  }
+}
+
 /* The conversation uses the document origin. A fixed containing block would
    reintroduce WebKit's separate fixed-layer keyboard pan; a positioned/clipped
    body would make pageTop relative to the wrong origin or crop the moving frame.

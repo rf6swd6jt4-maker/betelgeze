@@ -63,10 +63,15 @@ had no single organising idea. Now you work on a client, and each thing has one 
   rule and every Communications file. Only where its buttons live and where it sits changed. `app-alerts.md` (entry of
   16 November 2026) and `app_speed.md` section 7 describe the panel; their wording was updated with the person's
   permission ("Ship, update contracts"), with no rule change.
-- **Not built:** the phone bottom bar from the mockup. It changes the space the phone chat lives in
-  (`html[data-workspace-viewport-locked]` geometry), which `app-alerts.md` protects, so it needs explicit permission
-  and a signed-in device check. Phones use the drawer. Per-client unread marks on the rail are also not built: the
-  shell's unread owner exposes only a total, and widening it is an alerts change.
+- **Phone bottom bar** (`PhoneBottomBar`, built on `phone-bottom-bar` with the person's explicit permission; see
+  `app-alerts.md`). Below `md`: Today, Clients and Comms. Clients opens the same drawer as before, which on phones no
+  longer repeats Today or Communications; the top bar's sidebar button and the strip's Today button are gone there.
+  The mockup's fourth item, More, is not a separate button because the Clients drawer already holds every other
+  destination. The work area ends where the bar begins (`--workspace-bottom-bar`, set and used only while the bar is on screen; no existing sizing rule is edited). The bar hides
+  while the on-screen keyboard is up and while a phone conversation is open; that conversation is a separate
+  full-screen layer whose geometry is untouched. Not checked on a real phone.
+- **Not built:** per-client unread marks on the rail (the shell's unread owner exposes only a total, and widening it
+  is an alerts change) and the docked chat following the selected client.
 - **Speed.** Launch in this layout adds the client list read (above) and no longer reads Needs attention unless Today is
   shown. The rail adds no subscription or timer, and hovering it runs no script. Nothing was measured signed in; the
   pilot comparison in slice 5 still applies.

@@ -33,6 +33,7 @@ import { WorkspaceRecordCache } from "@/lib/workspace-record-cache"
 import { WorkspaceTabScrollStore } from "@/lib/workspace-tab-scroll"
 import type { WorkspaceLayout } from "@/lib/workspace-layout"
 import { ClientRail, type RailDestination } from "./ClientRail"
+import { PhoneBottomBar } from "./PhoneBottomBar"
 import { TodayLayoutProvider, useTodayWide, type TodayLayoutShell } from "./TodayLayout"
 import { DockedCommunications, type DockedCommunicationsHandle } from "./DockedCommunications"
 import { Button } from "@/components/ui/Button"
@@ -2795,6 +2796,9 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
             badge: item.key === "communications" && !visibleTabs.some((tab) => workspaceTabIsCommunications(tab.url, workspace.slug, "http://localhost"))
                 ? <UnreadMessageCount count={communicationsUnreadCount} loading={readProtocol === "device-v1" && !communicationsUnreadLoaded} label="unread Communications messages" /> : undefined,
         })) : []
+    // Phones in the Today layout: Comms is the full destination, reached from the bottom bar.
+    const phoneBarCommsItem = layout === "today" ? sidebarItems.find((item) => item.key === "communications") : undefined
+    const phoneBarComms = phoneBarCommsItem ? { href: phoneBarCommsItem.href, active: activeRailPath === phoneBarCommsItem.href || activeRailPath.startsWith(`${phoneBarCommsItem.href}/`) } : null
     const activeNavigation = navigationStateByTab[activeTabId]
     const activeBackgroundSaving = (backgroundMutationCounts[activeTabId] ?? 0) > 0
     const currentPresenceMember = workspaceMembers.find((member) => member.id === currentUserId) ?? { id: currentUserId, name: username, avatarSrc: avatarSrc ?? null }
@@ -3027,7 +3031,7 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
                 <div className="flex min-w-0 items-center gap-2.5">
                     <WorkspaceLogo src={workspaceLogoSrc} name={workspace.name} />
                     <p className="min-w-0 truncate text-sm font-semibold text-neutral-100">{workspace.name}</p>
-                    <button data-icon-button type="button" onClick={event => { event.currentTarget.focus({ preventScroll: true }); toggleSidebar() }} aria-label="Toggle sidebar" aria-expanded={sidebarOpen} className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white md:h-8 md:w-8">
+                    <button data-icon-button type="button" onClick={event => { event.currentTarget.focus({ preventScroll: true }); toggleSidebar() }} aria-label="Toggle sidebar" aria-expanded={sidebarOpen} className={`h-11 w-11 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white md:h-8 md:w-8 ${layout === "today" ? "hidden md:inline-flex" : "inline-flex"}`}>
                         <SidebarIcon />
                     </button>
                 </div>
@@ -3149,8 +3153,6 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
 
         <div data-workspace-tabbar className={`fixed top-14 z-40 h-11 border-b border-neutral-800 bg-neutral-950 text-white shadow-lg shadow-black/10 ${sidebarTransitionEnabled ? "transition-[left,width] duration-200 ease-out" : ""}`}>
             <div className="flex h-full min-w-0 items-end gap-2 px-2 pt-1">
-                {layout === "today" ? <button type="button" data-today-button onClick={event => { event.currentTarget.focus({ preventScroll: true }); setSidebarOpen(false); openTodayDestination(todayHref) }}
-                    className="mb-1 inline-flex h-9 shrink-0 items-center rounded-lg border border-neutral-700 px-3 text-sm font-medium text-neutral-100 hover:bg-neutral-900 md:hidden">Today</button> : null}
                 <div className="relative h-full min-w-0 flex-1">
                 {layout === "today" ? <p data-today-destination className="pointer-events-none absolute inset-0 flex min-w-0 items-center gap-2 px-1 pb-1 text-sm font-medium text-neutral-200 lg:px-2">
                     <span className="truncate">{workspaceTabDisplayTitle(activeTab)}</span>
@@ -3305,6 +3307,13 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
 
         {activeRouteLoading && !activeNativePanel && <LoadingOverlay />}
 
+        {layout === "today" ? <PhoneBottomBar items={[
+            { key: "today", label: "Today", icon: <WorkIcon />, active: railToday.active && !sidebarOpen, onSelect: () => { setSidebarOpen(false); openTodayDestination(todayHref) } },
+            { key: "clients", label: "Clients", icon: <RelationshipsIcon />, expanded: sidebarOpen, onSelect: toggleSidebar },
+            ...(phoneBarComms ? [{ key: "comms", label: "Comms", icon: <CommunicationsIcon />, active: phoneBarComms.active && !sidebarOpen, onSelect: () => { setSidebarOpen(false); openTodayDestination(phoneBarComms.href) },
+                badge: phoneBarComms.active ? undefined : <UnreadMessageCount count={communicationsUnreadCount} loading={readProtocol === "device-v1" && !communicationsUnreadLoaded} label="unread Communications messages" /> }] : []),
+        ]} /> : null}
+
         {creationNotice ? <WorkspaceSuccessNotice label={creationNotice.label} actionLabel="View" onAction={viewCreatedRecord} /> : null}
 
         {sidebarOpen && <button data-workspace-sidebar-dismiss type="button" aria-label="Close sidebar" onClick={() => setSidebarOpen(false)} className="fixed inset-x-0 bottom-0 top-14 z-[45] cursor-default md:hidden" />}
@@ -3323,7 +3332,7 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
                     </button>
                 </div>
                 {layout === "today" ? <ClientRail workspaceSlug={workspace.slug} userId={currentUserId} activePath={activePathname.replace(/\/$/, "")} activeClientId={activeRelationshipContext?.id ?? null} online={online}
-                    today={railToday} destinations={railDestinations} refreshKey={clientRailRevision}
+                    today={railToday} destinations={railDestinations} refreshKey={clientRailRevision} phoneBar
                     onOpenClient={(href) => { void openWorkspaceTab(href); closeSidebarAfterNavigation() }} onOpenDestination={openRailDestination} /> : sidebarItems.map((item) => {
                     const offlineBlocked = !online && !item.href.includes("/communications")
                     const active = item.activeHrefs?.some((href) => activePathname === href || activePathname.startsWith(`${href}/`))

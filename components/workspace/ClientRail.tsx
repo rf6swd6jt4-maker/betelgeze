@@ -48,7 +48,7 @@ function Destination({ item, onOpen }: { item: RailDestination; onOpen: (item: R
  * destinations below stay within reach. It never navigates on its own: every choice goes back to
  * the shell, so resident destinations, departure checks and drafts keep their one owner.
  */
-export function ClientRail({ workspaceSlug, userId, activePath, activeClientId, online, today, destinations, refreshKey, onOpenClient, onOpenDestination }: {
+export function ClientRail({ workspaceSlug, userId, activePath, activeClientId, online, today, destinations, refreshKey, phoneBar = false, onOpenClient, onOpenDestination }: {
     workspaceSlug: string; userId: string
     /** Pathname of the destination in front of the person, without a trailing slash. */
     activePath: string
@@ -59,6 +59,8 @@ export function ClientRail({ workspaceSlug, userId, activePath, activeClientId, 
     destinations: RailDestination[]
     /** Changes when the shell knows the list changed (a relationship was created). */
     refreshKey: number
+    /** The phone bottom bar is present: below `md` it already offers Today and Comms, so the drawer does not repeat them. */
+    phoneBar?: boolean
     onOpenClient: (href: string) => void
     onOpenDestination: (item: RailDestination, event: MouseEvent<HTMLAnchorElement>) => void
 }) {
@@ -117,7 +119,7 @@ export function ClientRail({ workspaceSlug, userId, activePath, activeClientId, 
     const relationshipsHref = `/${workspaceSlug}/relationships`
 
     return <div data-client-rail-content className="flex flex-col gap-1 md:min-h-0 md:flex-1">
-        <Destination item={today} onOpen={onOpenDestination} />
+        <div className={phoneBar ? "max-md:hidden" : undefined}><Destination item={today} onOpen={onOpenDestination} /></div>
 
         {state.status === "ready" && !state.allowed ? <div className="md:min-h-0 md:flex-1" /> : <>
             {clients.length >= SEARCH_FROM ? <label data-rail-wide className="block px-1 pt-1">
@@ -155,7 +157,7 @@ export function ClientRail({ workspaceSlug, userId, activePath, activeClientId, 
         </>}
 
         <div className="flex shrink-0 flex-col gap-1 border-t border-card-border pt-1">
-            {primary.map(item => <Destination key={item.key} item={item} onOpen={onOpenDestination} />)}
+            {primary.map(item => <div key={item.key} className={phoneBar && item.key === "communications" ? "max-md:hidden" : undefined}><Destination item={item} onOpen={onOpenDestination} /></div>)}
             {secondary.length ? <button type="button" data-icon-button aria-expanded={moreShown} aria-controls="client-rail-more" onClick={() => setMoreOpen(open => !open)}
                 className={`${rowClass} ${hiddenCurrent ? currentRow : idleRow}`}>
                 <span className={tileClass}><MoreIcon /></span>

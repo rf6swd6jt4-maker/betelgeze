@@ -99,3 +99,15 @@ test("the Today sidebar is a flush column of names, laid out before hydration", 
     const settings = source("app/[workspaceSlug]/settings/page.tsx")
     assert.match(settings, /workspaceLayoutFor\(workspace\.id, user\.id\) === "today" \? <nav aria-label="More workspace tools"/, "Admin and the Builder are reached from Settings in this layout")
 })
+
+test("loading placeholders share the primitives' geometry, so content does not shift when a page arrives", () => {
+    const loading = source("components/panel/PanelLoading.tsx")
+    const rail = source("components/panel/FilterRail.tsx")
+    assert.match(rail, /export const filterRailItemBox = "inline-flex shrink-0 items-center rounded-md px-2\.5 py-1 text-\[13px\] leading-5"/)
+    assert.match(rail, /return `\$\{filterRailItemBox\} transition-colors /, "a real chip is built from the shared box")
+    assert.match(loading, /className=\{`\$\{filterRailItemBox\} max-sm:min-h-11`\}>\s*<LoadingPulse className="h-5"/, "a placeholder chip is the same box, and 44px on phones like a real link or button")
+    assert.match(loading, /value: <LoadingPulse className="h-6 w-10" \/>,/, "a statistic's placeholder is as tall as its text-base value line")
+    assert.match(source("components/panel/QuickStats.tsx"), /\$\{light \? "text-lg" : "text-base text-neutral-100"\}/)
+    assert.match(loading, /<ListPrimaryRow>\s*<LoadingPulse className="h-5 w-48 max-w-\[45vw\]" \/>/, "a placeholder title is as tall as a text-sm title line")
+    assert.match(loading, /className=\{panelTabClass\(index === active, true\)\}/, "placeholder tabs use the real tab box")
+})

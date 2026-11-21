@@ -1,7 +1,7 @@
 import type { CSSProperties, ReactNode } from "react"
 
 import { List, ListItem, ListPrimaryRow, ListSecondaryRow } from "@/components/list/List"
-import { FilterRail } from "@/components/panel/FilterRail"
+import { FilterRail, filterRailItemBox } from "@/components/panel/FilterRail"
 import { PanelTabStrip, panelTabClass } from "@/components/panel/PanelTabStrip"
 import { QuickStats } from "@/components/panel/QuickStats"
 import { AssetGallery } from "@/components/ui/AssetGallery"
@@ -22,14 +22,16 @@ export function PanelLoadingTabs({ count = 4, active = 0 }: { count?: number; ac
 export function PanelLoadingStats({ labels, hideOnMobileIndex }: { labels: readonly string[]; hideOnMobileIndex?: number }) {
     return <QuickStats ariaLabel="Loading statistics" items={labels.map((label, index) => ({
         label,
-        value: <LoadingPulse className="h-7 w-10" />,
+        // The height of a statistic's value line (text-base), so the rows beneath do not move when the numbers arrive.
+        value: <LoadingPulse className="h-6 w-10" />,
         hideOnMobile: index === hideOnMobileIndex,
     }))} />
 }
 
 export function PanelLoadingFilters({ widths, tight = false }: { widths: readonly number[]; tight?: boolean }) {
     return <FilterRail ariaLabel="Loading filters" spacing={tight ? "tight" : "default"}>
-        {widths.map((width, index) => <span key={index} aria-hidden="true" className="shrink-0 border-b border-transparent px-2 py-2 text-sm">
+        {/* The real chip's box; on phones a real chip is a 44px link or button. */}
+        {widths.map((width, index) => <span key={index} aria-hidden="true" className={`${filterRailItemBox} max-sm:min-h-11`}>
             <LoadingPulse className="h-5" style={{ width }} />
         </span>)}
     </FilterRail>
@@ -48,8 +50,8 @@ export function PanelLoadingRow({ kind = "default" }: { kind?: "default" | "rela
     // their content-visibility optimization for growing datasets.
     return <ListItem className="[content-visibility:visible]">
         <ListPrimaryRow>
-            <LoadingPulse className="h-6 w-48 max-w-[45vw]" />
-            {kind === "relationship" ? <LoadingPulse className="h-6 w-20" /> : null}
+            <LoadingPulse className="h-5 w-48 max-w-[45vw]" />
+            {kind === "relationship" ? <LoadingPulse className="h-5 w-20" /> : null}
             {kind === "onboarding" ? <LoadingPulse className="hidden h-2 w-24 sm:block" /> : null}
             <LoadingPulse className="ml-auto h-4 w-20" />
         </ListPrimaryRow>

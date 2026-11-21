@@ -183,7 +183,7 @@ function AppointmentRow({ currentUserId, workspaceId, draftCommandsEnabled, appo
                     })}
                     {row.meeting_medium !== "phone" && row.meeting_link ? <div className="sm:col-span-2"><dt className="text-xs text-neutral-500">Meeting link</dt><dd className="mt-1 break-all"><a href={row.meeting_link} target="_blank" rel="noreferrer" className="text-sm underline underline-offset-4">{row.meeting_link}</a></dd></div> : null}
                 </dl>
-                <div className="border-t border-neutral-800 pt-3">
+                <div className="border-t border-card-border pt-3">
                     <p role="status" className={`text-sm ${notification === "sent" ? "text-neutral-200" : "text-amber-300"}`}>{appointmentNotificationLabel(notification)}</p>
                     <Link href={communicationsHref} className="mt-1 inline-flex min-h-9 items-center text-sm text-neutral-300 underline underline-offset-4">Open client conversation</Link>
                     <p className="text-xs text-neutral-500">Submitted appointments are locked for editing.</p>
@@ -356,9 +356,9 @@ export function AppointmentTable({ currentUserId, workspaceId, workspaceSlug, re
             <label className="min-w-0 flex-1 sm:max-w-sm"><span className="sr-only">Search appointments by name or phone</span><input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search name or phone" className={appointmentInputClass} /></label>
             <button type="button" disabled={creating || !online} onClick={() => void addDraft()} className="min-h-11 shrink-0 rounded-md border border-neutral-700 px-3 text-sm text-neutral-200 hover:border-neutral-500 disabled:opacity-50">{creating ? "Adding…" : "+ Add draft"}</button>
         </div>
-        {chooseTimezone ? <form onSubmit={(event) => { event.preventDefault(); void addDraft() }} className="mt-4 space-y-3 border-y border-neutral-800 py-4">
+        {chooseTimezone ? <form onSubmit={(event) => { event.preventDefault(); void addDraft() }} className="mt-4 space-y-3 border-y border-card-border py-4">
             <div className="sm:max-w-md"><label htmlFor="new-appointment-timezone" className="mb-2 block text-sm text-neutral-200">Which timezone is this appointment in?</label><AppointmentTimezoneSelect id="new-appointment-timezone" value={timezone} onChange={setTimezone} disabled={creating || !online} /><p className="mt-1 text-xs text-neutral-400">Use the client’s appointment timezone. You can change it in the draft.</p></div>
-            <div className="flex gap-3"><button type="submit" disabled={!timezone || creating} className="min-h-11 rounded-md bg-white px-3 text-sm text-black disabled:opacity-50">{creating ? "Adding…" : "Create draft"}</button><button type="button" onClick={() => setChooseTimezone(false)} className="min-h-11 px-2 text-sm text-neutral-400">Cancel</button></div>
+            <div className="flex gap-3"><button type="submit" disabled={!timezone || creating} className="min-h-11 rounded-md bg-[var(--color-accent)] px-3 text-sm text-[var(--color-accent-contrast)] disabled:opacity-50">{creating ? "Adding…" : "Create draft"}</button><button type="button" onClick={() => setChooseTimezone(false)} className="min-h-11 px-2 text-sm text-neutral-400">Cancel</button></div>
         </form> : null}
         {error ? <p role="alert" className="mt-3 text-sm text-red-300">{error} <button type="button" onClick={() => void refresh()} className="underline underline-offset-4">Refresh</button></p> : null}
         {delivery.messagingError || delivery.notificationError ? <p role="status" className="mt-3 text-sm text-amber-300">{delivery.messagingError || delivery.notificationError} <Link href={communicationsHref} className="underline underline-offset-4">Open Communications</Link></p> : null}

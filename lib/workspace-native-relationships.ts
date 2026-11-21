@@ -57,7 +57,9 @@ export async function loadNativeRelationships(workspaceSlug: string, relationshi
         return typeof id === "string" ? id : null
     }
     const creatorIds = [...new Set(rows.flatMap((row) => creatorId(row) ? [creatorId(row)!] : []))]
-    const profiles = creatorIds.length ? await supabaseAdmin.from("user_profiles").select("user_id, username, avatar_path").in("user_id", creatorIds) : { data: [], error: null }
+    // The Clients table names each client's manager. Their profiles ride on the creators' lookup: one query, as before.
+    const profileIds = [...new Set([...creatorIds, ...rows.flatMap((row) => row.fulfilment_manager_user_id ? [row.fulfilment_manager_user_id] : [])])]
+    const profiles = profileIds.length ? await supabaseAdmin.from("user_profiles").select("user_id, username, avatar_path").in("user_id", profileIds) : { data: [], error: null }
     if (profiles.error) throw new Error("Could not load relationship creators")
     const profileById = new Map((profiles.data ?? []).map((profile) => [profile.user_id, profile]))
     const servicesByRelationship = new Map(services.map(row => [row.relationship_id, row]))
@@ -68,12 +70,15 @@ export async function loadNativeRelationships(workspaceSlug: string, relationshi
         const sms = phone?.toLowerCase().startsWith("whatsapp:") ? null : displayPhone(phone)
         const whatsapp = displayPhone(row.client_id ? channelById.get(row.client_id) : null) ?? (phone?.toLowerCase().startsWith("whatsapp:") ? displayPhone(phone) : null)
         const summary = servicesByRelationship.get(row.id)
+        const manager = row.fulfilment_manager_user_id ? profileById.get(row.fulfilment_manager_user_id) : null
         return {
             id: row.id, name: row.primary_person_name, businessName: row.business_name, phase: row.lifecycle_phase, email: row.primary_email, sms, whatsapp,
             contactRole: row.primary_contact_role, location: relationshipLocationLabel(row), updatedAt: row.updated_at, createdAt: row.created_at,
             isTest: Boolean(row.source_metadata.is_test || (row.client_id && clientById.get(row.client_id)?.is_test)), openWork: counts.get(row.id) ?? 0,
             services: summary?.services ?? [], serviceStages: summary?.stages ?? [], serviceCount: summary?.count ?? 0,
             creator: creator ? { username: creator.username, avatar: creator.avatar_path ? profileAvatarUrl(creator.username, creator.avatar_path) : null } : null,
+            managed: Boolean(row.fulfilment_manager_user_id),
+            manager: manager ? { username: manager.username, avatar: manager.avatar_path ? profileAvatarUrl(manager.username, manager.avatar_path) : null } : null,
         }
     }) }
 }

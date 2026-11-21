@@ -164,7 +164,7 @@ export function ShellRelationshipContextPanel({ desktopOpen, mobileOpen, onClose
     }, [mobileOpen])
 
     return <>
-        {desktopOpen ? <aside aria-label="Relationship context" data-workspace-context-column={standalone ? undefined : ""} className={`fixed right-4 z-[35] hidden w-80 flex-col overflow-hidden rounded-xl border border-card-border bg-[var(--color-surface-glass)] text-white shadow-card backdrop-blur-xl backdrop-saturate-150 sm:right-6 lg:flex ${standalone ? "top-6 h-[calc(100dvh-3rem)]" : "top-[7.75rem] h-[calc(100dvh-9.25rem)]"}`}>
+        {desktopOpen ? <aside aria-label="Relationship context" data-workspace-context-column={standalone ? undefined : ""} className={`fixed right-4 z-[35] hidden w-80 flex-col overflow-hidden rounded-xl border border-card-border bg-[var(--color-surface-popup)] text-white shadow-popup sm:right-6 lg:flex ${standalone ? "top-6 h-[calc(100dvh-3rem)]" : "top-[7.75rem] h-[calc(100dvh-9.25rem)]"}`}>
             <ContextContent {...props} />
         </aside> : null}
         {mobileOpen ? <SideDrawer label="Relationship context" onClose={onClose} modal={standalone}>{dismiss => <ContextContent {...props} onChat={undefined} onClose={dismiss} onNavigate={href => { dismiss(); props.onNavigate(href) }} />}</SideDrawer> : null}

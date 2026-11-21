@@ -39,8 +39,8 @@ export function RelationshipBackgroundEditor({ workspaceSlug, relationshipId, us
     }, [queue, runtimeKey])
     useEffect(() => { queue.receive(initial, updatedAt) }, [initial, updatedAt, queue])
     const update = <K extends keyof RelationshipDraft>(key: K, value: RelationshipDraft[K]) => queue.edit(draft => ({ ...draft, [key]: value }))
-    const fieldClass = "min-h-9 w-full min-w-0 rounded-md bg-transparent px-1 py-1 text-base text-neutral-200 outline-none hover:bg-neutral-900/60 focus:bg-neutral-900 disabled:opacity-70 sm:text-sm"
-    return <Context.Provider value={{ draft: state.draft, canEdit, update: (key, value) => update(key, value as never), flush: async () => { if (!await queue.flush()) throw new Error("Save or resolve the relationship details before continuing.") } }}><section aria-label="Relationship information" className="mt-4 border-b border-neutral-800">
+    const fieldClass = "min-h-9 w-full min-w-0 rounded-md bg-transparent px-1 py-1 text-base text-neutral-200 outline-none hover:bg-[var(--color-surface-hover)] focus:bg-neutral-900 disabled:opacity-70 sm:text-sm"
+    return <Context.Provider value={{ draft: state.draft, canEdit, update: (key, value) => update(key, value as never), flush: async () => { if (!await queue.flush()) throw new Error("Save or resolve the relationship details before continuing.") } }}><section aria-label="Relationship information" className="mt-4 border-b border-card-border">
         <DetailFields className="!mt-0">
             {([
                 ["primaryPersonName", "Name", "identity", "text"], ["businessName", "Company", "company", "text"],

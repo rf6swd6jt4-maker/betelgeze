@@ -44,7 +44,7 @@ export function PhoneBottomBar({ items }: { items: PhoneBarItem[] }) {
     }, [keyboard])
 
     return <nav data-workspace-bottom-bar aria-label="Main" hidden={keyboard}
-        className="fixed inset-x-0 bottom-0 z-[52] h-[calc(3.5rem+env(safe-area-inset-bottom))] border-t border-neutral-800 bg-neutral-950 pb-[env(safe-area-inset-bottom)] text-white md:hidden">
+        className="fixed inset-x-0 bottom-0 z-[52] h-[calc(3.5rem+env(safe-area-inset-bottom))] border-t border-card-border bg-neutral-950 pb-[env(safe-area-inset-bottom)] text-white md:hidden">
         <ul className="grid h-14 auto-cols-fr grid-flow-col">
             {items.map(item => {
                 const on = item.active || item.expanded

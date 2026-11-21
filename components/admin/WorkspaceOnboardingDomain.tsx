@@ -24,13 +24,13 @@ type Props = {
 
 function DomainSetupForm({ domain, action, onCancel, surface }: { domain: string | null; action: (formData: FormData) => Promise<void>; onCancel: () => void; surface: "onboarding" | "client_portal" }) {
     const example = surface === "client_portal" ? "portal.example.com" : "onboarding.example.com"
-    return <div className="mt-5 rounded-xl border border-neutral-800 bg-neutral-950/40 p-4 sm:p-5">
+    return <div className="mt-5 rounded-xl border border-card-border p-4 sm:p-5">
         <p className="font-medium">Step 1 of 2: choose a domain</p>
         <p className="mt-1 text-sm text-neutral-400">Use a domain or subdomain you control, such as {example}.</p>
         <form action={action} data-workspace-mutation="background" className="mt-4 space-y-3">
             <label className="block text-sm text-neutral-300">Domain<input name="domain" type="text" defaultValue={domain ?? ""} placeholder={example} autoCapitalize="none" autoCorrect="off" spellCheck={false} className="mt-1.5 w-full rounded-lg border border-neutral-700 bg-black px-3 py-2 text-white" /></label>
             <p className="text-xs leading-5 text-neutral-500">Enter only the hostname, without <code>https://</code> or a path. We will provide the DNS records to add at the domain provider.</p>
-            <div className="flex flex-wrap gap-2"><WorkspaceActionButton pendingLabel="Saving…" className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-black">Continue to DNS setup</WorkspaceActionButton><Button variant="secondary" onClick={onCancel}>Cancel</Button></div>
+            <div className="flex flex-wrap gap-2"><WorkspaceActionButton pendingLabel="Saving…" className="rounded-lg bg-[var(--color-accent)] px-4 py-2 text-sm font-medium text-[var(--color-accent-contrast)]">Continue to DNS setup</WorkspaceActionButton><Button variant="secondary" onClick={onCancel}>Cancel</Button></div>
         </form>
     </div>
 }
@@ -50,8 +50,8 @@ export function WorkspaceOnboardingDomain({ surface = "onboarding", domain, stat
     const portal = surface === "client_portal"
     const label = portal ? "client portal" : "onboarding"
 
-    return <section className={`${portal ? "" : "mt-8 "}min-w-0 max-w-full rounded-2xl border border-neutral-800 bg-neutral-900 p-4 sm:p-5`}>
-        <h2 className="text-lg font-semibold">Custom {label} domain</h2>
+    return <section className={`${portal ? "" : "mt-8 "}min-w-0 max-w-full rounded-2xl border border-card-border p-4 sm:p-5`}>
+        <h2 className="text-sm font-semibold">Custom {label} domain</h2>
         <p className="mt-1 text-sm text-neutral-400">Give clients a direct {label} link on your own domain.</p>
 
         {!domain && <><p className="mt-4 text-sm text-neutral-500">New links currently use the Betelgeze {label} URL. No custom domain is connected yet.</p>{canManage && !setupOpen && <Button className="mt-4" onClick={() => setSetupOpen(true)}>Connect custom domain</Button>}{canManage && setupOpen && <DomainSetupForm surface={surface} domain={null} action={saveAction} onCancel={() => setSetupOpen(false)} />}</>}

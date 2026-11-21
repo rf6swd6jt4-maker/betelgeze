@@ -5,7 +5,7 @@ import { calendarChoiceLabel } from "@/lib/client-portal/ghl-calendar"
 import Link from "next/link"
 import dynamic from "next/dynamic"
 import { useRouter, useSearchParams } from "@/components/workspace/WorkspaceNavigation"
-import { useMemo, useState, useTransition, useRef, useEffect, type FormEvent } from "react"
+import { useMemo, useState, useTransition, useRef, useEffect, type FormEvent, type ReactNode } from "react"
 import { saveClientAccount, removeClientAccount, refreshClientAccount } from "@/app/[workspaceSlug]/client-connections/actions"
 import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle, ListTrailing } from "@/components/list/List"
 import { PanelTabHeader } from "@/components/panel/PanelTabHeader"
@@ -19,7 +19,9 @@ const AddConnectionDialog = dynamic(() => import("./AddConnectionDialog").then(m
 const GoogleAdsConnectionDialog = dynamic(() => import("./GoogleAdsConnectionDialog").then(module => module.GoogleAdsConnectionDialog))
 const MetaReportingDialog = dynamic(() => import("./MetaReportingDialog").then(module => module.MetaReportingDialog))
 
-export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAccounts, agency, canManageAgency }: {
+export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAccounts, agency, canManageAgency, clientHeader }: {
+    /** Today layout, narrowed to one client: their page header (this is its Connections tab) instead of the panel's. */
+    clientHeader?: ReactNode
     workspaceSlug: string
     accounts: ClientConnectionAccount[]
     agency: { connected: boolean; name: string | null; id: string | null }
@@ -128,7 +130,8 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAcc
     }
 
     return <div className="mx-auto max-w-7xl px-4 pb-8 pt-5 text-white sm:px-6">
-        <PanelTabHeader title="Client Connections" description="Manage GHL, Meta Ads and Google Ads connections for active relationships." actions={<Button onClick={() => setAdding(true)}>Add connection</Button>} />
+        {clientHeader ? <>{clientHeader}<div className="flex justify-end pt-4"><Button size="sm" variant="secondary" onClick={() => setAdding(true)}>Add connection</Button></div></>
+            : <PanelTabHeader title="Client Connections" description="Manage GHL, Meta Ads and Google Ads connections for active relationships." actions={<Button onClick={() => setAdding(true)}>Add connection</Button>} />}
 
         <Card className="mt-6">
             <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="font-semibold">Agency connection</h2><p className="mt-1 text-sm leading-6 text-neutral-400">Used to verify agency sub-accounts connected with a private token. App connections are authorised directly in HighLevel.</p></div><Status label={agency.connected ? "Connected" : "Not connected"} tone={agency.connected ? "green" : "grey"} /></div>
@@ -138,7 +141,7 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAcc
         </Card>
 
         {error ? <p role="alert" className="mt-4 rounded-xl border border-red-900/70 bg-red-950/20 p-3 text-sm text-red-200">{error}</p> : null}
-        {selectedRelationship ? <div className="mt-5 flex items-center justify-between gap-3 text-sm"><span className="text-neutral-400">Selected relationship</span><Link href={`/${workspaceSlug}/client-connections`} className="py-2 text-neutral-200 underline underline-offset-4">Show all clients</Link></div> : null}
+        {selectedRelationship && !clientHeader ? <div className="mt-5 flex items-center justify-between gap-3 text-sm"><span className="text-neutral-400">Selected relationship</span><Link href={`/${workspaceSlug}/client-connections`} className="py-2 text-neutral-200 underline underline-offset-4">Show all clients</Link></div> : null}
         <List ariaLabel="Client connections">
             {visibleAccounts.length ? visibleAccounts.map((account) => {
                 const title = account.businessName ? `${account.clientName} – ${account.businessName}` : account.clientName
@@ -178,7 +181,7 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAcc
             <button type="button" disabled={pending || loadingCalendars || !locationId || (!privateToken && !editing?.connected)} onClick={() => void loadCalendars()} className="min-h-11 px-3 text-sm underline underline-offset-4 disabled:opacity-40">{loadingCalendars ? "Loading calendars…" : "Load calendars"}</button>
             {calendars ? calendars.length ? <label className="block text-sm text-neutral-300">Client portal calendar<Selector name="calendarId" required appearance="input" ariaLabel="Client portal calendar" value={calendarId} onChange={setCalendarId} options={calendars.map(item => ({ value: item.id, label: calendarChoiceLabel(item, calendars) }))} /></label> : <p role="status" className="text-sm text-neutral-400">No calendars were found for this location.</p> : null}
             <Button type="submit" className="w-full" disabled={pending || !calendars || !calendarId || !relationshipId || (accountType === "agency_subaccount" && !agency.connected)}>{pending ? "Verifying…" : editing ? "Save connection" : "Connect account"}</Button>
-        </fieldset>{editing?.connected ? <div className="mt-5 flex items-center justify-between border-t border-neutral-800 pt-3">{!editing.archived ? <Button variant="ghost" disabled={pending} onClick={() => refresh(editing.relationshipId)}>Refresh connection</Button> : <span />}<button type="button" disabled={pending} onClick={() => { setRemoving(editing); setError(null) }} className="min-h-11 px-3 text-sm text-red-300">Retire connection</button></div> : null}</form></CenteredDialog> : null}
+        </fieldset>{editing?.connected ? <div className="mt-5 flex items-center justify-between border-t border-card-border pt-3">{!editing.archived ? <Button variant="ghost" disabled={pending} onClick={() => refresh(editing.relationshipId)}>Refresh connection</Button> : <span />}<button type="button" disabled={pending} onClick={() => { setRemoving(editing); setError(null) }} className="min-h-11 px-3 text-sm text-red-300">Retire connection</button></div> : null}</form></CenteredDialog> : null}
         {removing ? <CenteredDialog title="Retire client connection?" busy={pending} onClose={() => setRemoving(null)}>
             <p className="text-sm leading-6 text-neutral-300">Retire {removing.locationName ?? removing.clientName}? Its calendar and CRM results will stop appearing in the client portal, and the location will be available for a new connection. The stored BE credential will be deleted. Connection history and GHL contacts, calendars and appointments will remain.</p>
             {error ? <p role="alert" className="mt-3 text-sm text-red-300">{error}</p> : null}

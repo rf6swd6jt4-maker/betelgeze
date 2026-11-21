@@ -7,7 +7,7 @@ import { PushNotificationSettings } from "./PushNotificationSettings"
 export type AccountDevice = { id: string; platform: string; browser: string; mobile: boolean; is_current: boolean; last_seen_at: string | null; notifications_enabled: boolean | null }
 
 export function DeviceCard({ device }: { device: AccountDevice }) {
-    return <article className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4 sm:p-5">
+    return <article className="rounded-2xl border border-card-border p-4 sm:p-5">
         <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-neutral-800 text-neutral-300">
                 <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6">{device.mobile ? <><rect x="6" y="2.5" width="12" height="19" rx="2.5" /><path d="M10 18.5h4" /></> : <><rect x="2.5" y="3.5" width="19" height="13" rx="2" /><path d="M12 16.5v4m-4 0h8" /></>}</svg>
@@ -15,7 +15,7 @@ export function DeviceCard({ device }: { device: AccountDevice }) {
             <div className="min-w-0 flex-1"><h3 className="break-words text-sm font-medium">{device.platform} <span className="font-normal text-neutral-500">· {device.browser}</span></h3><p className="mt-1 text-xs text-neutral-400">{device.is_current ? "This device" : "Signed in"}</p></div>
         </div>
         <p className="mt-3 text-xs text-neutral-500">Last seen {device.last_seen_at ? <time dateTime={device.last_seen_at}>{new Date(device.last_seen_at).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}</time> : "unavailable"}</p>
-        {device.is_current ? <PushNotificationSettings compact /> : <div className="mt-3 border-t border-neutral-800 pt-2">
+        {device.is_current ? <PushNotificationSettings compact /> : <div className="mt-3 border-t border-card-border pt-2">
             <div className="flex items-center justify-between gap-3"><div><p className="text-sm text-neutral-300">Notifications</p><p className="mt-0.5 text-xs text-neutral-500">{device.notifications_enabled === null ? "Not checked yet" : device.notifications_enabled ? "Enabled" : "Disabled"}</p></div><NotificationSwitch checked={device.notifications_enabled === true} disabled label={`Notifications on ${device.platform} (${device.browser}) — change on that device`} /></div>
             {device.notifications_enabled === null ? <p className="mt-1 text-xs leading-5 text-neutral-500">Open Betelgeze on this device to check its setting.</p> : null}
         </div>}

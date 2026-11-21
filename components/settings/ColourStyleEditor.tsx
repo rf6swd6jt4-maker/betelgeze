@@ -156,7 +156,7 @@ export function ColourStyleEditor({
     }
 
     if (creating) return <div className="flex max-h-[min(92dvh,38rem)] min-h-0 flex-col overflow-hidden">
-        <div className="relative flex shrink-0 items-center border-b border-neutral-800 px-3 py-3">
+        <div className="relative flex shrink-0 items-center border-b border-card-border px-3 py-3">
             <button type="button" aria-label="Back to styles" onClick={() => setCreating(false)} className="flex h-8 w-8 items-center justify-center text-neutral-500 hover:text-white"><svg aria-hidden="true" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-4 w-4"><path d="m10 3-5 5 5 5" /></svg></button>
             <p id={titleId} className="pointer-events-none absolute inset-x-12 truncate text-center text-sm font-medium text-white">New colour style</p>
             <button type="button" aria-label="Close colour editor" onClick={onClose} className="ml-auto flex h-8 w-8 items-center justify-center text-lg text-neutral-500 hover:text-white">×</button>
@@ -165,19 +165,19 @@ export function ColourStyleEditor({
             <label className="block"><span className="sr-only">Style name</span><input autoFocus value={newName} onChange={(event) => setNewName(event.target.value)} maxLength={80} placeholder="Name" className="h-10 w-full rounded-lg border border-neutral-700 bg-neutral-900 px-3 text-sm text-white outline-none placeholder:text-neutral-600 focus:border-neutral-500" /></label>
             <div className="mt-3"><ColourPicker value={newHex} onChange={setNewHex} label="New style" /></div>
         </div>
-        <div className="border-t border-neutral-800 p-3"><button type="button" disabled={!newName.trim()} onClick={saveNewStyle} className="h-10 w-full rounded-lg bg-white text-sm font-medium text-black disabled:opacity-30">Save style</button></div>
+        <div className="border-t border-card-border p-3"><button type="button" disabled={!newName.trim()} onClick={saveNewStyle} className="h-10 w-full rounded-lg bg-white text-sm font-medium text-black disabled:opacity-30">Save style</button></div>
     </div>
 
     return <div className="flex max-h-[min(92dvh,38rem)] min-h-0 flex-col overflow-hidden">
-        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-neutral-800 px-3 py-3"><p id={titleId} className="truncate text-sm font-medium text-white">{roleLabel}</p><button type="button" aria-label="Close colour editor" onClick={onClose} className="flex h-8 w-8 shrink-0 items-center justify-center text-lg text-neutral-500 hover:text-white">×</button></div>
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-card-border px-3 py-3"><p id={titleId} className="truncate text-sm font-medium text-white">{roleLabel}</p><button type="button" aria-label="Close colour editor" onClick={onClose} className="flex h-8 w-8 shrink-0 items-center justify-center text-lg text-neutral-500 hover:text-white">×</button></div>
         <div className="min-h-0 flex-1 overflow-y-auto p-3">
             <ColourPicker key={assignedSwatch?.id ?? "unassigned"} value={assignedSwatch?.hex ?? "#000000"} onChange={(hex) => { if (assignedSwatch) onUpdateSwatch(assignedSwatch.id, { hex }) }} label={roleLabel} />
-            <div className="mt-4 border-t border-neutral-800 pt-3">
-                <div className="flex items-center justify-between"><p className="text-xs font-medium text-neutral-400">Styles</p><button type="button" aria-label="Add colour style" onClick={() => setCreating(true)} className="flex h-8 w-8 items-center justify-center rounded-md text-xl font-light text-neutral-400 hover:bg-neutral-900 hover:text-white">+</button></div>
+            <div className="mt-4 border-t border-card-border pt-3">
+                <div className="flex items-center justify-between"><p className="text-xs font-medium text-neutral-400">Styles</p><button type="button" aria-label="Add colour style" onClick={() => setCreating(true)} className="flex h-8 w-8 items-center justify-center rounded-md text-xl font-light text-neutral-400 hover:bg-[var(--color-surface-hover)] hover:text-white">+</button></div>
                 <div className="mt-1 divide-y divide-neutral-900">
                     {orderedSwatches.map((swatch) => {
                         const selected = swatch.id === assignedSwatch?.id
-                        return <button key={swatch.id} type="button" onClick={() => onAssignSwatch(swatch.id)} className={`flex min-h-10 w-full items-center gap-3 rounded-lg px-2 text-left hover:bg-neutral-900 ${selected ? "text-white" : "text-neutral-400"}`}>
+                        return <button key={swatch.id} type="button" onClick={() => onAssignSwatch(swatch.id)} className={`flex min-h-10 w-full items-center gap-3 rounded-lg px-2 text-left hover:bg-[var(--color-surface-hover)] ${selected ? "text-white" : "text-neutral-400"}`}>
                             <span aria-hidden="true" className="h-5 w-5 shrink-0 rounded-full border border-white/10" style={{ backgroundColor: normalizeHexColour(swatch.hex) ?? "#000000" }} />
                             <span className="min-w-0 flex-1 truncate text-sm">{swatch.name}</span>
                             {selected ? <span className="text-xs text-neutral-500">Selected</span> : null}

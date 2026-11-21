@@ -35,7 +35,7 @@ export type WorkspaceTabFrameMessage = {
     source: typeof WORKSPACE_TAB_MESSAGE_SOURCE
     target: "host"
     tabId: string
-    type: "navigation-intent" | "navigation-intent-end" | "meaningful-ready" | "navigation-failed" | "history-step" | "record-title" | "location" | "location-replace" | "mutation" | "action-start" | "action-end" | "mutation-start" | "mutation-end" | "refresh-start" | "refresh-end" | "context-status" | "context-obstruction" | "navigation-start" | "open-tab" | "reopen-closed-tab" | "communications-unread" | "departure-ready"
+    type: "navigation-intent" | "navigation-intent-end" | "meaningful-ready" | "navigation-failed" | "history-step" | "record-title" | "location" | "location-replace" | "mutation" | "action-start" | "action-end" | "mutation-start" | "mutation-end" | "refresh-start" | "refresh-end" | "context-status" | "context-obstruction" | "navigation-start" | "open-tab" | "client-chat" | "reopen-closed-tab" | "communications-unread" | "departure-ready"
     url?: string
     relationshipId?: string | null
     contextSupported?: boolean
@@ -88,6 +88,8 @@ export type WorkspaceTabRelationshipContext = {
     servicesHasMore?: boolean
     teamUnavailable?: boolean
     allowedDestinations?: RelationshipContextDestination[]
+    /** Today layout: the client's own pages this person may open, which become the tabs of the client's page. */
+    clientTabs?: RelationshipContextDestination[]
 }
 
 export function normalizeWorkspaceUrl(value: string, workspaceSlug: string, origin: string) {

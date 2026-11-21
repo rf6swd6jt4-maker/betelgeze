@@ -179,8 +179,8 @@ export function WorkspaceInvitationForm({
     const status = lookup ? lookupStatus(lookup.status) : null
     const invitationDisabled = pending
     const modal = visible ? <div className="fixed inset-0 z-[2147483646] flex items-center justify-center overflow-hidden overscroll-none bg-black/75 p-3 text-white sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !pending) setOpen(false) }}>
-        <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="add-workspace-user-title" className="betelgeze-popup-enter flex max-h-[min(92dvh,44rem)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-950 shadow-2xl shadow-black/70">
-            <header className="flex shrink-0 items-start gap-4 border-b border-neutral-800 px-4 py-4 sm:px-5">
+        <section ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="add-workspace-user-title" className="betelgeze-popup-enter flex max-h-[min(92dvh,44rem)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-950 shadow-popup">
+            <header className="flex shrink-0 items-start gap-4 border-b border-card-border px-4 py-4 sm:px-5">
                 <div className="min-w-0 flex-1">
                     <h2 id="add-workspace-user-title" className="text-lg font-semibold">Add user</h2>
                     <p className="mt-1 text-sm leading-5 text-neutral-500">Find someone by their exact Betelgeze username or email address.</p>
@@ -196,7 +196,7 @@ export function WorkspaceInvitationForm({
                 {lookupState === "checking" ? <div className="mt-4"><Status label="Checking Betelgeze" tone="grey" /></div> : null}
                 {lookupError ? <p role="alert" className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">{lookupError}</p> : null}
 
-                {lookup && status ? <div className="mt-4 rounded-xl border border-neutral-800 bg-neutral-900/50 p-3">
+                {lookup && status ? <div className="mt-4 rounded-xl border border-card-border p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                         <div className="min-w-0">
                             {lookup.username ? <p className="truncate text-sm font-medium text-white">@{lookup.username}</p> : null}
@@ -219,7 +219,7 @@ export function WorkspaceInvitationForm({
 
                     {submitError ? <p role="alert" className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-200">{submitError}</p> : null}
 
-                    <div className="flex items-center justify-end gap-2 border-t border-neutral-800 pt-4">
+                    <div className="flex items-center justify-end gap-2 border-t border-card-border pt-4">
                         <Button variant="ghost" size="sm" disabled={pending} onClick={() => setOpen(false)}>Cancel</Button>
                         <Button type="submit" size="sm" disabled={invitationDisabled}>{pending ? "Sending…" : lookup.actionLabel}</Button>
                     </div>

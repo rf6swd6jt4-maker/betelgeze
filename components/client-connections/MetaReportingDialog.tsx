@@ -125,7 +125,7 @@ export function MetaReportingDialog({ workspaceSlug, relationshipId, clientName,
             {accounts.length ? <label className="block text-sm text-neutral-300">Advertising account<Selector appearance="input" ariaLabel="Advertising account" value={accountId} onChange={value => { setAccountId(value); setPreview(null); setConfirmed(false) }} options={[{ value: "", label: "Choose the client's account" }, ...accounts.map(account => ({ value: account.id, label: `${account.name} · ${account.id}` }))]} /></label> : null}
             {accountId ? <Button variant="secondary" disabled={pending} onClick={() => void run("preview")}>Preview report</Button> : null}
         </div>
-        {preview ? <div className="mt-5 space-y-3 border-t border-neutral-800 pt-4">
+        {preview ? <div className="mt-5 space-y-3 border-t border-card-border pt-4">
             <p className="font-medium">{preview.account.name} · {preview.account.id}</p>
             <p className="text-sm text-neutral-400">{preview.report.dateFrom} – {preview.report.dateTo} · {preview.report.currency ?? "Currency unavailable for an empty report"}</p>
             <p className="text-sm">Spend {preview.report.totals.spend.toLocaleString()} · Impressions {preview.report.totals.impressions.toLocaleString()} · Clicks {preview.report.totals.clicks.toLocaleString()} · Leads {preview.report.totals.leads.toLocaleString()}</p>
@@ -136,6 +136,6 @@ export function MetaReportingDialog({ workspaceSlug, relationshipId, clientName,
         {pending ? <p role="status" className="mt-4 text-sm text-neutral-400">Checking reporting…</p> : null}
         {notice ? <p role="status" className="mt-4 text-sm leading-6 text-neutral-300">{notice}</p> : null}
         {error ? <p role="alert" className="mt-4 text-sm leading-6 text-red-300">{error}</p> : null}
-        {state?.history.length ? <details className="mt-5 border-t border-neutral-800 pt-3 text-sm"><summary className="cursor-pointer py-2 text-neutral-400">Recent account changes</summary><List ariaLabel="Recent reporting account changes">{state.history.map(item => <ListItem key={item.id}><ListPrimaryRow><ListTitle>{item.account_name} · {item.account_id}</ListTitle></ListPrimaryRow><ListSecondaryRow>{new Date(item.created_at).toLocaleString()}{item.previous_account_id ? ` · Previously ${item.previous_account_name ?? item.previous_account_id}` : ""}</ListSecondaryRow></ListItem>)}</List></details> : null}
+        {state?.history.length ? <details className="mt-5 border-t border-card-border pt-3 text-sm"><summary className="cursor-pointer py-2 text-neutral-400">Recent account changes</summary><List ariaLabel="Recent reporting account changes">{state.history.map(item => <ListItem key={item.id}><ListPrimaryRow><ListTitle>{item.account_name} · {item.account_id}</ListTitle></ListPrimaryRow><ListSecondaryRow>{new Date(item.created_at).toLocaleString()}{item.previous_account_id ? ` · Previously ${item.previous_account_name ?? item.previous_account_id}` : ""}</ListSecondaryRow></ListItem>)}</List></details> : null}
     </CenteredDialog>
 }

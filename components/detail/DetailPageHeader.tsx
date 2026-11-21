@@ -31,12 +31,12 @@ export function DetailPageHeader({
     summary?: ReactNode
     surface?: "dark" | "light"
 }) {
-    return <header data-surface={surface} data-workspace-record-title={typeof title === "string" ? title : undefined} className="group/header border-b border-neutral-800 pb-4 data-[surface=light]:border-black/10">
+    return <header data-surface={surface} data-workspace-record-title={typeof title === "string" ? title : undefined} className="group/header border-b border-card-border pb-4 data-[surface=light]:border-black/10">
         <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div className="min-w-0">
                 <p data-detail-reference className="truncate font-mono text-xs text-neutral-600">{category} {reference}</p>
                 {/* The tooltip keeps the record reference one hover away where the Today layout hides the line above. */}
-                <h1 title={`${category} ${reference}`} className="mt-1 break-words text-2xl font-semibold tracking-tight text-white group-data-[surface=light]/header:text-[var(--onboarding-text,#0F172A)] sm:truncate">{title}</h1>
+                <h1 title={`${category} ${reference}`} className="mt-1 break-words text-xl font-semibold tracking-tight text-white group-data-[surface=light]/header:text-2xl group-data-[surface=light]/header:text-[var(--onboarding-text,#0F172A)] sm:truncate">{title}</h1>
                 {subtitle ? <div className="mt-1 min-w-0 truncate text-sm text-neutral-500">{subtitle}</div> : null}
             </div>
             <div className="flex min-w-0 flex-wrap items-center gap-x-4 gap-y-2 text-xs text-neutral-500 sm:shrink-0 sm:justify-end">
@@ -45,6 +45,6 @@ export function DetailPageHeader({
                 <span data-detail-updated className={surface === "light" ? "min-w-0" : "shrink-0 whitespace-nowrap"}>Updated {updated}</span>
             </div>
         </div>
-        {summary ? <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm font-bold text-neutral-200 group-data-[surface=light]/header:text-[var(--onboarding-text,#0F172A)]">{summary}</div> : null}
+        {summary ? <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm font-medium text-neutral-200 group-data-[surface=light]/header:text-[var(--onboarding-text,#0F172A)]">{summary}</div> : null}
     </header>
 }

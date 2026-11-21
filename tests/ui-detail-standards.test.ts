@@ -43,7 +43,8 @@ test("detail field implementations use the shared borderless field rows", async 
     assert.match(sharedFields, /columns = 2/)
     assert.match(sharedFields, /mt-5 grid grid-cols-1/)
     assert.match(sharedFields, /columns === 2 \? "lg:grid-cols-2" : ""/)
-    assert.match(sharedFields, /border-b border-neutral-900 py-2/)
+    assert.match(sharedFields, /min-h-9 [^`]*gap-2 py-1\.5 /, "workspace rows are plain: no divider")
+    assert.match(sharedFields, /group-data-\[surface=light\]\/fields:border-b group-data-\[surface=light\]\/fields:border-black\/10/, "light client-facing rows keep theirs")
     assert.doesNotMatch(sharedFields, /rounded-[^\s"]+ border/)
     assert.match(relationshipFields, /<DetailFields>/)
     assert.match(workItemFields, /<DetailFields>/)
@@ -80,8 +81,10 @@ test("detail headers omit operational status and allow at most two unrepeated fa
 test("the detail danger zone preserves archive-before-delete ordering and visual tones", async () => {
     const source = await readFile("components/detail/DetailDangerZone.tsx", "utf8")
 
-    assert.match(source, /rounded-xl border border-red-900\/45 bg-red-950\/10/)
-    assert.match(source, /divide-y divide-red-950\/70/)
+    assert.match(source, /<section className="mt-12 border-t border-card-border pt-5">/, "a hairline and a small red heading, not a red box")
+    assert.match(source, /<h2 className="text-xs font-medium text-red-300">Danger zone<\/h2>/)
+    assert.match(source, /divide-y divide-card-border/)
     assert.match(source, /tone === "delete"/)
-    assert.match(source, /bg-red-900\/30/)
+    assert.match(source, /border-red-800\/80 bg-red-950\/40/, "delete stays the stronger of the two red buttons")
+    assert.match(source, /: "border border-red-900\/80 text-red-200 hover:bg-red-950\/40"/, "archive stays the quieter outline")
 })

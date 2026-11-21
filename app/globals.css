@@ -15,29 +15,33 @@
   --font-mono: var(--font-geist-mono);
 
   /* Surfaces — dark workspace only. surface="light" keeps its own
-     --onboarding-* variables untouched; these have no light counterpart. */
+     --onboarding-* variables untouched; these have no light counterpart.
+     The workspace is flat: sections sit directly on the canvas and are told
+     apart by spacing and one hairline, not by a raised fill. */
   --color-surface-canvas: var(--background);
-  --color-surface-1: #171717;
-  --color-surface-hover: rgb(255 255 255 / 0.04);
-  /* Frosted surface for floating popups, the relationship context panel and the
-     floating sidebar box — never the dialog/backdrop host element or the top
-     bar/tab bar, which app/globals.css forces opaque further down (see the
-     backdrop-filter:none rule) to avoid a stale blur layer recomposing over
-     hidden chrome. */
-  --color-surface-glass: rgb(23 23 23 / 0.72);
+  --color-surface-1: var(--background);
+  --color-surface-hover: rgb(255 255 255 / 0.045);
+  --color-surface-selected: rgb(255 255 255 / 0.075);
+  /* The one raised surface: floating menus, dialogs and drawers. Opaque, so
+     no backdrop-filter layer is ever created (see the backdrop-filter:none
+     rule further down, which still guards the dialog host and shell chrome). */
+  --color-surface-popup: #141414;
 
-  /* Borders — names mirror List's two deliberately-different divider roles
-     (within-record vs between-record); see docs/ui-standards.md. */
+  /* Borders. --color-card-border is the workspace hairline: section
+     dividers, list rows, table rows, popup edges. The solid steps are for
+     inputs and controls. See docs/ui-standards.md. */
   --color-border-subtle: #171717;
   --color-border-default: #262626;
   --color-border-strong: #404040;
-
-  /* Card elevation — a soft "lifted" edge (translucent hairline + subtle
-     shadow and top highlight) instead of a solid divider border. Card-only;
-     --color-border-default above is unaffected and still available for any
-     future consumer that wants List's solid divider language instead. */
   --color-card-border: rgb(255 255 255 / 0.08);
-  --shadow-card: 0 1px 2px 0 rgb(0 0 0 / 0.35), inset 0 1px 0 0 rgb(255 255 255 / 0.04);
+
+  /* Only floating surfaces cast a shadow. */
+  --shadow-popup: 0 16px 40px -12px rgb(0 0 0 / 0.7), 0 2px 6px -2px rgb(0 0 0 / 0.5);
+
+  /* The one accent: the page's single primary action and keyboard focus. */
+  --color-accent: #6e9bf5;
+  --color-accent-hover: #86acf8;
+  --color-accent-contrast: #0a0a0a;
 
   /* Text */
   --color-text-primary: #f5f5f5;
@@ -54,6 +58,17 @@
   --color-chart-tooltip-bg: rgb(15 23 42);
   --color-chart-tooltip-border: rgb(71 85 105);
   --color-chart-tooltip-text: rgb(203 213 225);
+}
+
+/* Shape. One small radius for the workspace: 6px for controls and chips, 8px for popups, dialogs and the few boxes
+   that remain. The larger Tailwind steps collapse onto 8px so no surface is rounder than that. Client-facing themed
+   surfaces restore the rounder scale on their own root (lib/onboarding/theme.ts), because they are a different
+   product face with agency branding. */
+@theme {
+  --radius-lg: 0.375rem;
+  --radius-xl: 0.5rem;
+  --radius-2xl: 0.5rem;
+  --radius-3xl: 0.5rem;
 }
 
 body {
@@ -448,10 +463,34 @@ body[data-workspace-layout="today"] [data-detail-field-icon] {
   }
 }
 
-/* Client rail (Today layout). From md up the sidebar is a narrow rail of initials: names and anything marked
-   data-rail-wide are hidden until the rail is pinned open (data-collapsed="false"), hovered with a mouse, or reached
-   by keyboard. Hovering widens it over the page; --workspace-sidebar-width does not change, so nothing moves.
-   Labels stay in the accessibility tree while clipped. */
+/* Sidebar (Today layout). From md up it is a full-height column of names, flush to the left edge, and the top bar
+   starts beside it. These two rules key on the shell root, which the server renders, so the first paint is already
+   laid out. */
+@media (min-width: 768px) {
+  [data-workspace-shell-root][data-workspace-layout="today"] [data-workspace-topbar] {
+    left: var(--workspace-sidebar-width);
+    width: calc(100% - var(--workspace-sidebar-width));
+  }
+}
+
+/* Between md and lg the shell positions its drawers and sidebar from the visual viewport (rules near the top of this
+   file, written for the floating box). The Today sidebar is flush there too: from the top, full height. */
+@media (min-width: 768px) and (max-width: 1023px) {
+  [data-workspace-shell-root][data-workspace-layout="today"] [data-workspace-sidebar] {
+    top: var(--workspace-visual-origin-offset, 0px);
+    height: var(--workspace-visual-viewport-bottom, 100dvh);
+  }
+
+  [data-workspace-shell-root][data-workspace-layout="today"][data-mobile-comms-viewport="true"] [data-workspace-sidebar] {
+    top: var(--mobile-workspace-top);
+    height: var(--mobile-workspace-height);
+  }
+}
+
+/* Folded sidebar (Today layout, data-collapsed="true"): a rail of marks. Names and anything marked data-rail-wide are
+   hidden until the sidebar is unfolded from the top bar, hovered with a mouse, or reached by keyboard. Hovering widens
+   it over the page; --workspace-sidebar-width does not change, so nothing moves. Labels stay in the accessibility
+   tree while clipped. */
 @media (min-width: 768px) {
   [data-workspace-sidebar][data-client-rail][data-collapsed="true"] {
     transition: width 140ms ease;
@@ -460,8 +499,17 @@ body[data-workspace-layout="today"] [data-detail-field-icon] {
 
 @media (min-width: 768px) and (hover: hover) {
   [data-workspace-sidebar][data-client-rail][data-collapsed="true"]:is(:hover, :has(:focus-visible)) {
-    width: 17rem;
+    width: 15rem;
     transition-delay: 90ms;
+    /* Above the top bar while it covers the page, so the workspace's name is not cut off. */
+    z-index: 56;
+  }
+
+  [data-workspace-sidebar][data-client-rail][data-collapsed="true"]:not(:hover, :has(:focus-visible)) [data-rail-section] {
+    min-height: 0;
+    margin-top: 0.5rem;
+    border-top: 1px solid var(--color-card-border);
+    padding-top: 0.5rem;
   }
 
   [data-workspace-sidebar][data-client-rail][data-collapsed="true"]:not(:hover, :has(:focus-visible)) [data-rail-wide] {
@@ -482,6 +530,13 @@ body[data-workspace-layout="today"] [data-detail-field-icon] {
 @media (min-width: 768px) and (hover: none) {
   [data-workspace-sidebar][data-client-rail][data-collapsed="true"] [data-rail-wide] {
     display: none;
+  }
+
+  [data-workspace-sidebar][data-client-rail][data-collapsed="true"] [data-rail-section] {
+    min-height: 0;
+    margin-top: 0.5rem;
+    border-top: 1px solid var(--color-card-border);
+    padding-top: 0.5rem;
   }
 
   [data-workspace-sidebar][data-client-rail][data-collapsed="true"] [data-rail-label] {

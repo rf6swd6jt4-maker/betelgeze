@@ -108,7 +108,7 @@ export function StaffMemberAssignments({ workspaceSlug, currentUserId, initial }
             </section>
         })}
 
-        {selected.length || error ? <div role="region" aria-label="Move selected assignments" className="sticky bottom-3 z-10 rounded-xl border border-card-border bg-[var(--color-surface-glass)] p-3 shadow-card backdrop-blur-xl backdrop-saturate-150">
+        {selected.length || error ? <div role="region" aria-label="Move selected assignments" className="sticky bottom-3 z-10 rounded-xl border border-card-border bg-[var(--color-surface-popup)] p-3 shadow-popup">
             <div className="flex flex-wrap items-center gap-3">
                 <p className="text-sm font-medium">{selected.length} selected</p>
                 {selected.length ? people.length

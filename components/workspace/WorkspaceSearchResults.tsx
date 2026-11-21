@@ -24,7 +24,7 @@ export function WorkspaceSearchResults({ id, state, mobile = false, onChoose, on
         <div ref={list} id={id} role="listbox" aria-label="Search results" aria-busy={state.status === "loading"}>
             {state.status === "results" && state.results.map((item, index) => <a key={item.id} id={`${id}-${index}`} role="option" aria-selected={index === state.selectedIndex} href={item.href} tabIndex={-1} data-global-loading="false"
                 target={isStandalone(item.href) ? "_blank" : undefined} rel={isStandalone(item.href) ? "noopener noreferrer" : undefined}
-                className={`block border-b border-neutral-900 px-3 ${mobile ? "py-3" : "py-2"} last:border-0 hover:bg-neutral-900 ${index === state.selectedIndex ? "bg-neutral-900" : ""}`}
+                className={`block border-b border-neutral-900 px-3 ${mobile ? "py-3" : "py-2"} last:border-0 hover:bg-[var(--color-surface-hover)] ${index === state.selectedIndex ? "bg-neutral-900" : ""}`}
                 onClick={(event) => { if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); onChoose(item) }}>
                 <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">

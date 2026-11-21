@@ -2,7 +2,6 @@
 
 import { Avatar } from "@/components/account/Avatar"
 import { useState } from "react"
-import { RoundPill } from "./RoundPill"
 import { openWorkspaceMemberProfile } from "@/lib/workspace-member-profile"
 
 export function Assignee({ name, avatarSrc, userId, compact = false, compactSize = "sm", className = "" }: { name: string; avatarSrc?: string | null; userId?: string | null; compact?: boolean; compactSize?: "sm" | "md" | "lg"; className?: string }) {
@@ -12,5 +11,6 @@ export function Assignee({ name, avatarSrc, userId, compact = false, compactSize
     // Keep the profile control square instead of inheriting the mobile ordinary-button minimum height.
     const trigger = userId ? <button type="button" data-icon-button aria-label={`Open ${name} profile`} title={`Open ${name} profile`} onClick={(event) => { event.preventDefault(); event.stopPropagation(); event.currentTarget.focus({ preventScroll: true }); openWorkspaceMemberProfile(userId) }} className={`inline-flex shrink-0 items-center justify-center rounded-full p-0 outline-none focus-visible:ring-2 focus-visible:ring-neutral-500 ${avatarSize}`}>{avatar}</button> : avatar
     if (compact) return <span className={`inline-flex shrink-0 ${className}`} title={name}>{trigger}</span>
-    return <RoundPill leading={trigger} className={className}>{name}</RoundPill>
+    // A person is an avatar and a plain name: no pill chrome. The geometry (24px line, 16px avatar) is unchanged.
+    return <span className={`inline-flex min-h-6 max-w-full items-center gap-1.5 text-[13px] leading-4 text-neutral-200 ${className}`}>{trigger}<span className="truncate">{name}</span></span>
 }

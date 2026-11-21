@@ -20,7 +20,7 @@ function metricTime(value: string, detailed = false, range: AdminActivityRange =
 function ActivityMetricCard({ metric, range }: { metric: AdminActivityMetric; range: AdminActivityRange }) {
     const maximum = metric.unit === "percentage" ? 100 : Math.max(1, ...metric.points.map((point) => point.value ?? 0))
     const labelIndexes = [0, Math.floor((metric.points.length - 1) / 2), metric.points.length - 1]
-    return <article className="min-w-0 rounded-xl border border-neutral-800 bg-black px-4 pb-3 pt-4">
+    return <article className="min-w-0 rounded-xl border border-card-border px-4 pb-3 pt-4">
         <div className="flex items-start justify-between gap-3"><div className="min-w-0"><h2 className="text-sm font-medium text-neutral-200">{metric.title}</h2><p className="mt-1 min-h-10 text-xs leading-5 text-neutral-600">{metric.description}</p></div><div className="shrink-0 text-right"><p className={`text-2xl font-semibold tabular-nums ${metric.tone === "red" ? "text-red-400" : "text-white"}`}>{metricValue(metric, metric.currentValue)}</p><p className="mt-0.5 text-[10px] text-neutral-600">{ACTIVITY_RANGES[range].label}{metric.unit === "percentage" ? " average" : ""}</p></div></div>
         <div className="mt-2"><TrendChart
             key={range}

@@ -8,19 +8,20 @@ export type ButtonVariant = "primary" | "secondary" | "ghost" | "destructive"
 export type ButtonSize = "sm" | "md"
 
 const variantClasses: Record<ButtonVariant, string> = {
-    primary: "bg-white text-black hover:bg-neutral-200",
-    secondary: "border border-[var(--color-border-strong)] bg-transparent text-[var(--color-text-primary)] hover:bg-[var(--color-surface-hover)]",
+    // One per page: the accent is reserved for the single primary action.
+    primary: "bg-[var(--color-accent)] text-[var(--color-accent-contrast)] hover:bg-[var(--color-accent-hover)]",
+    secondary: "border border-white/[0.12] bg-transparent text-[var(--color-text-primary)] hover:bg-[var(--color-surface-hover)]",
     ghost: "bg-transparent text-[var(--color-text-primary)] hover:bg-[var(--color-surface-hover)]",
     destructive: "border border-red-900/60 bg-red-950/40 text-red-200 hover:bg-red-950/60",
 }
 
-// Desktop heights are deliberately compact (32/36px); the mobile min-h-11
+// Desktop heights are deliberately compact (28/32px); the mobile min-h-11
 // floor applies regardless of render target (button or anchor) so it holds
 // even outside `main nav`, which is the only selector the global 44px
 // mobile rule in globals.css covers for anchors.
 const sizeClasses: Record<ButtonSize, string> = {
-    sm: "min-h-11 gap-1.5 px-3 text-sm sm:min-h-8",
-    md: "min-h-11 gap-2 px-4 text-sm sm:min-h-9",
+    sm: "min-h-11 gap-1.5 px-2.5 text-[13px] sm:min-h-7",
+    md: "min-h-11 gap-2 px-3 text-sm sm:min-h-8",
 }
 
 type CommonProps = {
@@ -41,7 +42,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonAsButton | ButtonAsLin
 ) {
     const classes = cx(
         "inline-flex shrink-0 items-center justify-center whitespace-nowrap rounded-lg font-medium outline-none transition-colors",
-        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white",
+        "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-accent)]",
         "disabled:cursor-not-allowed disabled:opacity-40",
         variantClasses[variant],
         sizeClasses[size],

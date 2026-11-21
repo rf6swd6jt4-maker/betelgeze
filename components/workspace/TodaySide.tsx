@@ -27,7 +27,7 @@ function readCollapsed(key: string) {
 function LoadingRows({ label }: { label: string }) {
     return <List flush ariaLabel={label}>
         <div role="status" aria-label={label} className="divide-y divide-[var(--color-card-border)]">
-            {[72, 56, 64].map(width => <div key={width} aria-hidden="true" className="flex flex-col gap-2 px-3.5 py-3">
+            {[72, 56, 64].map(width => <div key={width} aria-hidden="true" className="flex flex-col gap-2 px-2 py-3">
                 <LoadingPulse className="h-3 w-20" />
                 <LoadingPulse className="h-4" style={{ width: `${width}%` }} />
             </div>)}
@@ -36,7 +36,7 @@ function LoadingRows({ label }: { label: string }) {
 }
 
 function Notice({ children, tone = "quiet" }: { children: ReactNode; tone?: "quiet" | "error" }) {
-    return <p role={tone === "error" ? "alert" : undefined} className={`rounded-2xl border border-card-border bg-[var(--color-surface-1)] px-3.5 py-3 text-sm ${tone === "error" ? "text-red-200" : "text-neutral-400"}`}>{children}</p>
+    return <p role={tone === "error" ? "alert" : undefined} className={`border-y border-card-border px-2 py-3 text-sm ${tone === "error" ? "text-red-200" : "text-neutral-400"}`}>{children}</p>
 }
 
 function Chevron({ open }: { open: boolean }) {

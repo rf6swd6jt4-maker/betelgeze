@@ -62,7 +62,7 @@ function QueueLoading() {
 function SopsLoading() {
     return <PanelLoadingFrame title="SOPs">
         <PanelTabHeader title="SOPs" description="Team procedures and supporting files." tabs={<PanelLoadingTabs active={1} />} />
-        <div className="mt-5"><div className="mb-4 flex items-center justify-between gap-3"><LoadingPulse className="h-4 w-64 max-w-[70%]" /><LoadingPulse className="h-4 w-16" /></div><DocumentCatalogue label="Loading SOP catalogue">{[0, 1, 2, 3].map((id) => <div key={id} role="listitem" className="aspect-square rounded-xl border border-neutral-800 bg-neutral-900 motion-safe:animate-pulse" />)}</DocumentCatalogue></div>
+        <div className="mt-5"><div className="mb-4 flex items-center justify-between gap-3"><LoadingPulse className="h-4 w-64 max-w-[70%]" /><LoadingPulse className="h-4 w-16" /></div><DocumentCatalogue label="Loading SOP catalogue">{[0, 1, 2, 3].map((id) => <div key={id} role="listitem" className="aspect-square rounded-xl border border-card-border motion-safe:animate-pulse" />)}</DocumentCatalogue></div>
     </PanelLoadingFrame>
 }
 
@@ -87,7 +87,7 @@ function ClientConnectionsLoading() {
     return <PanelLoadingFrame title="Client Connections">
         <div className="pt-5">
             <PanelTabHeader title="Client Connections" description="Connect HighLevel calendars and choose which clients receive WhatsApp appointment notifications." actions={<LoadingPulse className="h-10 w-full sm:w-32" />} />
-            <section className="mt-6 rounded-2xl border border-neutral-800 bg-neutral-900 p-5" aria-label="Loading agency connection">
+            <section className="mt-6 rounded-2xl border border-card-border p-5" aria-label="Loading agency connection">
                 <LoadingPulse className="h-5 w-44" /><LoadingPulse className="mt-2 h-4 w-96 max-w-full" /><LoadingPulse className="mt-4 h-4 w-56" />
             </section>
             <PanelLoadingList kind="relationship" rows={4} />
@@ -96,13 +96,13 @@ function ClientConnectionsLoading() {
 }
 
 function OkrTableSkeleton() {
-    return <section aria-label="Loading Objectives and Key Result metrics" className="mt-5 overflow-hidden rounded-xl border border-neutral-800 bg-black">
-        <div className="grid h-10 grid-cols-[minmax(0,1fr)_repeat(2,5.25rem)] border-b border-neutral-800 bg-neutral-950 px-4 sm:grid-cols-[minmax(13rem,1fr)_repeat(3,minmax(5.5rem,0.38fr))]">
+    return <section aria-label="Loading Objectives and Key Result metrics" className="mt-5 overflow-hidden rounded-xl border border-card-border">
+        <div className="grid h-10 grid-cols-[minmax(0,1fr)_repeat(2,5.25rem)] border-b border-card-border bg-neutral-950 px-4 sm:grid-cols-[minmax(13rem,1fr)_repeat(3,minmax(5.5rem,0.38fr))]">
             <LoadingPulse className="my-auto h-3 w-24" />
             {Array.from({ length: 3 }, (_, index) => <LoadingPulse key={index} className={`${index === 0 ? "hidden sm:block" : ""} my-auto ml-auto h-3 w-12`} />)}
         </div>
         {Array.from({ length: 3 }, (_, objectiveIndex) => <div key={objectiveIndex}>
-            <div className="grid min-h-14 grid-cols-[minmax(0,1fr)_repeat(2,5.25rem)] items-center border-b border-neutral-800 bg-neutral-900/65 px-4 sm:grid-cols-[minmax(13rem,1fr)_repeat(3,minmax(5.5rem,0.38fr))]">
+            <div className="grid min-h-14 grid-cols-[minmax(0,1fr)_repeat(2,5.25rem)] items-center border-b border-card-border bg-neutral-900/65 px-4 sm:grid-cols-[minmax(13rem,1fr)_repeat(3,minmax(5.5rem,0.38fr))]">
                 <div className="flex min-w-0 items-center gap-3"><LoadingPulse className="h-4 w-52 max-w-full" /><LoadingPulse className="h-4 w-16" /></div>
                 <LoadingPulse className="col-span-2 ml-auto h-9 w-9 rounded-full sm:col-span-3" />
             </div>
@@ -160,8 +160,8 @@ function Pulse({ className }: { className: string }) {
 function CommunicationsLoading({ team = false }: { team?: boolean }) {
     return <main data-workspace-loading-root aria-label="Loading Communications" aria-busy="true" className="absolute inset-0 overflow-hidden bg-black text-white">
         <div className="grid h-full min-h-0 lg:grid-cols-[22rem_minmax(0,1fr)]">
-            <aside className="flex min-h-0 flex-col border-r border-neutral-800 bg-neutral-950">
-                <div className="shrink-0 border-b border-neutral-800 p-3">
+            <aside className="flex min-h-0 flex-col border-r border-card-border bg-neutral-950">
+                <div className="shrink-0 border-b border-card-border p-3">
                     <div className="flex items-center gap-2"><span className={`rounded-lg px-3 py-2 text-xs ${team ? "text-neutral-500" : "bg-neutral-800 font-semibold"}`}>Clients</span><span className={`rounded-lg px-3 py-2 text-xs ${team ? "bg-neutral-800 font-semibold" : "text-neutral-500"}`}>Team</span><Pulse className="ml-auto h-3 w-12" /></div>
                     <Pulse className="mt-3 h-10 w-full rounded-lg bg-black" />
                 </div>
@@ -173,13 +173,13 @@ function CommunicationsLoading({ team = false }: { team?: boolean }) {
                 </div>
             </aside>
             <section className="hidden min-h-0 flex-col lg:flex">
-                <header className="flex h-[69px] shrink-0 items-center gap-3 border-b border-neutral-800 px-4"><Pulse className="h-10 w-10 rounded-full" /><div><Pulse className="h-4 w-36" /><Pulse className="mt-2 h-3 w-24 bg-neutral-900" /></div></header>
+                <header className="flex h-[69px] shrink-0 items-center gap-3 border-b border-card-border px-4"><Pulse className="h-10 w-10 rounded-full" /><div><Pulse className="h-4 w-36" /><Pulse className="mt-2 h-3 w-24 bg-neutral-900" /></div></header>
                 <div className="flex min-h-0 flex-1 flex-col justify-end gap-4 overflow-hidden p-5">
                     <Pulse className="h-14 w-56 rounded-2xl bg-neutral-900" />
                     <Pulse className="ml-auto h-20 w-72 rounded-2xl bg-neutral-800" />
                     <Pulse className="h-16 w-64 rounded-2xl bg-neutral-900" />
                 </div>
-                <footer className="shrink-0 border-t border-neutral-800 bg-neutral-950 p-4"><Pulse className="mx-auto h-11 w-full max-w-3xl rounded-xl bg-black" /></footer>
+                <footer className="shrink-0 border-t border-card-border bg-neutral-950 p-4"><Pulse className="mx-auto h-11 w-full max-w-3xl rounded-xl bg-black" /></footer>
             </section>
         </div>
     </main>
@@ -188,11 +188,11 @@ function CommunicationsLoading({ team = false }: { team?: boolean }) {
 function SettingsLoading() {
     return <main data-workspace-loading-root aria-label="Loading Settings" aria-busy="true" className="min-h-screen max-w-full overflow-x-clip bg-neutral-950 px-4 pb-8 text-white sm:px-6">
         <div className="mx-auto max-w-7xl pt-5">
-            <div className="relative mb-16 h-48 rounded-xl border border-neutral-800 bg-neutral-900 motion-safe:animate-pulse sm:h-64 sm:rounded-2xl"><div className="absolute bottom-0 left-4 h-[112px] w-[112px] translate-y-1/2 rounded-full border-4 border-neutral-950 bg-neutral-900 sm:left-7 sm:h-[108px] sm:w-[108px]" /></div>
-            <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+            <div className="relative mb-16 h-48 rounded-xl border border-card-border motion-safe:animate-pulse sm:h-64 sm:rounded-2xl"><div className="absolute bottom-0 left-4 h-[112px] w-[112px] translate-y-1/2 rounded-full border-4 border-neutral-950 bg-neutral-900 sm:left-7 sm:h-[108px] sm:w-[108px]" /></div>
+            <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
             <div className="mt-8 grid gap-8 lg:grid-cols-[16rem_minmax(0,1fr)]">
                 <nav aria-label="Loading settings sections" className="hidden space-y-3 lg:block">{Array.from({ length: 8 }, (_, index) => <Pulse key={index} className="h-10 w-full rounded-lg bg-neutral-900" />)}</nav>
-                <div className="space-y-10">{[160, 240, 190].map((height, index) => <section key={index}><Pulse className="h-5 w-40" /><Pulse className="mt-2 h-4 w-72 max-w-full bg-neutral-900" /><div className="mt-4 rounded-2xl border border-neutral-800 bg-neutral-900/70 motion-safe:animate-pulse" style={{ height }} /></section>)}</div>
+                <div className="space-y-10">{[160, 240, 190].map((height, index) => <section key={index}><Pulse className="h-5 w-40" /><Pulse className="mt-2 h-4 w-72 max-w-full bg-neutral-900" /><div className="mt-4 rounded-2xl border border-card-border motion-safe:animate-pulse" style={{ height }} /></section>)}</div>
             </div>
         </div>
     </main>

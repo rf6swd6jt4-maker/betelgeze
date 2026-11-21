@@ -47,8 +47,8 @@ export function WorkspaceMemberProfileModal({ workspaceSlug, userId, initialProf
         onCancel={event => { event.preventDefault(); dismiss() }}
         onClick={event => { if (event.target === event.currentTarget) dismiss() }}
         className="fixed inset-0 m-0 h-dvh max-h-none w-full max-w-none border-0 bg-black/75 px-4 py-6 text-white backdrop:bg-transparent open:flex open:items-center open:justify-center">
-        <div className="betelgeze-popup-enter w-full max-w-md overflow-hidden rounded-3xl border border-neutral-800 bg-neutral-950 text-white shadow-2xl shadow-black/60">
-            <div className="flex justify-end px-4 pt-4"><button type="button" onClick={dismiss} aria-label="Close profile" className="inline-flex h-9 w-9 items-center justify-center rounded-full text-xl text-neutral-500 hover:bg-neutral-900 hover:text-white">×</button></div>
+        <div className="betelgeze-popup-enter w-full max-w-md overflow-hidden rounded-3xl border border-card-border text-white shadow-popup">
+            <div className="flex justify-end px-4 pt-4"><button type="button" onClick={dismiss} aria-label="Close profile" className="inline-flex h-9 w-9 items-center justify-center rounded-full text-xl text-neutral-500 hover:bg-[var(--color-surface-hover)] hover:text-white">×</button></div>
             {error ? <div className="px-6 pb-8 text-center"><p className="text-sm text-red-300">{error}</p></div> : !profile && initialProfile ? <section className="flex flex-col items-center px-6 pb-10 text-center">
                 <Avatar src={initialProfile.avatarSrc} name={initialProfile.displayName} className="h-28 w-28 border-2 border-neutral-700" />
                 <h2 id="workspace-member-profile-title" className="mt-5 max-w-full break-words text-4xl font-bold tracking-tight">{initialProfile.displayName}</h2>
@@ -62,9 +62,9 @@ export function WorkspaceMemberProfileModal({ workspaceSlug, userId, initialProf
                     <Status label={active ? "Online" : profile.lastSeenAt ? `Last seen - ${formatRelativeTime(profile.lastSeenAt)}` : "Last seen - unavailable"} tone={active ? "green" : "grey"} className="mt-4" />
                     {profile.isSelf ? <Button href={`/users/${profile.username}/edit`} className="mt-5">Edit profile</Button> : canMessage ? <Button className="mt-5" onClick={() => onMessage(profile.id)}>Message</Button> : null}
                 </section>
-                <section className="border-t border-neutral-800 px-5 py-5">
+                <section className="border-t border-card-border px-5 py-5">
                     <h3 className="text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">Shared workspaces</h3>
-                    <div className="mt-3 space-y-1">{profile.sharedWorkspaces.map((shared) => shared.current ? <div key={shared.slug} className="flex min-h-10 items-center justify-between rounded-lg bg-neutral-900 px-3 text-sm"><span>{shared.name}</span><span className="text-[10px] uppercase tracking-wide text-emerald-400">Current</span></div> : <a key={shared.slug} href={`/${shared.slug}`} className="flex min-h-10 items-center justify-between rounded-lg px-3 text-sm text-neutral-300 hover:bg-neutral-900 hover:text-white"><span>{shared.name}</span><span aria-hidden="true">→</span></a>)}</div>
+                    <div className="mt-3 space-y-1">{profile.sharedWorkspaces.map((shared) => shared.current ? <div key={shared.slug} className="flex min-h-10 items-center justify-between rounded-lg bg-neutral-900 px-3 text-sm"><span>{shared.name}</span><span className="text-[10px] uppercase tracking-wide text-emerald-400">Current</span></div> : <a key={shared.slug} href={`/${shared.slug}`} className="flex min-h-10 items-center justify-between rounded-lg px-3 text-sm text-neutral-300 hover:bg-[var(--color-surface-hover)] hover:text-white"><span>{shared.name}</span><span aria-hidden="true">→</span></a>)}</div>
                 </section>
             </>}
         </div>

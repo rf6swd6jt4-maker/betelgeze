@@ -28,7 +28,7 @@ export function DetailFieldsLoading({ label = "Loading details", rows = 4 }: { l
 }
 
 export function DetailContentLoading({ label, className = "" }: { label: string; className?: string }) {
-    return <section aria-label={label} aria-busy="true" className={`mt-6 min-h-40 rounded-xl border border-neutral-800 bg-black px-5 py-4 ${className}`}>
+    return <section aria-label={label} aria-busy="true" className={`mt-6 min-h-40 rounded-xl border border-card-border px-5 py-4 ${className}`}>
         <DetailLoadingLabel>{label}</DetailLoadingLabel>
     </section>
 }

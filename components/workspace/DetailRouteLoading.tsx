@@ -27,7 +27,7 @@ export function DetailRouteLoading({ title, preview: suppliedPreview }: { title:
                 title={storedPreview.title}
                 subtitle={storedPreview.subtitle}
                 updated={storedPreview.updated ?? "just now"}
-            /> : <header className="border-b border-neutral-800 pb-4"><DetailLoadingLabel>Opening {title}</DetailLoadingLabel></header>}
+            /> : <header className="border-b border-card-border pb-4"><DetailLoadingLabel>Opening {title}</DetailLoadingLabel></header>}
             <DetailFieldsLoading label={`Loading ${title} details`} />
         </div>
     </main>

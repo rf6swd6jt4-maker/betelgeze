@@ -50,7 +50,7 @@ export default async function NotesPage({ params }: { params: Promise<{ workspac
                         </ListSecondaryRow>
                     </ListItem>
                 })}
-            </List> : <section className="mt-5 rounded-2xl border border-neutral-800 bg-black p-6">
+            </List> : <section className="mt-5 rounded-2xl border border-card-border p-6">
                 <p className="text-lg font-semibold">No notes yet.</p>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-400">Add a call note or other reusable context from the quick actions.</p>
             </section>}

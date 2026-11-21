@@ -200,7 +200,7 @@ test("the OKRs tab is a metric table with popup-only Objective and Key Result de
     assert.match(workspace, /name="is_test"/)
     assert.match(workspace, /<SquarePill tone="yellow">Test<\/SquarePill>/)
     assert.match(workspace, /key=\{`add-result-\$\{okr\.id\}`\}/)
-    assert.match(workspace, /h-10 border-b border-neutral-800 bg-black sm:hidden/)
+    assert.match(workspace, /h-10 border-b border-card-border bg-black sm:hidden/)
     assert.match(workspace, />\+<\/span> Add Key Result<\/button>/)
     assert.match(workspace, /function MetricEditor/)
     assert.match(workspace, /absolute bottom-full right-0/)

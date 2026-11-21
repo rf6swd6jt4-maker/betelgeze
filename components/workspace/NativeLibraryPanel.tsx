@@ -94,8 +94,8 @@ function AssetDetail({ data }: { data: Extract<NativeLibrarySnapshot, { kind: "a
                         ) : null}
 
                 <section className="mt-6">
-                    {downloadHref ? <a href={downloadHref} download target="_blank" rel="noreferrer" className="mb-4 inline-flex min-h-11 items-center rounded-lg bg-white px-4 text-sm font-medium text-black">Download file</a> : null}
-                    <div className="min-h-[24rem] overflow-hidden rounded-xl border border-neutral-800 bg-black">
+                    {downloadHref ? <a href={downloadHref} download target="_blank" rel="noreferrer" className="mb-4 inline-flex min-h-11 items-center rounded-lg bg-[var(--color-accent)] px-4 text-sm font-medium text-[var(--color-accent-contrast)]">Download file</a> : null}
+                    <div className="min-h-[24rem] overflow-hidden rounded-xl border border-card-border">
                         {formEntries.length > 0 && (
                             <div className="divide-y divide-neutral-900">
                                 {formEntries.map((entry) => (
@@ -127,7 +127,7 @@ function AssetDetail({ data }: { data: Extract<NativeLibrarySnapshot, { kind: "a
                         {previewUrl && !isImage(asset.content_type) && !isVideo(asset.content_type) && !isAudio(asset.content_type) && !isPdf(asset.content_type, asset.title) && (
                             <div className="flex min-h-[24rem] flex-col items-center justify-center px-6 text-center">
                                 <p className="text-lg font-semibold">Preview is not available for this file type.</p>
-                                <a href={downloadHref ?? previewUrl} download={downloadHref ? true : undefined} target="_blank" rel="noreferrer" className="mt-4 inline-flex min-h-10 items-center rounded-lg bg-white px-4 text-sm font-medium text-black">
+                                <a href={downloadHref ?? previewUrl} download={downloadHref ? true : undefined} target="_blank" rel="noreferrer" className="mt-4 inline-flex min-h-10 items-center rounded-lg bg-[var(--color-accent)] px-4 text-sm font-medium text-[var(--color-accent-contrast)]">
                                     {downloadHref ? "Download file" : "Open file"}
                                 </a>
                             </div>

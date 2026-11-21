@@ -209,8 +209,8 @@ export default async function RelationshipDetailPage({ params }: PageProps) {
                     </Suspense>
 
                     <section className="mt-5 flex flex-wrap gap-2 border-t border-neutral-900 pt-5 text-sm">
-                        {isOnboarding && <Link href={onboardingDetailHref(workspace.slug, relationship.id)} className="rounded-lg border border-neutral-800 px-3 py-2 text-neutral-300 hover:text-white">Open onboarding detail</Link>}
-                        {isFulfilment && <Link href={fulfilmentDetailHref(workspace.slug, relationship.id)} className="rounded-lg border border-neutral-800 px-3 py-2 text-neutral-300 hover:text-white">Open fulfilment detail</Link>}
+                        {isOnboarding && <Link href={onboardingDetailHref(workspace.slug, relationship.id)} className="rounded-lg border border-card-border px-3 py-2 text-neutral-300 hover:text-white">Open onboarding detail</Link>}
+                        {isFulfilment && <Link href={fulfilmentDetailHref(workspace.slug, relationship.id)} className="rounded-lg border border-card-border px-3 py-2 text-neutral-300 hover:text-white">Open fulfilment detail</Link>}
                     </section>
 
                     {(role === "owner" || role === "admin") ? <DetailDangerZone>

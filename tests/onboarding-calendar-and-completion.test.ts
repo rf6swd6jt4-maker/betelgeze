@@ -17,7 +17,8 @@ const publicPage = readFileSync("app/onboarding/session/[token]/page.tsx", "utf8
 const stepSubmit = readFileSync("components/onboarding/OnboardingStepSubmit.tsx", "utf8")
 const sessionRenderer = readFileSync("components/onboarding/OnboardingSessionRenderer.tsx", "utf8")
 const canonical = readFileSync("lib/onboarding/canonical.ts", "utf8")
-const staffDetail = readFileSync("app/[workspaceSlug]/onboarding/[relationshipId]/page.tsx", "utf8")
+// The staff onboarding record is its page plus the data module both it and the client page's Onboarding tab read.
+const staffDetail = readFileSync("app/[workspaceSlug]/onboarding/[relationshipId]/page.tsx", "utf8") + readFileSync("lib/onboarding/staff-detail.ts", "utf8")
 const helpLink = readFileSync("components/onboarding/RequestHelpLink.tsx", "utf8")
 const migration = readFileSync("supabase/migrations/20260905090000_onboarding_calendar_and_portal_completion.sql", "utf8")
 

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, type MouseEvent } from "react"
 import { AnchoredPopup } from "@/components/ui/AnchoredPopup"
 import { Button } from "@/components/ui/Button"
+import { SectionHeading } from "@/components/detail"
 import { checkRelationshipPortalWhatsAppReadiness, generateRelationshipPortalLink, sendRelationshipPortalLinkOnWhatsApp } from "@/app/[workspaceSlug]/relationships/[relationshipId]/link-actions"
 import { runWorkspaceMutation } from "@/lib/workspace-mutations"
 import { useWorkspaceNavigation } from "@/components/workspace/WorkspaceNavigation"
@@ -16,7 +17,9 @@ type Links = {
 }
 const retained = new Map<string, { links: Links; at: number }>()
 
-export function RelationshipLinks({ workspaceSlug, relationshipId, userId }: { workspaceSlug: string; relationshipId: string; userId: string }) {
+export function RelationshipLinks({ workspaceSlug, relationshipId, userId, rows = false }: { workspaceSlug: string; relationshipId: string; userId: string
+    /** The client page's form: two one-line rows that open the same popups, instead of two cards. */
+    rows?: boolean }) {
     const sectionRef = useRef<HTMLElement>(null)
     const [visible, setVisible] = useState(false)
     const navigation = useWorkspaceNavigation()
@@ -90,8 +93,17 @@ export function RelationshipLinks({ workspaceSlug, relationshipId, userId }: { w
         } catch { setError("The send status is unknown. Check Comms before sending again.") }
         finally { setBusy(false) }
     }
-    return <section ref={sectionRef} className="mt-5" aria-label="Client access links">
-        <h2 className="text-sm font-medium text-neutral-300">Client access links</h2>
+    const onboardingNote = links?.onboardingAvailable ? `${links.onboardingSessions.length} available session${links.onboardingSessions.length === 1 ? "" : "s"}` : links?.sold ? "Available when onboarding starts" : "Available after services are sold"
+    const portalNote = links?.portal ? "Ready to share" : links?.canGeneratePortal ? "Generate secure access" : "Available after onboarding"
+    const rowClass = "flex min-h-10 w-full min-w-0 items-center gap-3 px-2 py-1.5 text-left text-[13px] outline-none transition-colors hover:bg-[var(--color-surface-hover)] focus-visible:bg-[var(--color-surface-hover)] disabled:cursor-not-allowed disabled:opacity-50"
+    return <section ref={sectionRef} className={rows ? undefined : "mt-5"} aria-label="Client access links" data-client-links={rows ? "" : undefined}>
+        {rows ? <>
+            <SectionHeading>Access links</SectionHeading>
+            <div className="-mx-2 divide-y divide-card-border border-y border-card-border">
+                <button type="button" data-icon-button disabled={!links?.onboardingAvailable} onClick={(event) => open(event, "onboarding")} className={rowClass}><span className="min-w-0 flex-1 truncate text-sm font-medium text-neutral-100">Onboarding link</span><span className="shrink-0 text-neutral-500">{links ? onboardingNote : "Checking…"}</span></button>
+                <button type="button" data-icon-button disabled={!links?.portal && !links?.canGeneratePortal} onClick={(event) => open(event, "portal")} className={rowClass}><span className="min-w-0 flex-1 truncate text-sm font-medium text-neutral-100">Client portal link</span><span className="shrink-0 text-neutral-500">{links ? portalNote : "Checking…"}</span></button>
+            </div>
+        </> : <><h2 className="text-sm font-medium text-neutral-300">Client access links</h2>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <button type="button" disabled={!links?.onboardingAvailable} onClick={(event) => open(event, "onboarding")} className="min-h-28 rounded-xl border border-card-border p-4 text-left transition hover:border-neutral-500 disabled:cursor-not-allowed disabled:border-neutral-900 disabled:bg-neutral-900/50 disabled:text-neutral-600">
                 <span className="block text-sm font-semibold">Onboarding link</span><span className="mt-2 block text-xs text-neutral-500">{links?.onboardingAvailable ? `${links.onboardingSessions.length} available session${links.onboardingSessions.length === 1 ? "" : "s"}` : links?.sold ? "Available when onboarding starts" : "Available after services are sold"}</span>
@@ -99,7 +111,7 @@ export function RelationshipLinks({ workspaceSlug, relationshipId, userId }: { w
             <button type="button" disabled={!links?.portal && !links?.canGeneratePortal} onClick={(event) => open(event, "portal")} className="min-h-28 rounded-xl border border-card-border p-4 text-left transition hover:border-neutral-500 disabled:cursor-not-allowed disabled:border-neutral-900 disabled:bg-neutral-900/50 disabled:text-neutral-600">
                 <span className="block text-sm font-semibold">Client portal link</span><span className="mt-2 block text-xs text-neutral-500">{links?.portal ? "Ready to share" : links?.canGeneratePortal ? "Generate secure access" : "Available after onboarding"}</span>
             </button>
-        </div>
+        </div></>}
         {error && !anchor ? <p role="alert" className="mt-2 text-xs text-red-300">{error}</p> : null}
         {anchor && panel && links ? <AnchoredPopup anchor={anchor} onDismiss={() => { setPanel(null); setAnchor(null) }} role="dialog" className="w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-neutral-700 bg-neutral-950 p-3 shadow-popup">
             <h3 className="text-sm font-semibold text-white">{panel === "onboarding" ? "Onboarding sessions" : "Client portal"}</h3>

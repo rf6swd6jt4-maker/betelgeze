@@ -22,7 +22,8 @@ const onboardingLayout = readFileSync("components/onboarding/OnboardingLayout.ts
 const globalStyles = readFileSync("app/globals.css", "utf8")
 const onboardingBlocks = readFileSync("components/onboarding/OnboardingBlocks.tsx", "utf8")
 const stripePaymentButton = readFileSync("components/onboarding/StripePaymentButtonLabel.tsx", "utf8")
-const staffPage = readFileSync("app/[workspaceSlug]/onboarding/[relationshipId]/page.tsx", "utf8")
+// The staff onboarding record is its page plus the data module both it and the client page's Onboarding tab read.
+const staffPage = readFileSync("app/[workspaceSlug]/onboarding/[relationshipId]/page.tsx", "utf8") + readFileSync("lib/onboarding/staff-detail.ts", "utf8")
 const tokenActions = readFileSync("app/[workspaceSlug]/onboarding/[relationshipId]/actions.ts", "utf8")
 const outboxWorker = readFileSync("lib/onboarding/outbox.ts", "utf8")
 const outboxRoute = readFileSync("app/api/cron/onboarding-outbox/route.ts", "utf8")

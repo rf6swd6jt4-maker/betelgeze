@@ -16,7 +16,9 @@ import { RELATIONSHIP_PHASES, type RelationshipPhase } from "@/lib/relationship-
  * and Files and notes on the relationship page) switch in place without another read. See docs/ui-standards.md,
  * "Client page".
  */
-export function ClientPageHeader({ name, business, phase, isTest = false, tabs, active, onChat, chatHref, actions }: {
+export function ClientPageHeader({ name, business, phase, isTest = false, tabs, active, onChat, chatHref, actions, onWarm }: {
+    /** Called when a tab is pointed at or focused, so a section that reads on its own can start before it is opened. */
+    onWarm?: (key: ClientPageTabKey) => void
     name: string; business?: string | null; phase?: string | null; isTest?: boolean
     tabs: readonly ClientPageTab[]; active: ClientPageTabKey
     /** Docks this client's conversation beside the page. Absent where the docked Comms panel is not offered. */
@@ -53,7 +55,8 @@ export function ClientPageHeader({ name, business, phase, isTest = false, tabs, 
             </div> : null}
         </div>
         {tabs.length > 1 ? <nav aria-label={`${name} sections`} className={panelTabStripClass}>
-            {tabs.map(tab => <Link key={tab.key} href={tab.href} prefetch={false} aria-current={tab.key === active ? "page" : undefined} onClick={switchInPlace(tab)} className={panelTabClass(tab.key === active)}>{tab.label}</Link>)}
+            {tabs.map(tab => <Link key={tab.key} href={tab.href} prefetch={false} aria-current={tab.key === active ? "page" : undefined} onClick={switchInPlace(tab)}
+                onPointerEnter={onWarm && tab.key !== active ? () => onWarm(tab.key) : undefined} onFocus={onWarm && tab.key !== active ? () => onWarm(tab.key) : undefined} className={panelTabClass(tab.key === active)}>{tab.label}</Link>)}
         </nav> : <div className="border-b border-card-border" />}
     </header>
 }

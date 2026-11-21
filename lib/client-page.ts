@@ -1,6 +1,6 @@
 // The client's page in the Today layout (docs/today-layout.md, "Client page"): one home per client, with a tab for
-// each thing that belongs to them. Every tab is an existing route, so opening one is ordinary navigation inside the
-// client's resident destination: no new frame, read or cache.
+// each thing that belongs to them. The tabs are sections of the relationship page, so the client is one resident
+// destination and no frame is involved.
 // @ts-expect-error Node's built-in TypeScript test runner requires the source extension.
 import { relationshipContextHref, type RelationshipContextDestination } from "./relationship-context.ts"
 
@@ -9,19 +9,28 @@ export type ClientPageTab = { key: ClientPageTabKey; label: string; href: string
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+const SECTION_KEYS: readonly ClientPageTabKey[] = ["work", "onboarding", "connections", "files"]
+
 /**
- * The tabs a person may open for one client. Overview and Files and notes are the relationship page itself; the rest
- * follow the destinations the person is allowed to open for this relationship (the same list the client column used).
+ * The tabs a person may open for one client. For someone who can open the relationship page they are sections of
+ * that one page (`?tab=`), so switching is in place: nothing new is mounted in the shell and each section reads once,
+ * the first time it is opened. Someone who cannot open the relationship page keeps the standalone pages they may open.
  */
 export function clientPageTabs(workspaceSlug: string, relationshipId: string, allowed: readonly RelationshipContextDestination[] = []): ClientPageTab[] {
-    const overview = relationshipContextHref("relationships", workspaceSlug, relationshipId)
+    const page = relationshipContextHref("relationships", workspaceSlug, relationshipId)
+    const inPage = allowed.includes("relationships")
     const tabs: ClientPageTab[] = []
-    if (allowed.includes("relationships")) tabs.push({ key: "overview", label: "Overview", href: overview })
-    if (allowed.includes("fulfilment")) tabs.push({ key: "work", label: "Work", href: relationshipContextHref("fulfilment", workspaceSlug, relationshipId) })
-    if (allowed.includes("onboarding")) tabs.push({ key: "onboarding", label: "Onboarding", href: relationshipContextHref("onboarding", workspaceSlug, relationshipId) })
-    if (allowed.includes("client-connections")) tabs.push({ key: "connections", label: "Connections", href: relationshipContextHref("client-connections", workspaceSlug, relationshipId) })
-    if (allowed.includes("relationships")) tabs.push({ key: "files", label: "Files and notes", href: `${overview}?tab=files` })
+    if (inPage) tabs.push({ key: "overview", label: "Overview", href: page })
+    if (allowed.includes("fulfilment")) tabs.push({ key: "work", label: "Work", href: inPage ? `${page}?tab=work` : relationshipContextHref("fulfilment", workspaceSlug, relationshipId) })
+    if (allowed.includes("onboarding")) tabs.push({ key: "onboarding", label: "Onboarding", href: inPage ? `${page}?tab=onboarding` : relationshipContextHref("onboarding", workspaceSlug, relationshipId) })
+    if (allowed.includes("client-connections")) tabs.push({ key: "connections", label: "Connections", href: inPage ? `${page}?tab=connections` : relationshipContextHref("client-connections", workspaceSlug, relationshipId) })
+    if (inPage) tabs.push({ key: "files", label: "Files and notes", href: `${page}?tab=files` })
     return tabs
+}
+
+/** The section of the relationship page a `?tab=` value names; anything else is the Overview. */
+export function clientPageSection(tab: string | null | undefined): ClientPageTabKey {
+    return SECTION_KEYS.find(key => key === tab) ?? "overview"
 }
 
 /**
@@ -52,6 +61,6 @@ export function clientPageActiveTab(value: string, workspaceSlug: string): Clien
     if (kind === "work") return "work"
     if (kind === "onboarding") return "onboarding"
     if (kind === "client-connections") return "connections"
-    if (kind === "relationships") return url.searchParams.get("tab") === "files" ? "files" : "overview"
+    if (kind === "relationships") return clientPageSection(url.searchParams.get("tab"))
     return null
 }

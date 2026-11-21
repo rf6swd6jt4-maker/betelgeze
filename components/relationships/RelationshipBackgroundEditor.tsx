@@ -1,6 +1,6 @@
 "use client"
 import { createContext, useContext, useEffect, useState, useSyncExternalStore, type ReactNode } from "react"
-import { DetailField, DetailFields } from "@/components/detail"
+import { DetailField, DetailFields, touchPropertyRows } from "@/components/detail"
 import { AutoGrowTextarea } from "@/components/ui"
 import { saveRelationshipBackgroundDetails } from "@/app/[workspaceSlug]/relationships/actions"
 import { RelationshipDraftQueue } from "@/lib/relationship-draft-queue"
@@ -41,7 +41,8 @@ export function RelationshipBackgroundFields({ compact = false, part = "all" }: 
         {status.conflict ? <div role="alert" className="flex flex-wrap gap-3 py-2 text-sm text-amber-200"><span>Your draft is preserved. Review the latest values before saving.</span><button onClick={refresh} className="min-h-11 underline">Refresh</button>{status.hasLatest ? <><button onClick={() => resolveConflict(false)} className="min-h-11 underline">Use saved values</button><button onClick={() => resolveConflict(true)} className="min-h-11 underline">Keep my edits</button></> : null}</div> : null}
     </>
     if (compact) return <div data-client-details={part}>
-        {part !== "notes" ? <DetailFields columns={1} className="mt-0! [&>div]:grid-cols-[5.5rem_minmax(0,1fr)] sm:[&>div]:grid-cols-[5.5rem_minmax(0,1fr)]">{inputs}</DetailFields> : null}
+        {/* Rows as tall as the plain property rows around them, with the typed value on the same edge as theirs. */}
+        {part !== "notes" ? <DetailFields narrow className={`[&>div]:py-0 [&>div>div]:-ml-1 ${touchPropertyRows}`}>{inputs}</DetailFields> : null}
         {part !== "fields" ? notes : null}
         {/* The line keeps its height so nothing shifts; at rest it says nothing. */}
         {part !== "notes" ? <><p role="status" className="min-h-4 px-1 text-xs text-neutral-400">{quiet ? "" : line}</p>{recovery}</> : null}

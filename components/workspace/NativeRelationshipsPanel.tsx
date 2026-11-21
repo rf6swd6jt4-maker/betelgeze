@@ -99,7 +99,10 @@ const CLIENT_VIEWS: Array<{ key: string; label: string; match: (row: ListSnapsho
     { key: "no-services", label: "No services", match: row => row.serviceCount === 0 },
 ]
 
-/** Today layout: Relationships as the Clients table (docs/today-layout.md, "Clients"). One line per client. */
+/**
+ * Today layout: Relationships as the Clients table (docs/today-layout.md, "Clients"). One line per client; on a phone
+ * the columns fold into two lines (the name, then the business and open work) beside the stage.
+ */
 function ClientsTable({ data }: { data: ListSnapshot }) {
     const search = useSearchParams()
     const navigation = useWorkspaceNavigation()
@@ -128,31 +131,40 @@ function ClientsTable({ data }: { data: ListSnapshot }) {
             <span aria-hidden="true" className="mx-1.5 w-px shrink-0 self-stretch bg-[var(--color-card-border)]" />
             {stages.map(entry => <FilterRailLink key={entry.key} href={`${href}?view=stage:${entry.key}`} selected={selected === `stage:${entry.key}`} instant={{ param: "view", value: `stage:${entry.key}` }}>{entry.label} <FilterRailCount>{data.rows.filter(row => row.serviceStages.includes(entry.key)).length}</FilterRailCount></FilterRailLink>)}
         </FilterRail>
-        <Table ariaLabel="Clients">
+        <Table ariaLabel="Clients" className="max-sm:[&_thead]:hidden max-sm:[&_tbody]:border-t max-sm:[&_tbody]:border-card-border">
             <TableHead>
                 <TableHeading>Client</TableHeading>
                 <TableHeading>Stage</TableHeading>
                 <TableHeading className="max-md:hidden">Manager</TableHeading>
                 <TableHeading className="max-lg:hidden">Services</TableHeading>
-                <TableHeading numeric>Open work</TableHeading>
+                <TableHeading numeric className="max-sm:hidden">Open work</TableHeading>
                 <TableHeading numeric className="max-sm:hidden">Updated</TableHeading>
             </TableHead>
             <TableBody>
                 {rows.length ? rows.map(row => {
                     const phase = RELATIONSHIP_PHASES.some(entry => entry.key === row.phase) ? row.phase as RelationshipPhase : null
                     return <TableRow key={row.id}>
-                        <TableCell primary className="w-[52%] max-w-0 sm:w-[34%]">
-                            <span className="flex min-w-0 items-center gap-2.5">
-                                <span aria-hidden="true" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-[5px] bg-white/[0.08] text-[10px] font-semibold text-neutral-300">{clientInitials(row.name)}</span>
-                                <Link href={`${href}/${row.id}`} prefetch={false} data-table-open data-workspace-detail-preview={serializeWorkspaceDetailPreview({ category: "Relationship", reference: shortId(row.id), title: row.name, subtitle: row.businessName ?? "No company saved", updated: formatRelativeTime(row.updatedAt) })} className="min-w-0 truncate outline-none hover:underline hover:decoration-neutral-600 hover:underline-offset-4 focus-visible:underline">{row.name}</Link>
-                                {row.businessName ? <span className="min-w-0 flex-1 truncate font-normal text-neutral-500 max-sm:hidden">{row.businessName}</span> : null}
-                                {row.isTest ? <SquarePill tone="yellow" className="shrink-0">Test</SquarePill> : null}
+                        <TableCell primary className="w-full max-w-0 max-sm:h-14 sm:w-[34%]">
+                            <span className="flex min-w-0 items-center gap-3 sm:gap-2.5">
+                                <span aria-hidden="true" className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-white/[0.08] text-[11px] font-semibold text-neutral-300 sm:h-5 sm:w-5 sm:rounded-[5px] sm:text-[10px]">{clientInitials(row.name)}</span>
+                                <span className="flex min-w-0 flex-1 flex-col sm:flex-row sm:items-center sm:gap-2.5">
+                                    <span className="flex min-w-0 items-center gap-2">
+                                        <Link href={`${href}/${row.id}`} prefetch={false} data-table-open data-workspace-detail-preview={serializeWorkspaceDetailPreview({ category: "Relationship", reference: shortId(row.id), title: row.name, subtitle: row.businessName ?? "No company saved", updated: formatRelativeTime(row.updatedAt) })} className="min-w-0 truncate text-sm outline-none hover:underline hover:decoration-neutral-600 hover:underline-offset-4 focus-visible:underline sm:text-[13px]">{row.name}</Link>
+                                        {row.isTest ? <SquarePill tone="yellow" className="shrink-0">Test</SquarePill> : null}
+                                    </span>
+                                    {row.businessName ? <span className="min-w-0 truncate font-normal text-neutral-500 max-sm:hidden sm:flex-1">{row.businessName}</span> : null}
+                                    {/* Phone: the second line carries what the hidden columns say. A long business gives way; the count does not. */}
+                                    <span className="flex min-w-0 text-xs font-normal text-neutral-500 sm:hidden">
+                                        <span className="min-w-0 truncate">{row.businessName ?? "No company saved"}</span>
+                                        {row.openWork ? <span className="shrink-0 whitespace-pre"> · {row.openWork} open</span> : null}
+                                    </span>
+                                </span>
                             </span>
                         </TableCell>
                         <TableCell>{phase ? <RelationshipStage phase={phase} className="text-[13px]!" /> : "—"}</TableCell>
                         <TableCell className="max-md:hidden">{row.manager ? <Assignee name={row.manager.username} avatarSrc={row.manager.avatar} /> : <span className="text-neutral-600">{row.managed ? "Unavailable" : "Unassigned"}</span>}</TableCell>
                         <TableCell className="max-w-0 max-lg:hidden"><span className="block truncate">{row.services.length ? `${row.services[0].label}${row.services.length > 1 ? ` +${row.services.length - 1}` : ""}` : <span className="text-neutral-600">None</span>}</span></TableCell>
-                        <TableCell numeric>{row.openWork || <span className="text-neutral-600">–</span>}</TableCell>
+                        <TableCell numeric className="max-sm:hidden">{row.openWork || <span className="text-neutral-600">–</span>}</TableCell>
                         <TableCell numeric className="max-sm:hidden">{formatRelativeTime(row.updatedAt)}</TableCell>
                     </TableRow>
                 }) : <TableEmpty columns={6}>No client matches this view. Choose All to see everyone.</TableEmpty>}
@@ -183,45 +195,52 @@ function ClientDetail({ data, today }: { data: DetailSnapshot; today: NonNullabl
     const chatTitle = record.businessName?.trim() || record.name
     const chat = today.chat
     const quietAction = "text-[13px] text-neutral-400 outline-none hover:text-neutral-100 focus-visible:underline"
+    // A column of the wide Overview. While the page is narrow it has no box of its own, so its sections join one list.
+    const narrowColumn = "contents @4xl:flex @4xl:min-w-0 @4xl:flex-col"
     return <main className="min-h-full bg-neutral-950 px-4 pb-10 pt-5 text-white sm:px-7"><div className="@container mx-auto max-w-[84rem]">
         <ClientPageHeader name={record.name} business={record.businessName} phase={record.phase} isTest={record.isTest} tabs={tabs} active={section} onWarm={warm}
             onChat={chat ? () => chat({ id: record.id, title: chatTitle }) : undefined}
             chatHref={`/${encodeURIComponent(data.workspaceSlug)}/communications?mode=clients&conversation=${encodeURIComponent(record.id)}`} />
         <RelationshipBackgroundEditor key={`${data.userId}:${record.id}:background`} fields={false} workspaceSlug={data.workspaceSlug} relationshipId={record.id} userId={data.userId} initial={data.background} updatedAt={record.updatedAt} canEdit={data.canEdit} commandsEnabled={data.backgroundCommandsEnabled}>
             <RelationshipServicesWorkspace key={`${data.userId}:${record.id}:services`} workspaceSlug={data.workspaceSlug} relationshipId={record.id} userId={data.userId} initial={data.services} canAdd={data.canAdd} canImport={data.canImport} canSeeHistory={data.canSeeHistory} legacy={data.legacy} render={parts => <>
-                <div hidden={section !== "overview"} data-client-section="overview" className="grid gap-x-10 gap-y-8 pt-5 @4xl:grid-cols-[minmax(0,1fr)_19rem]">
-                    <div className="order-last flex min-w-0 flex-col gap-8 @4xl:order-none">
-                        <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm font-medium text-neutral-200"><RelationshipValues values={data.services.values} showAllTime={data.canImport} workspaceSlug={data.workspaceSlug} relationshipId={record.id} userId={data.userId} /></div>
-                        <section aria-label="Next up">
+                {/* Wide: the work on the left and a Details column on the right. Narrow (a phone, or a work area under
+                    56rem): the two columns dissolve into one, in the order someone opening a client needs them: what
+                    is next, what they buy, how to reach them, and only then the reference details. */}
+                <div hidden={section !== "overview"} data-client-section="overview" className="flex flex-col gap-8 pt-5 @4xl:grid @4xl:grid-cols-[minmax(0,1fr)_19rem] @4xl:items-start @4xl:gap-x-10">
+                    <div className={`${narrowColumn} @4xl:gap-8`}>
+                        <div className="order-1 flex flex-wrap gap-x-6 gap-y-2 text-sm font-medium text-neutral-200 empty:hidden @4xl:order-none"><RelationshipValues values={data.services.values} showAllTime={data.canImport} workspaceSlug={data.workspaceSlug} relationshipId={record.id} userId={data.userId} /></div>
+                        <section aria-label="Next up" className="order-2 @4xl:order-none">
                             <SectionHeading action={may("work") ? <button type="button" data-icon-button onClick={() => go("work")} className={quietAction}>All work</button> : null}>Next up</SectionHeading>
                             {parts.queue({ limit: 5, onMore: may("work") ? () => go("work") : undefined })}
                         </section>
-                        <section aria-label="Services">
+                        <section aria-label="Services" className="order-3 @4xl:order-none">
                             <SectionHeading action={parts.addService ? <button type="button" data-icon-button onClick={parts.addService} className={quietAction}>Add service</button> : null}>Services</SectionHeading>
                             {parts.services}
                         </section>
-                        <section aria-label="Engagement">
+                        <section aria-label="Engagement" className="order-8 @4xl:order-none">
                             <SectionHeading>Engagement, last 14 days</SectionHeading>
                             <ClientEngagementTrends {...target} />
                         </section>
                         {/* Someone without the Work tab still sees the timeline, here. */}
-                        {may("work") ? null : <section aria-label="Timeline"><SectionHeading>Timeline</SectionHeading>{parts.timeline}</section>}
-                        {data.canArchive && !may("onboarding") ? <RelationshipLinks rows key={`${data.userId}:${record.id}:links`} workspaceSlug={data.workspaceSlug} relationshipId={record.id} userId={data.userId} /> : null}
-                        {data.canArchive ? <DetailDangerZone>
+                        {may("work") ? null : <section aria-label="Timeline" className="order-9 @4xl:order-none"><SectionHeading>Timeline</SectionHeading>{parts.timeline}</section>}
+                        {data.canArchive && !may("onboarding") ? <div className="order-10 @4xl:order-none"><RelationshipLinks rows key={`${data.userId}:${record.id}:links`} workspaceSlug={data.workspaceSlug} relationshipId={record.id} userId={data.userId} /></div> : null}
+                        {data.canArchive ? <div className="order-11 @4xl:order-none"><DetailDangerZone>
                             <DetailDangerAction title="Archive client" description="Removes them from active client lists and WhatsApp confirmation matching while preserving billing records, messages, and other history." control={<ArchiveRelationshipForm action={archiveRelationshipForNativePanel.bind(null, data.workspaceSlug, record.id)} relationshipName={record.businessName ?? record.name} />} />
                             <DetailDangerAction title="Delete client permanently" description="Permanent deletion will be enabled after the shared archive lifecycle and dependent-record safeguards are implemented." control={<DetailDangerButton type="button" tone="delete" disabled>Delete permanently</DetailDangerButton>} />
-                        </DetailDangerZone> : null}
+                        </DetailDangerZone></div> : null}
                     </div>
-                    <aside aria-label="Client details" className="flex min-w-0 flex-col gap-6">
-                        <div>
+                    <aside aria-label="Client details" className={`${narrowColumn} @4xl:gap-6`}>
+                        <div className="order-5 flex flex-col @4xl:order-none">
                             <SectionHeading>Details</SectionHeading>
-                            <RelationshipBackgroundFields compact part="fields" />
+                            {/* Narrow: who looks after them and where onboarding stands lead, and the editable record (which
+                                starts with the name the header already shows) follows. */}
+                            <div className="order-1 @4xl:order-none"><RelationshipBackgroundFields compact part="fields" /></div>
                             {data.context ? <ClientSummary context={data.context} /> : null}
                             <ClientOnboardingStatus {...target} onOpen={may("onboarding") ? () => go("onboarding") : undefined} />
                         </div>
-                        {parts.contacts}
-                        <div><SectionHeading>Activity</SectionHeading><ClientActivity {...target} /></div>
-                        <div><SectionHeading>Notes</SectionHeading><RelationshipBackgroundFields compact part="notes" /></div>
+                        <div className="order-4 empty:hidden @4xl:order-none">{parts.contacts}</div>
+                        <div className="order-7 @4xl:order-none"><SectionHeading>Activity</SectionHeading><ClientActivity {...target} /></div>
+                        <div className="order-6 @4xl:order-none"><SectionHeading>Notes</SectionHeading><RelationshipBackgroundFields compact part="notes" /></div>
                     </aside>
                 </div>
                 {may("work") ? <div hidden={section !== "work"} data-client-section="work" className="flex flex-col gap-8 pt-5">

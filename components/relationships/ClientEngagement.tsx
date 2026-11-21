@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react"
-import { DetailField, DetailFields } from "@/components/detail"
+import { DetailField, DetailFields, narrowPropertyGrid, touchPropertyRow, touchPropertyRows, touchPropertyValue } from "@/components/detail"
 import { Status } from "@/components/ui"
 import { createSectionRead } from "@/lib/client-section-read"
 import { formatRelativeTime } from "@/lib/ui/relative-time"
@@ -52,7 +52,8 @@ function Trend({ label, total, values }: { label: string; total: ReactNode; valu
     const step = numbers.length > 1 ? 100 / (numbers.length - 1) : 100
     const points = numbers.map((value, index) => `${(index * step).toFixed(1)},${(34 - value / max * 32).toFixed(1)}`).join(" ")
     return <div className="min-w-0">
-        <p className="truncate text-[13px] text-neutral-400">{label}</p>
+        {/* Three across even on a phone: a long label takes a second line there, and the numbers still share a line. */}
+        <p className="flex min-h-8 items-end text-[13px] leading-4 text-neutral-400 sm:block sm:min-h-0 sm:truncate sm:leading-5">{label}</p>
         <p className="mt-0.5 text-xl font-semibold tabular-nums text-neutral-100">{total}</p>
         <svg aria-hidden="true" viewBox="0 0 100 36" preserveAspectRatio="none" className="mt-1.5 block h-9 w-full overflow-visible">
             <line x1="0" y1="35" x2="100" y2="35" stroke="var(--color-card-border)" strokeWidth="1" vectorEffect="non-scaling-stroke" />
@@ -67,12 +68,13 @@ export function ClientEngagementTrends(target: Target) {
     const { metrics, error } = useEngagement(target, ref)
     const days = metrics?.trends ?? []
     const client = days.reduce((sum, day) => sum + day.client, 0), ours = days.reduce((sum, day) => sum + day.ours, 0), visits = days.reduce((sum, day) => sum + day.visits, 0)
+    // While it waits, the block holds its height, so what is below does not jump when the numbers arrive.
     return <section ref={ref} aria-label="Client engagement" data-client-engagement>
-        {metrics ? <div className="grid grid-cols-1 gap-x-8 gap-y-5 sm:grid-cols-3">
+        {metrics ? <div className="grid grid-cols-3 gap-x-4 sm:gap-x-8">
             <Trend label="Client messages" total={client} values={days.map(day => day.client)} />
             <Trend label="Portal visits" total={visits} values={days.map(day => day.visits)} />
             <Trend label="Client messages per reply" total={ours ? (Math.round(client / ours * 10) / 10).toString() : "–"} values={days.map(day => day.ours ? day.client / day.ours : null)} />
-        </div> : !error ? <p className="py-2 text-sm text-neutral-500">Loading engagement…</p> : null}
+        </div> : !error ? <p className="min-h-[5.75rem] py-2 text-sm text-neutral-500 max-sm:min-h-[6.5rem]">Loading engagement…</p> : null}
         {error ? <p role="alert" className="py-2 text-xs text-red-300">{error}{metrics ? " Showing the last loaded data." : ""}</p> : null}
         {metrics?.messageSampleLimited ? <p className="pt-2 text-xs text-neutral-500">Message trends use the latest 5,000 messages.</p> : null}
     </section>
@@ -83,12 +85,12 @@ export function ClientActivity(target: Target) {
     const ref = useRef<HTMLDivElement>(null)
     const { metrics, error } = useEngagement(target, ref)
     return <div ref={ref} data-client-activity>
-        {metrics ? <DetailFields columns={1} className="mt-0! [&>div]:grid-cols-[5.5rem_minmax(0,1fr)] sm:[&>div]:grid-cols-[5.5rem_minmax(0,1fr)]">
+        {metrics ? <DetailFields narrow className={touchPropertyRows}>
             <DetailField label="Last message" icon="contact">{when(metrics.lastClientMessageAt)}</DetailField>
             <DetailField label="Last reply" icon="time">{when(metrics.lastStaffReplyAt)}</DetailField>
             <DetailField label="Portal visit" icon="timeline">{metrics.portalLastVisitAt ? `${when(metrics.portalLastVisitAt)} · ${metrics.portalVisitCount} in all` : "Not yet"}</DetailField>
             <DetailField label="30 days" icon="activity">{metrics.clientMessages30d} client · {metrics.ourMessages30d} ours</DetailField>
-        </DetailFields> : <p className="py-1.5 text-sm text-neutral-500">{error ?? "Loading…"}</p>}
+        </DetailFields> : <p className={`py-1.5 text-sm text-neutral-500 ${error ? "" : "min-h-36 max-sm:min-h-44"}`}>{error ?? "Loading…"}</p>}
     </div>
 }
 
@@ -98,8 +100,8 @@ export function ClientOnboardingStatus({ onOpen, ...target }: Target & { onOpen?
     const { metrics } = useEngagement(target, ref)
     const status = metrics?.onboardingStatus ?? null
     const label = !metrics ? "…" : status === "completed" ? `Completed ${when(metrics.onboardingCompletedAt)}` : status ? status.charAt(0).toUpperCase() + status.slice(1) : "Not started"
-    const mark = <Status label={label} tone={status === "completed" ? "green" : status ? "yellow" : "grey"} />
-    return <div ref={ref} data-client-onboarding-status className="grid min-h-9 grid-cols-[5.5rem_minmax(0,1fr)] items-baseline gap-2 py-1.5 text-sm">
+    const mark = <Status label={label} tone={status === "completed" ? "green" : status ? "yellow" : "grey"} className={touchPropertyValue} />
+    return <div ref={ref} data-client-onboarding-status className={`grid min-h-9 ${narrowPropertyGrid} items-baseline gap-2 py-1.5 text-sm ${touchPropertyRow}`}>
         <p className="text-neutral-500">Onboarding</p>
         {onOpen && metrics ? <button type="button" data-icon-button onClick={onOpen} className="w-fit rounded outline-none hover:underline hover:decoration-neutral-600 hover:underline-offset-4 focus-visible:underline">{mark}</button> : mark}
     </div>

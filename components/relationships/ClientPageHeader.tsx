@@ -54,9 +54,13 @@ export function ClientPageHeader({ name, business, phase, isTest = false, tabs, 
                 {onChat ? <Button size="sm" data-client-chat onClick={onChat}>Chat</Button> : chatHref ? <Button size="sm" data-client-chat href={chatHref}>Chat</Button> : null}
             </div> : null}
         </div>
-        {tabs.length > 1 ? <nav aria-label={`${name} sections`} className={panelTabStripClass}>
+        {/* On a phone the strip runs to both screen edges (the page's own 1rem gutter) and uses the short names, so
+            five tabs fit a 375px screen, and on a narrower one the last runs off the edge instead of stopping short. */}
+        {tabs.length > 1 ? <nav aria-label={`${name} sections`} className={`${panelTabStripClass} max-sm:-mx-4 max-sm:gap-3.5 max-sm:px-4`}>
             {tabs.map(tab => <Link key={tab.key} href={tab.href} prefetch={false} aria-current={tab.key === active ? "page" : undefined} onClick={switchInPlace(tab)}
-                onPointerEnter={onWarm && tab.key !== active ? () => onWarm(tab.key) : undefined} onFocus={onWarm && tab.key !== active ? () => onWarm(tab.key) : undefined} className={panelTabClass(tab.key === active)}>{tab.label}</Link>)}
+                onPointerEnter={onWarm && tab.key !== active ? () => onWarm(tab.key) : undefined} onFocus={onWarm && tab.key !== active ? () => onWarm(tab.key) : undefined} className={panelTabClass(tab.key === active)}>
+                {tab.shortLabel ? <><span className="sm:hidden">{tab.shortLabel}</span><span className="max-sm:hidden">{tab.label}</span></> : tab.label}
+            </Link>)}
         </nav> : <div className="border-b border-card-border" />}
     </header>
 }

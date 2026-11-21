@@ -41,8 +41,8 @@ test("detail field implementations use the shared borderless field rows", async 
     const workItemFields = await readFile("app/[workspaceSlug]/work-items/[id]/InlineWorkItemFields.tsx", "utf8")
 
     assert.match(sharedFields, /columns = 2/)
-    assert.match(sharedFields, /mt-5 grid grid-cols-1/)
-    assert.match(sharedFields, /columns === 2 \? "lg:grid-cols-2" : ""/)
+    assert.match(sharedFields, /group\/fields grid grid-cols-1 /)
+    assert.match(sharedFields, /`mt-5 \$\{columns === 2 \? "lg:grid-cols-2" : ""\}`/)
     assert.match(sharedFields, /min-h-9 [^`]*gap-2 py-1\.5 /, "workspace rows are plain: no divider")
     assert.match(sharedFields, /group-data-\[surface=light\]\/fields:border-b group-data-\[surface=light\]\/fields:border-black\/10/, "light client-facing rows keep theirs")
     assert.doesNotMatch(sharedFields, /rounded-[^\s"]+ border/)

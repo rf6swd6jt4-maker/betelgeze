@@ -21,7 +21,7 @@ test("the client rail opens everything through the shell's resident tab owner", 
     const rail = source("components/workspace/ClientRail.tsx")
     assert.doesNotMatch(rail, /router\.push|window\.location|useRouter/, "the rail never navigates on its own")
     assert.doesNotMatch(rail, /moreOpen|More<\/span>|primary/, "there is no More: nothing in the sidebar opens, closes or reorders")
-    assert.match(rail, /<Destination item=\{item\} count=\{item\.key === "relationships" \? clientCount : undefined\}/, "the Clients row counts from the list the sidebar already read")
+    assert.match(rail, /<RailDestinationRow key=\{item\.key\} item=\{item\} count=\{item\.key === "relationships" \? clientCount : undefined\}/, "the Clients row counts from the list the sidebar already read")
     assert.match(rail, /const current = activePath === href \|\| client\.id === activeClientId/, "a client stays marked on records that belong to them")
     assert.match(shell, /const todayFrameContextOpen = layout === "today" && activeContextSupported \? activeContextOpen && !dockShown : null/, "framed pages give the column's room back when the docked panel takes that side")
     assert.match(rail, /if \(!plainClick\(event\)\) return; event\.preventDefault\(\); if \(online\) onOpenClient\(href\)/, "a modified click keeps the browser's own behaviour")
@@ -42,7 +42,11 @@ test("the client rail reads one bounded list by name and never polls", async () 
     assert.doesNotMatch(rail, /setInterval|setTimeout\(|subscribe\(\s*["']realtime/)
     assert.match(rail, /const STALE_MS = 5 \* 60_000/)
     assert.match(rail, /document\.visibilityState === "visible" && Date\.now\(\) - lastRead\.current >= STALE_MS/, "one read per shell, then only when the window returns after five minutes")
-    assert.match(rail, /const railMemory = new Map</, "reopening the phone drawer reuses the list")
+    assert.match(rail, /const railMemory = new Map</, "a remount reuses the list")
+    assert.match(rail, /const SIDEBAR_QUERY = "\(min-width: 768px\)"/)
+    assert.match(rail, /const refresh = \(\) => \{ if \(shown\.matches && document\.visibilityState === "visible"/, "a phone has no sidebar, so its list is not read there")
+    assert.match(rail, /shown\.addEventListener\("change", refresh\)/, "widening the window reads it then")
+    assert.match(rail, /if \(!window\.matchMedia\(SIDEBAR_QUERY\)\.matches\) \{ lastRead\.current = 0; return \}/, "a change made while it is not shown marks the list stale instead of reading it")
 
     // @ts-expect-error Node's built-in TypeScript test runner requires the source extension.
     const { CLIENT_RAIL_LIMIT, clientInitials, filterRailClients, parseClientRail } = await import("../lib/client-rail.ts")
@@ -156,7 +160,10 @@ test("the Today side sections use single-target compact rows", () => {
     assert.match(list, /export function ListCompactItem/)
     assert.match(list, /aria-current=\{current \? "page" : undefined\}/)
     const shell = source("components/workspace/WorkspaceTopBarClient.tsx")
-    assert.match(shell, /layout === "today" \? <p data-today-destination/)
+    assert.match(shell, /layout === "today" \? <nav data-today-destination aria-label="Where you are" className="pointer-events-none absolute inset-0 /, "below lg the strip is the breadcrumb")
+    const strip = shell.slice(shell.indexOf("<nav data-today-destination"), shell.indexOf("</nav>", shell.indexOf("<nav data-today-destination")))
+    assert.match(strip, /crumb\.target \? <button type="button" data-icon-button onClick=\{\(\) => openCrumb\(crumb\.target!\)\} className="pointer-events-auto inline-flex h-11 /, "its earlier parts lead back, at a touch size")
+    assert.doesNotMatch(shell, /stripTitle/)
 })
 
 test("a docked chat is the active chat only while the shell names it and its frame is shown", async () => {
@@ -349,7 +356,7 @@ test("a client's page is one destination whose tabs are sections of it", async (
     assert.match(detail, /<RelationshipBackgroundEditor key=\{`\$\{data\.userId\}:\$\{record\.id\}:background`\} fields=\{false\}/, "the editable details are placed by the page, in its Details column")
     assert.match(detail, /\{parts\.queue\(\{ limit: 5, onMore: may\("work"\) \? \(\) => go\("work"\) : undefined \}\)\}/, "Overview shows the next few items and leads to Work for the rest")
     assert.match(detail, /<section aria-label="Open work"><SectionHeading>Open work<\/SectionHeading>\{parts\.queue\(\)\}<\/section>\s*<section aria-label="Timeline"><SectionHeading>Timeline<\/SectionHeading>\{parts\.timeline\}<\/section>/, "the timeline lives with the work")
-    assert.match(detail, /\{may\("work"\) \? null : <section aria-label="Timeline">/, "someone without the Work tab still sees the timeline")
+    assert.match(detail, /\{may\("work"\) \? null : <section aria-label="Timeline" className="order-9 @4xl:order-none">/, "someone without the Work tab still sees the timeline")
     assert.match(detail, /<DetailDangerAction title="Archive client"[\s\S]*<DetailDangerAction title="Delete client permanently"/, "archive stays before delete")
     assert.doesNotMatch(detail, /AttachmentCard|<Card\b|rounded-xl border/, "no cards on the client page")
 
@@ -476,10 +483,73 @@ test("the phone bottom bar reserves its own space and never covers a conversatio
     assert.doesNotMatch(css, /body\[data-workspace-bottom-bar/)
     const shell = source("components/workspace/WorkspaceTopBarClient.tsx")
     assert.match(shell, /\{layout === "today" \? <PhoneBottomBar items=\{\[/, "only the Today layout has the bar")
-    assert.match(shell, /key: "clients", label: "Clients", icon: <RelationshipsIcon \/>, expanded: drawerOpen, onSelect: toggleSidebar/)
-    assert.match(shell, /const drawerOpen = sidebarOpen && \(layout !== "today" \|\| sidebarHydrated\)/, "the names sidebar starts open from md up, but a phone's drawer is never open before its state is read")
+    assert.match(shell, /const drawerOpen = sidebarOpen && \(layout !== "today" \|\| sidebarHydrated\)/)
     assert.match(shell, /\$\{layout === "today" \? "hidden md:inline-flex" : "inline-flex"\}/, "on phones the bar replaces the top bar's sidebar button")
     assert.doesNotMatch(shell, /data-today-button/, "and the strip's Today button")
-    const rail = source("components/workspace/ClientRail.tsx")
-    assert.match(rail, /className=\{phoneBar && item\.key === "communications" \? "max-md:hidden" : undefined\}/, "the phone drawer does not repeat what the bar holds")
+})
+
+test("on a phone each bar item opens what it names, and the rest is one menu", () => {
+    const shell = source("components/workspace/WorkspaceTopBarClient.tsx")
+    const bar = shell.slice(shell.indexOf("{layout === \"today\" ? <PhoneBottomBar items={["), shell.indexOf("{creationNotice ?"))
+    assert.match(bar, /key: "clients", label: "Clients", icon: <RelationshipsIcon \/>, disabled: !online, active: phoneBarClientsActive && !phoneMoreOpen, onSelect: \(\) => \{ setPhoneMoreOpen\(false\); openTodayDestination\(clientsHref\) \}/, "Clients opens the Clients page through the shell's opening rule, not a drawer")
+    assert.doesNotMatch(bar, /toggleSidebar|setSidebarOpen|drawerOpen/, "nothing in the bar opens the sidebar")
+    assert.match(shell, /const phoneBarClientsActive = activeRailPath === clientsHref \|\| activeRailPath\.startsWith\(`\$\{clientsHref\}\/`\)/, "Clients stays current on a client's own page")
+    assert.match(shell, /const phoneBarRest = railDestinations\.filter\(\(item\) => item\.key !== "relationships" && item\.key !== "communications"\)/, "More holds exactly what the bar has no item for")
+    assert.match(bar, /key: "more", label: "More", icon: <MoreIcon \/>, expanded: phoneMoreOpen, active: !phoneMoreOpen && phoneBarRest\.some\(\(item\) => item\.active\)/, "More reads as current while one of its destinations is in front")
+    assert.match(bar, /<RailDestinationRow key=\{item\.key\} item=\{item\} onOpen=\{\(entry, event\) => \{ openRailDestination\(entry, event\); if \(!entry\.disabled\) setPhoneMoreOpen\(false\) \}\} \/>/, "its rows open through the same owner as the sidebar's")
+    assert.match(bar, /onClick=\{\(\) => \{ goBack\(\); setPhoneMoreOpen\(false\) \}\} disabled=\{!canGoBack\}/, "the destination's own history keeps a place on a phone")
+    assert.match(bar, /badge: phoneBarComms\.active \? undefined : <UnreadMessageCount count=\{communicationsUnreadCount\} loading=\{readProtocol === "device-v1" && !communicationsUnreadLoaded\} label="unread Communications messages" \/>/, "Comms and its count are as they were")
+    // The sidebar is not a phone drawer in this layout, so what the drawer held has its own place.
+    assert.match(shell, /`max-md:hidden md:left-0 md:top-0 md:h-dvh md:border-r/)
+    assert.match(shell, /\{drawerOpen && layout !== "today" && <button data-workspace-sidebar-dismiss/, "no invisible dismiss surface is left over a phone's page")
+    assert.match(shell, /\{layout === "today" \? <button ref=\{mobileSearchTriggerRef\} data-icon-button data-phone-search type="button"/, "search is in the top bar")
+    assert.match(shell, /<ListActionMenu allowBelow label="Create something new"\s*\/\/ From md up a labelled button; on a phone the plus alone, beside search\./, "and so is New")
+    assert.match(shell, /\{layout === "today" \? null : <div className="flex h-10 items-center border-b border-card-border pb-2 md:hidden">/, "the drawer's own search row belongs to the tabbed layout")
+    const menu = source("components/workspace/PhoneBottomBar.tsx")
+    assert.match(menu, /\{open \? <>[\s\S]*<button type="button" data-phone-bar-dismiss aria-label="Close menu" onClick=\{onCloseMenu\} className="absolute inset-x-0 bottom-full h-dvh /, "the menu and its dismiss surface are children of the bar, so they are hidden whenever the bar is")
+    assert.match(menu, /const escape = \(event: KeyboardEvent\) => \{ if \(event\.key === "Escape" && !event\.isComposing\) onCloseMenu\(\) \}/)
+    assert.match(menu, /const widened = \(\) => \{ if \(!phone\.matches\) onCloseMenu\(\) \}/, "it closes when the window stops being a phone")
+})
+
+test("a narrow client Overview is one list in reading order, and its property rows share one size", () => {
+    const panel = source("components/workspace/NativeRelationshipsPanel.tsx")
+    const detail = panel.slice(panel.indexOf("function ClientDetail("), panel.indexOf("function RelationshipDetail("))
+    assert.match(detail, /const narrowColumn = "contents @4xl:flex @4xl:min-w-0 @4xl:flex-col"/, "below 56rem the two columns have no box of their own")
+    assert.match(detail, /data-client-section="overview" className="flex flex-col gap-8 pt-5 @4xl:grid @4xl:grid-cols-\[minmax\(0,1fr\)_19rem\]/)
+    const order = (pattern: RegExp) => { const match = detail.match(pattern); assert.ok(match, String(pattern)); return Number(match[1]) }
+    const sequence = [
+        order(/<section aria-label="Next up" className="order-(\d+) @4xl:order-none">/),
+        order(/<section aria-label="Services" className="order-(\d+) @4xl:order-none">/),
+        order(/<div className="order-(\d+) empty:hidden @4xl:order-none">\{parts\.contacts\}<\/div>/),
+        order(/<div className="order-(\d+) flex flex-col @4xl:order-none">\s*<SectionHeading>Details<\/SectionHeading>/),
+        order(/<div className="order-(\d+) @4xl:order-none"><SectionHeading>Notes<\/SectionHeading>/),
+        order(/<div className="order-(\d+) @4xl:order-none"><SectionHeading>Activity<\/SectionHeading>/),
+        order(/<section aria-label="Engagement" className="order-(\d+) @4xl:order-none">/),
+        order(/<div className="order-(\d+) @4xl:order-none"><DetailDangerZone>/),
+    ]
+    assert.deepEqual(sequence, [...sequence].sort((a, b) => a - b), "work, services, contact, details, notes, activity, engagement, and the danger zone last")
+    assert.equal(new Set(sequence).size, sequence.length)
+    assert.match(detail, /<div className="order-1 @4xl:order-none"><RelationshipBackgroundFields compact part="fields" \/><\/div>\s*\{data\.context \? <ClientSummary context=\{data\.context\} \/> : null\}/, "narrow, the editable record follows who manages the client; wide, it leads as before")
+
+    const fields = source("components/detail/DetailFields.tsx")
+    assert.match(fields, /export const narrowPropertyGrid = "grid-cols-\[6rem_minmax\(0,1fr\)\]"/)
+    assert.match(fields, /narrow \? "\[&>div\]:grid-cols-\[6rem_minmax\(0,1fr\)\] sm:\[&>div\]:grid-cols-\[6rem_minmax\(0,1fr\)\]"/, "the narrow list and hand-built rows share one label column")
+    assert.match(fields, /export const touchPropertyRows = "max-sm:\[&>div\]:min-h-11 max-sm:\[&>div\]:items-center max-sm:\[&>div\]:py-0 max-sm:\[&>div>div\]:text-base"/)
+    assert.match(source("components/relationships/ClientSummary.tsx"), /<DetailFields narrow className=\{touchPropertyRows\}>/)
+    assert.match(source("components/relationships/RelationshipBackgroundEditor.tsx"), /<DetailFields narrow className=\{`\[&>div\]:py-0 \[&>div>div\]:-ml-1 \$\{touchPropertyRows\}`\}>/)
+    const engagement = source("components/relationships/ClientEngagement.tsx")
+    assert.match(engagement, /\{metrics \? <DetailFields narrow className=\{touchPropertyRows\}>/)
+    assert.match(engagement, /className=\{`grid min-h-9 \$\{narrowPropertyGrid\} items-baseline gap-2 py-1\.5 text-sm \$\{touchPropertyRow\}`\}/)
+    assert.match(engagement, /<div className="grid grid-cols-3 gap-x-4 sm:gap-x-8">/, "the three trends stay side by side on a phone")
+    assert.match(source("components/relationships/RelationshipContactCards.tsx"), /\$\{narrowPropertyGrid\} items-center gap-2 rounded-md px-1 py-1\.5 text-left text-sm [^`]*\$\{touchPropertyRow\}`/)
+
+    const header = source("components/relationships/ClientPageHeader.tsx")
+    assert.match(header, /className=\{`\$\{panelTabStripClass\} max-sm:-mx-4 max-sm:gap-3\.5 max-sm:px-4`\}/, "on a phone the tab strip runs to the screen edges")
+    assert.match(header, /\{tab\.shortLabel \? <><span className="sm:hidden">\{tab\.shortLabel\}<\/span><span className="max-sm:hidden">\{tab\.label\}<\/span><\/> : tab\.label\}/)
+    assert.match(source("lib/client-page.ts"), /label: "Files and notes", shortLabel: "Files"/)
+
+    const list = panel.slice(panel.indexOf("function ClientsTable("), panel.indexOf("function ClientDetail("))
+    assert.match(list, /<Table ariaLabel="Clients" className="max-sm:\[&_thead\]:hidden /, "a phone's Clients list has no column headings")
+    assert.match(list, /<span className="flex min-w-0 text-xs font-normal text-neutral-500 sm:hidden">\s*<span className="min-w-0 truncate">\{row\.businessName \?\? "No company saved"\}<\/span>\s*\{row\.openWork \? <span className="shrink-0 whitespace-pre"> · \{row\.openWork\} open<\/span> : null\}/, "its second line carries the business and the open work, and a long business gives way before the count")
+    assert.match(list, /<TableCell numeric className="max-sm:hidden">\{row\.openWork \|\|/)
 })

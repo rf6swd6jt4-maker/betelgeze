@@ -54,8 +54,21 @@ function DetailFieldIconMark({ kind }: { kind: DetailFieldIcon }) {
     return <svg aria-hidden="true" data-detail-field-icon viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 shrink-0">{paths[kind]}</svg>
 }
 
-export function DetailFields({ children, surface = "dark", columns = 2, className = "" }: { children: ReactNode; surface?: "dark" | "light"; columns?: 1 | 2; className?: string }) {
-    return <section data-surface={surface} className={`group/fields mt-5 grid grid-cols-1 ${columns === 2 ? "lg:grid-cols-2" : ""} ${className}`}>{children}</section>
+/** The label column of a narrow property list. Hand-built rows beside one (a row that is a button) use the same. */
+export const narrowPropertyGrid = "grid-cols-[6rem_minmax(0,1fr)]"
+
+/**
+ * A narrow property list on a phone: 44px rows with a 16px value, the size an editable field must have there (smaller
+ * type makes iOS zoom the page on focus), so read-only rows, rows that open something and fields keep one rhythm.
+ */
+export const touchPropertyRows = "max-sm:[&>div]:min-h-11 max-sm:[&>div]:items-center max-sm:[&>div]:py-0 max-sm:[&>div>div]:text-base"
+/** The same sizing for one hand-built row, and for a `Status` or `Assignee` shown as a row's value. */
+export const touchPropertyRow = "max-sm:min-h-11 max-sm:items-center max-sm:py-0"
+export const touchPropertyValue = "max-sm:text-base"
+
+/** `narrow` is the property list of a details column (the client page): one column, flush, with a 6rem label. */
+export function DetailFields({ children, surface = "dark", columns = 2, narrow = false, className = "" }: { children: ReactNode; surface?: "dark" | "light"; columns?: 1 | 2; narrow?: boolean; className?: string }) {
+    return <section data-surface={surface} className={`group/fields grid grid-cols-1 ${narrow ? "[&>div]:grid-cols-[6rem_minmax(0,1fr)] sm:[&>div]:grid-cols-[6rem_minmax(0,1fr)]" : `mt-5 ${columns === 2 ? "lg:grid-cols-2" : ""}`} ${className}`}>{children}</section>
 }
 
 export function DetailField({ label, icon, children, multiline = false, stackOnMobile = false, className = "" }: { label: string; icon: DetailFieldIcon; children: ReactNode; multiline?: boolean; stackOnMobile?: boolean; className?: string }) {

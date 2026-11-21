@@ -5,7 +5,7 @@
 import { relationshipContextHref, type RelationshipContextDestination } from "./relationship-context.ts"
 
 export type ClientPageTabKey = "overview" | "work" | "onboarding" | "connections" | "files"
-export type ClientPageTab = { key: ClientPageTabKey; label: string; href: string }
+export type ClientPageTab = { key: ClientPageTabKey; label: string; href: string; /** A shorter name for a phone's tab strip. */ shortLabel?: string }
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
@@ -24,7 +24,7 @@ export function clientPageTabs(workspaceSlug: string, relationshipId: string, al
     if (allowed.includes("fulfilment")) tabs.push({ key: "work", label: "Work", href: inPage ? `${page}?tab=work` : relationshipContextHref("fulfilment", workspaceSlug, relationshipId) })
     if (allowed.includes("onboarding")) tabs.push({ key: "onboarding", label: "Onboarding", href: inPage ? `${page}?tab=onboarding` : relationshipContextHref("onboarding", workspaceSlug, relationshipId) })
     if (allowed.includes("client-connections")) tabs.push({ key: "connections", label: "Connections", href: inPage ? `${page}?tab=connections` : relationshipContextHref("client-connections", workspaceSlug, relationshipId) })
-    if (inPage) tabs.push({ key: "files", label: "Files and notes", href: `${page}?tab=files` })
+    if (inPage) tabs.push({ key: "files", label: "Files and notes", shortLabel: "Files", href: `${page}?tab=files` })
     return tabs
 }
 

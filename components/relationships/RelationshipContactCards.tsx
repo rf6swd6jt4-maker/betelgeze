@@ -3,7 +3,7 @@ import { useEffect, useRef, useState, useTransition } from "react"
 import { AttachmentCard, AttachmentCards, AddAttachmentCard, Button, CenteredDialog, Status } from "@/components/ui"
 import { CommunicationMethodMark } from "@/components/ui/CommunicationMethod"
 import { List, ListItem, ListPrimaryRow, ListTitle } from "@/components/list/List"
-import { SectionHeading } from "@/components/detail"
+import { SectionHeading, narrowPropertyGrid, touchPropertyRow, touchPropertyValue } from "@/components/detail"
 import { useRelationshipBackground } from "./RelationshipBackgroundEditor"
 import { useRouter, useWorkspaceNavigation } from "@/components/workspace/WorkspaceNavigation"
 import { attachRelationshipContact, requestRelationshipContactConfirmation } from "@/app/[workspaceSlug]/relationships/contact-actions"
@@ -80,11 +80,11 @@ export function RelationshipContactCards({ workspaceSlug, relationshipId, userId
             const { choice, broken } = describe(method)
             const value = method === "email" ? background.draft.primaryEmail : method === "phone" ? background.draft.primaryPhone : null
             return <li key={method}><button type="button" data-icon-button onClick={() => open(method)} title={value ?? undefined}
-                className="-mx-1 grid min-h-9 w-[calc(100%+0.5rem)] grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-2 rounded-md px-1 py-1.5 text-left text-sm outline-none hover:bg-[var(--color-surface-hover)] focus-visible:bg-[var(--color-surface-hover)]">
+                className={`-mx-1 grid min-h-9 w-[calc(100%+0.5rem)] ${narrowPropertyGrid} items-center gap-2 rounded-md px-1 py-1.5 text-left text-sm outline-none hover:bg-[var(--color-surface-hover)] focus-visible:bg-[var(--color-surface-hover)] ${touchPropertyRow}`}>
                 <span className="text-neutral-500">{contactMethodName(method)}</span>
-                {value ? <span className="min-w-0 truncate text-neutral-200">{value}</span>
-                    : method === "portal" ? <Status label={broken ? "Unavailable" : "Client access"} tone={broken ? "red" : "green"} />
-                    : <Status label={choice?.state === "active" ? "Confirmed" : broken ? "Needs attention" : "Not confirmed"} tone={choice?.state === "active" ? "green" : broken ? "red" : "grey"} />}
+                {value ? <span className={`min-w-0 truncate text-neutral-200 ${touchPropertyValue}`}>{value}</span>
+                    : method === "portal" ? <Status label={broken ? "Unavailable" : "Client access"} tone={broken ? "red" : "green"} className={touchPropertyValue} />
+                    : <Status label={choice?.state === "active" ? "Confirmed" : broken ? "Needs attention" : "Not confirmed"} tone={choice?.state === "active" ? "green" : broken ? "red" : "grey"} className={touchPropertyValue} />}
             </button></li>
         })}</ul> : data ? <p className="py-1.5 text-sm text-neutral-500">No way to reach this client yet.</p> : null}
     </> : <><h2 className="mb-3 text-base font-semibold">Contact</h2>

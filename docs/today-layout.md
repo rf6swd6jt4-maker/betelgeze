@@ -38,8 +38,9 @@ because it lives in the shared primitives and tokens; the structure below is the
   first paint is already laid out: the shell renders the sidebar's width in a style tag and the top bar's offset keys
   on the server-rendered shell root. A person who folded it sees it fold once the stored choice is read.
 - **Top bar.** At `lg` the left corner is a breadcrumb: the destination's name, `Clients / client` on a client's page,
-  `Clients / client / record` on a record of theirs (the first two parts lead back). Below `lg` the strip shows the
-  same words. Search, presence, Comms, New and the account menu are unchanged.
+  `Clients / client / record` on a record of theirs (the first two parts lead back). Below `lg` the strip is the
+  same breadcrumb with the same ways back (see "Phones" below). Search, presence, Comms, New and the account menu are
+  unchanged from `md` up.
 - **No client column.** The breadcrumb and the client's page replace it at desktop width, so the work area is never
   narrowed by it and framed pages are told the column is closed. Below `lg` the context sheet still opens from the
   strip on records that belong to a client.
@@ -55,7 +56,7 @@ because it lives in the shared primitives and tokens; the structure below is the
     (three numbers with a trend line each) and the danger zone. Beside it the **Details** column holds everything about
     the client as plain rows: the editable details, manager, source and onboarding status; **Contact** (each way to
     reach them is a row that opens the dialog its card opened); **Activity**; and **Notes**. Narrower than 56rem the
-    Details come first. Every dialog and command is unchanged: `RelationshipServicesWorkspace` still owns them and
+    two columns become one list in reading order (see "Phones" below). Every dialog and command is unchanged: `RelationshipServicesWorkspace` still owns them and
     hands its parts to the page (`render`), and `RelationshipBackgroundEditor` still owns the draft and hands out its
     fields (`RelationshipBackgroundFields`).
   - *Work* is the client's whole queue, one line each with paging and Refresh, and the service timeline, which moved
@@ -100,6 +101,51 @@ because it lives in the shared primitives and tokens; the structure below is the
   the engagement trends and the Onboarding section against synthetic reads. **Not checked:** the signed-in app; the
   real services workspace, contact rows and Connections section inside the client page (they need the app's data and
   server actions); the two new endpoints against real sessions and access scopes; real data volumes; a phone.
+
+## Phones (built on `phone-layout`, 21 November 2026)
+
+The person's report after using the two builds above on a phone: the bar's middle item, Clients, opened a floating
+panel from the left that held more than clients, and the client page was confusing. Both were true. The panel was the
+old sidebar drawer (Clients, Library, Staff, Settings, the names, and also search, back, forward and the create
+actions), and a narrow Overview opened on the six editable detail fields with the work three screens down.
+
+- **Bottom bar** (`PhoneBottomBar`): **Today, Clients, Comms, More.** Each opens the destination it names as a page,
+  through `openTodayDestination`. Clients is the Clients page and stays current on a client's own page, so pressing it
+  there is the way back to the list. More is a menu that rises from the More item: the destinations the bar has no
+  item for (`phoneBarRest`: Library, Staff, Settings; Onboarding and Client Connections for someone who cannot open
+  Clients), as the sidebar's own rows through the same `openRailDestination`, then Back and Forward for the
+  destination in front. The bar's height, the space it reserves, when it hides and its Comms item and count are
+  untouched; the menu and its dismiss surface are children of the bar, so an open conversation or the keyboard hides
+  them with it.
+- **No sidebar and no drawer on a phone.** The sidebar is `max-md:hidden` in this layout, its dismiss surface is not
+  rendered, and `ClientRail` does not read its list while the window is narrower than `md` (it reads when the window
+  widens). What the drawer held has its own place: **search** and **New** are icon buttons in the top bar, where they
+  are from `md` up; the breadcrumb in the strip leads back up.
+- **Strip.** Below `lg` it shows the breadcrumb (`Clients / client`, `Clients / client / record`) with the earlier
+  parts as buttons, instead of the same words as plain text. Its height and the context button are unchanged.
+- **Clients on a phone.** The table drops its headings and becomes 56px rows: mark, name, and under it the business
+  and `n open`; the stage at the right. Names are no longer cut to make room for the Open work column.
+- **Client page on a phone** (and wherever the page is narrower than 56rem). The five tabs fit the screen (`Files`
+  for `Files and notes`, the strip running to the screen edges). Overview is one list in reading order: values,
+  Next up, Services, Contact, Details (manager, source and onboarding status, then the editable record), Notes,
+  Activity, Engagement, and the danger zone last. The two columns are one DOM order with `display: contents` and
+  `order-*` below `@4xl`, so nothing is rendered twice and the wide layout is unchanged. Property rows are one size
+  (44px with a 16px value on a phone, 36px above), Engagement stays three across, and Activity and Engagement hold
+  their height while they wait, so the page does not jump.
+- **Also changed from `md` up, because the rows are shared:** the Details label column is 6rem (Last message no
+  longer wraps), and editable rows are 36px like the rows around them, with typed values on the same edge.
+- **Alerts and speed.** No reading, unread, receipt, activity or alert rule changes and no Communications file is
+  edited; the bar's geometry block in `globals.css` is untouched. `app-alerts.md` still describes the Clients item as
+  "the drawer"; its wording was not edited and needs the person's permission. On a phone, launch makes one request
+  fewer (the sidebar's client list). With the new order, a narrow Overview reads engagement when Details, Activity
+  or Engagement nears the screen instead of at open, as it did before the client page was rebuilt; from `@4xl` it is
+  still read at open. Nothing else about reads changes, and nothing was measured signed in.
+- **Lost on a phone:** the names list in the sidebar (the Clients page and search replace it). Nothing else.
+- **Checked:** unit tests (two new: the bar and its menu; the narrow Overview order and row sizes), and the client
+  rail fixture at 375px, 834px and 1440px: the bar and More menu, zero client-list reads on a phone, the Clients rows,
+  the five tabs fitting without scrolling, the Overview order, row sizes, and the Onboarding tab. **Not checked:** the
+  signed-in app (the fixture's shell is a stand-in, so the real top bar, strip, search popup and New menu on a phone
+  were not seen), a physical phone, the keyboard or a notch with the menu open.
 
 ## History: the client rail (16 November 2026)
 

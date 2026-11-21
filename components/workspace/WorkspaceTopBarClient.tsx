@@ -32,7 +32,7 @@ import { createWorkspaceNavigationDeadline, workspaceNavigationReadyMatches } fr
 import { WorkspaceRecordCache } from "@/lib/workspace-record-cache"
 import { WorkspaceTabScrollStore } from "@/lib/workspace-tab-scroll"
 import type { WorkspaceLayout } from "@/lib/workspace-layout"
-import { ClientRail, type RailDestination } from "./ClientRail"
+import { ClientRail, RailDestinationRow, type RailDestination } from "./ClientRail"
 import { clientPageRelationshipId } from "@/lib/client-page"
 import { PhoneBottomBar } from "./PhoneBottomBar"
 import { TodayLayoutProvider, useTodayWide, type TodayLayoutShell } from "./TodayLayout"
@@ -245,6 +245,10 @@ function ArrowLeftIcon() {
 
 function ArrowRightIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="m9 6 6 6-6 6" /></svg>
+}
+
+function MoreIcon() {
+    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-current md:h-4 md:w-4"><circle cx="5" cy="12" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="19" cy="12" r="1.6" /></svg>
 }
 
 function ReloadIcon() {
@@ -501,6 +505,8 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
     const [editingTabId, setEditingTabId] = useState<string | null>(null)
     const [editingTabTitle, setEditingTabTitle] = useState("")
     const [mobileContextKey, setMobileContextKey] = useState<string | null>(null)
+    // Today layout on a phone: the bottom bar's More menu.
+    const [phoneMoreOpen, setPhoneMoreOpen] = useState(false)
     // Today layout, desktop only: the loaded chat frame of the docked Comms panel (at most one).
     const [dock, setDock] = useState<DockedChat | null>(null)
     // Bumped when a relationship is created, so the client rail reads its list again.
@@ -2108,6 +2114,7 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
         }
         const closeForOtherDropdown = (event: Event) => {
             setMobileContextKey(null)
+            setPhoneMoreOpen(false)
             if ((event as CustomEvent<string>).detail !== searchMenuId) setSearchOpen(false)
         }
         document.addEventListener("mousedown", close)
@@ -2366,7 +2373,8 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
     }
 
     function closeSidebarAfterNavigation() {
-        if (window.matchMedia("(max-width: 767px)").matches) setSidebarOpen(false)
+        // The Today layout has no phone drawer to close, and its fold is the person's choice from md up.
+        if (layout !== "today" && window.matchMedia("(max-width: 767px)").matches) setSidebarOpen(false)
     }
 
     async function navigateActiveTab(href: string) {
@@ -2850,7 +2858,6 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
         { label: "Clients", target: canOpenClients ? "clients" : undefined },
         { label: todayTitle },
     ] : [{ label: todayTitle }]
-    const stripTitle = crumbClientName && !activeIsClientPage ? `${crumbClientName} / ${todayTitle}` : crumbClientName ?? todayTitle
     function openCrumb(target: "clients" | "client") {
         if (target === "clients") openTodayDestination(clientsHref)
         else if (activeClientId) void openWorkspaceTab(`${clientsHref}/${activeClientId}`)
@@ -2859,6 +2866,9 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
     // Phones in the Today layout: Comms is the full destination, reached from the bottom bar.
     const phoneBarCommsItem = layout === "today" ? sidebarItems.find((item) => item.key === "communications") : undefined
     const phoneBarComms = phoneBarCommsItem ? { href: phoneBarCommsItem.href, active: activeRailPath === phoneBarCommsItem.href || activeRailPath.startsWith(`${phoneBarCommsItem.href}/`) } : null
+    const phoneBarClientsActive = activeRailPath === clientsHref || activeRailPath.startsWith(`${clientsHref}/`)
+    // What the bar has no item of its own for: Library, Staff, Settings (and the two lists kept by someone who cannot open Clients).
+    const phoneBarRest = railDestinations.filter((item) => item.key !== "relationships" && item.key !== "communications")
     const activeNavigation = navigationStateByTab[activeTabId]
     const activeBackgroundSaving = (backgroundMutationCounts[activeTabId] ?? 0) > 0
     const currentPresenceMember = workspaceMembers.find((member) => member.id === currentUserId) ?? { id: currentUserId, name: username, avatarSrc: avatarSrc ?? null }
@@ -3136,8 +3146,12 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
                     )}
                 </div>
 
-                <div className="flex items-center justify-end gap-2.5">
+                <div className={`flex items-center justify-end ${layout === "today" ? "gap-1 md:gap-2.5" : "gap-2.5"}`}>
                     <div ref={mobileSearchRef} className="md:hidden">
+                        {/* Today layout: on a phone, search is in the top bar, where it is from md up. */}
+                        {layout === "today" ? <button ref={mobileSearchTriggerRef} data-icon-button data-phone-search type="button" onClick={() => { if (searchOpen) setSearchOpen(false); else openMobileSearch() }} aria-label="Search Betelgeze" aria-expanded={searchOpen} className="inline-flex h-11 w-10 shrink-0 items-center justify-center rounded-full text-neutral-400 outline-none transition hover:text-white focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]">
+                            <SearchIcon />
+                        </button> : null}
                         {searchOpen && (
                             <div className="betelgeze-popup-enter fixed left-3 right-3 top-16 z-[70] max-h-[72vh] overflow-hidden rounded-xl border border-card-border bg-[var(--color-surface-popup)] shadow-popup">
                                 <div className="border-b border-card-border p-3">
@@ -3154,9 +3168,10 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
                     </div>
                     {canDockChat ? <span className="hidden lg:inline-flex"><Button variant="secondary" size="sm" data-comms-button aria-expanded={dock?.place === "drawer"}
                         onClick={() => { void changeDock(dock?.place === "drawer" ? null : { place: "drawer" }) }}>Comms<UnreadMessageCount count={communicationsUnreadCount} loading={readProtocol === "device-v1" && !communicationsUnreadLoaded} label="unread Communications messages" /></Button></span> : null}
-                    {layout === "today" ? (canCreateRelationship || canCreateLibraryItem || canCreateOkr) && <ListActionMenu allowBelow label="Create something new" className="hidden md:block"
-                        triggerClassName="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-lg border border-white/[0.12] px-2.5 text-[13px] font-medium text-neutral-100 outline-none hover:bg-[var(--color-surface-hover)] focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
-                        trigger={<><svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current stroke-2"><path d="M12 5v14M5 12h14" strokeLinecap="round" /></svg>New</>}
+                    {layout === "today" ? (canCreateRelationship || canCreateLibraryItem || canCreateOkr) && <ListActionMenu allowBelow label="Create something new"
+                        // From md up a labelled button; on a phone the plus alone, beside search.
+                        triggerClassName="inline-flex h-11 w-10 shrink-0 items-center justify-center gap-1.5 rounded-full text-[13px] font-medium text-neutral-400 outline-none hover:text-white focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] md:h-7 md:w-auto md:rounded-lg md:border md:border-white/[0.12] md:px-2.5 md:text-neutral-100 md:hover:bg-[var(--color-surface-hover)]"
+                        trigger={<><svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="M12 5v14M5 12h14" strokeLinecap="round" /></svg><span className="max-md:sr-only">New</span></>}
                         actions={[
                             canCreateRelationship && { label: "Relationship", onSelect: () => openCreate("relationship") },
                             canCreateLibraryItem && { label: "Work item", onSelect: () => openCreate("work-item") },
@@ -3228,10 +3243,16 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
         <div data-workspace-tabbar className={`fixed top-14 z-40 h-11 border-b border-card-border bg-neutral-950 text-white ${sidebarTransitionEnabled ? "transition-[left,width] duration-200 ease-out" : ""}`}>
             <div className="flex h-full min-w-0 items-end gap-2 px-2 pt-1">
                 <div className="relative h-full min-w-0 flex-1">
-                {layout === "today" ? <p data-today-destination className="pointer-events-none absolute inset-0 flex min-w-0 items-center gap-2 px-1 pb-1 text-sm font-medium text-neutral-200 lg:px-2">
-                    <span className="truncate">{stripTitle}</span>
+                {/* Below lg the strip says where the person is, in the top bar's words, and its earlier parts lead back. */}
+                {layout === "today" ? <nav data-today-destination aria-label="Where you are" className="pointer-events-none absolute inset-0 flex min-w-0 items-center gap-1.5 px-2 pb-1 text-sm">
+                    {todayCrumbs.map((crumb, index) => <Fragment key={`${index}:${crumb.label}`}>
+                        {index ? <span aria-hidden="true" className="shrink-0 text-neutral-600">/</span> : null}
+                        {index === todayCrumbs.length - 1 ? <span aria-current="page" className="min-w-0 truncate font-medium text-neutral-200">{crumb.label}</span>
+                            : crumb.target ? <button type="button" data-icon-button onClick={() => openCrumb(crumb.target!)} className="pointer-events-auto inline-flex h-11 min-w-0 shrink items-center text-neutral-400 outline-none hover:text-neutral-100 focus-visible:underline"><span className="truncate">{crumb.label}</span></button>
+                            : <span className="min-w-0 shrink truncate text-neutral-400">{crumb.label}</span>}
+                    </Fragment>)}
                     {activeTabBusy ? <span aria-label={navigationStateByTab[activeTab.id]?.status === "loading" ? "Loading" : "Refreshing"} className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-neutral-400" /> : null}
-                </p> : null}
+                </nav> : null}
                 <div ref={tabStripRef} role="tablist" aria-label="Workspace tabs" className="relative flex h-full min-w-0 flex-1 items-end gap-1 touch-pan-x overflow-x-auto overflow-y-hidden overscroll-x-contain md:overflow-hidden">
                     {visibleTabs.map((tab) => {
                         const active = tab.id === activeTabId
@@ -3382,26 +3403,37 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
         {activeRouteLoading && !activeNativePanel && <LoadingOverlay />}
 
         {layout === "today" ? <PhoneBottomBar items={[
-            { key: "today", label: "Today", icon: <WorkIcon />, active: railToday.active && !drawerOpen, onSelect: () => { setSidebarOpen(false); openTodayDestination(todayHref) } },
-            { key: "clients", label: "Clients", icon: <RelationshipsIcon />, expanded: drawerOpen, onSelect: toggleSidebar },
-            ...(phoneBarComms ? [{ key: "comms", label: "Comms", icon: <CommunicationsIcon />, active: phoneBarComms.active && !drawerOpen, onSelect: () => { setSidebarOpen(false); openTodayDestination(phoneBarComms.href) },
+            { key: "today", label: "Today", icon: <WorkIcon />, active: railToday.active && !phoneMoreOpen, onSelect: () => { setPhoneMoreOpen(false); openTodayDestination(todayHref) } },
+            // Clients is the Clients page, and stays current on a client's own page.
+            ...(canOpenClients ? [{ key: "clients", label: "Clients", icon: <RelationshipsIcon />, disabled: !online, active: phoneBarClientsActive && !phoneMoreOpen, onSelect: () => { setPhoneMoreOpen(false); openTodayDestination(clientsHref) } }] : []),
+            ...(phoneBarComms ? [{ key: "comms", label: "Comms", icon: <CommunicationsIcon />, active: phoneBarComms.active && !phoneMoreOpen, onSelect: () => { setPhoneMoreOpen(false); openTodayDestination(phoneBarComms.href) },
                 badge: phoneBarComms.active ? undefined : <UnreadMessageCount count={communicationsUnreadCount} loading={readProtocol === "device-v1" && !communicationsUnreadLoaded} label="unread Communications messages" /> }] : []),
-        ]} /> : null}
+            // Everything else is behind More, which reads as current while one of its destinations is in front.
+            ...(phoneBarRest.length ? [{ key: "more", label: "More", icon: <MoreIcon />, expanded: phoneMoreOpen, active: !phoneMoreOpen && phoneBarRest.some((item) => item.active), onSelect: () => setPhoneMoreOpen((open) => !open) }] : []),
+        ]} onCloseMenu={() => setPhoneMoreOpen(false)} menu={phoneMoreOpen ? <>
+            {phoneBarRest.map((item) => <RailDestinationRow key={item.key} item={item} onOpen={(entry, event) => { openRailDestination(entry, event); if (!entry.disabled) setPhoneMoreOpen(false) }} />)}
+            {/* The active destination's own history: on a phone it has no room in the top bar. */}
+            <div className="mt-1 grid grid-cols-2 gap-1 border-t border-card-border pt-1.5">
+                <button type="button" data-icon-button onClick={() => { goBack(); setPhoneMoreOpen(false) }} disabled={!canGoBack} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md text-sm text-neutral-400 outline-none hover:bg-[var(--color-surface-hover)] hover:text-neutral-100 disabled:opacity-30"><ArrowLeftIcon />Back</button>
+                <button type="button" data-icon-button onClick={() => { goForward(); setPhoneMoreOpen(false) }} disabled={!canGoForward} className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md text-sm text-neutral-400 outline-none hover:bg-[var(--color-surface-hover)] hover:text-neutral-100 disabled:opacity-30">Forward<ArrowRightIcon /></button>
+            </div>
+        </> : null} /> : null}
 
         {creationNotice ? <WorkspaceSuccessNotice label={creationNotice.label} actionLabel="View" onAction={viewCreatedRecord} /> : null}
 
-        {drawerOpen && <button data-workspace-sidebar-dismiss type="button" aria-label="Close sidebar" onClick={() => setSidebarOpen(false)} className="fixed inset-x-0 bottom-0 top-14 z-[45] cursor-default md:hidden" />}
+        {drawerOpen && layout !== "today" && <button data-workspace-sidebar-dismiss type="button" aria-label="Close sidebar" onClick={() => setSidebarOpen(false)} className="fixed inset-x-0 bottom-0 top-14 z-[45] cursor-default md:hidden" />}
 
         <aside data-workspace-sidebar data-client-rail={layout === "today" ? "" : undefined} data-collapsed={!sidebarIsDrawer && !sidebarOpen ? "true" : "false"} aria-hidden={sidebarIsDrawer && !drawerOpen} className={`fixed left-2 top-16 z-50 h-[calc(100dvh-4.5rem)] w-[17rem] overflow-hidden border-card-border ${layout === "today"
-            // Today layout: a flush column of names from md up (a hairline, no box); below md the slide-in drawer.
-            ? `rounded-xl border bg-[var(--color-surface-popup)] shadow-popup md:left-0 md:top-0 md:h-dvh md:rounded-none md:border-0 md:border-r md:bg-[var(--color-surface-canvas)] md:shadow-none ${!sidebarOpen ? "md:w-[3.25rem]" : sidebarHydrated ? "md:w-60" : "md:w-[3.25rem] lg:w-60"}`
+            // Today layout: a flush column of names from md up (a hairline, no box). Below md there is no sidebar: the
+            // phone bottom bar holds the destinations, and search and New are in the top bar.
+            ? `max-md:hidden md:left-0 md:top-0 md:h-dvh md:border-r md:bg-[var(--color-surface-canvas)] ${!sidebarOpen ? "md:w-[3.25rem]" : sidebarHydrated ? "md:w-60" : "md:w-[3.25rem] lg:w-60"}`
             : `rounded-2xl border bg-[var(--color-surface-popup)] shadow-popup ${sidebarOpen ? "" : "md:w-16"}`} ${sidebarTransitionEnabled ? "transition-[transform,visibility,width] duration-200 ease-out max-md:duration-[240ms] max-md:ease-[cubic-bezier(0.22,1,0.36,1)]" : ""} ${drawerOpen ? "translate-x-0" : "max-md:invisible max-md:-translate-x-[calc(100%+1rem)]"}`}>
             <nav className={`flex h-full touch-pan-y flex-col gap-2 overflow-y-auto overscroll-contain px-4 py-5 md:overflow-visible md:overscroll-auto ${layout === "today" ? "md:gap-0 md:px-2 md:pb-2 md:pt-0" : `md:gap-1 md:py-4 ${sidebarOpen ? "md:px-3" : "md:px-2"}`}`}>
                 {layout === "today" ? <div data-sidebar-identity className="hidden h-14 shrink-0 items-center gap-2.5 px-2 md:flex">
                     <WorkspaceLogo src={workspaceLogoSrc} name={workspace.name} size="sm" />
                     <p data-rail-label className="min-w-0 truncate text-sm font-semibold text-neutral-100">{workspace.name}</p>
                 </div> : null}
-                <div className="flex h-10 items-center border-b border-card-border pb-2 md:hidden">
+                {layout === "today" ? null : <div className="flex h-10 items-center border-b border-card-border pb-2 md:hidden">
                     <button data-icon-button type="button" onClick={() => { goBack(); closeSidebarAfterNavigation() }} disabled={!canGoBack} aria-label="Go back" className={navButtonClass}>
                         <ArrowLeftIcon />
                     </button>
@@ -3411,9 +3443,9 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
                     <button ref={mobileSearchTriggerRef} data-icon-button type="button" onClick={openMobileSearch} aria-label="Search Betelgeze" className={`${navButtonClass} ml-auto`}>
                         <SearchIcon />
                     </button>
-                </div>
+                </div>}
                 {layout === "today" ? <ClientRail workspaceSlug={workspace.slug} userId={currentUserId} activePath={activePathname.replace(/\/$/, "")} activeClientId={activeClientId} online={online}
-                    today={railToday} destinations={railDestinations} refreshKey={clientRailRevision} phoneBar
+                    today={railToday} destinations={railDestinations} refreshKey={clientRailRevision}
                     onOpenClient={(href) => { void openWorkspaceTab(href); closeSidebarAfterNavigation() }} onOpenDestination={openRailDestination} /> : sidebarItems.map((item) => {
                     const offlineBlocked = !online && !item.href.includes("/communications")
                     const active = item.activeHrefs?.some((href) => activePathname === href || activePathname.startsWith(`${href}/`))

@@ -43,26 +43,39 @@ because it lives in the shared primitives and tokens; the structure below is the
 - **No client column.** The breadcrumb and the client's page replace it at desktop width, so the work area is never
   narrowed by it and framed pages are told the column is closed. Below `lg` the context sheet still opens from the
   strip on records that belong to a client.
-- **Client page** (`lib/client-page.ts`, `components/relationships/ClientPageHeader.tsx`). One header on every page
-  of a client: initials, name, stage, business, the primary **Chat**, and the tabs **Overview**, **Work**,
-  **Onboarding**, **Connections**, **Files and notes**. Each tab is an existing route, so nothing new is mounted or
-  cached: Overview and Files and notes are the relationship page (two sections that both stay mounted and switch in
-  place); Work is `work/<id>`; Onboarding is `onboarding/<id>`; Connections is Client Connections with
-  `?relationship=<id>`. Work, Onboarding and the relationship page are record routes, so the shell opens each as its
-  own resident destination, exactly as their links did before; returning to one is a memory switch. The sidebar marks
-  the client on all of them.
-  - *Overview* shows the client's values, the editable details, services, engagement, links and the danger zone, with
-    a `Details` column beside them (email, phone, manager, source) that renders the context the page already loads.
-  - *Work* lists the client's open work, one line each. The server sends at most 50 rows (it sent 6); the rows were
-    already read to count them. The "Future fulfilment workspace" placeholder and its disabled archive and delete
-    buttons are gone from this layout.
-  - *Onboarding* is the existing framed onboarding record under the client header; *Connections* is the existing
-    framed connections page under it, with one added single-row read of the relationship (after the access check,
-    beside the page's two reads). Neither changed otherwise.
-  - *Chat* on a native tab asks the shell directly; on the framed Onboarding tab it sends the bridge's `client-chat`
-    message, and the shell docks the conversation where the panel is offered or opens the full conversation where it
-    is not. The Connections tab reports no client to the shell, so it has no Chat and a docked chat is not shown
-    beside it. Changing that needs the person's permission under `app-alerts.md`.
+- **Client page** (`lib/client-page.ts`, `ClientDetail` in `NativeRelationshipsPanel.tsx`; rebuilt on
+  `client-overview`, 21 November 2026, from the second version of the mockup). One header on the client's page:
+  initials, name, stage, business, the primary **Chat**, and the tabs **Overview**, **Work**, **Onboarding**,
+  **Connections**, **Files and notes**. The tabs are sections of the relationship page (`?tab=`), so the client is one
+  resident destination, switching is in place, and no frame is involved. A section the person may not open is never
+  shown, whatever the address says. Someone who cannot open the relationship page keeps the standalone pages they may
+  open (`work/<id>`, `onboarding/<id>`, Client Connections narrowed to the client), each under the same header.
+  - *Overview* has no cards. The main column is the client's values, **Next up** (the first five items of their
+    queue, one line each, leading to Work), **Services** (one line each; the name opens the service), **Engagement**
+    (three numbers with a trend line each) and the danger zone. Beside it the **Details** column holds everything about
+    the client as plain rows: the editable details, manager, source and onboarding status; **Contact** (each way to
+    reach them is a row that opens the dialog its card opened); **Activity**; and **Notes**. Narrower than 56rem the
+    Details come first. Every dialog and command is unchanged: `RelationshipServicesWorkspace` still owns them and
+    hands its parts to the page (`render`), and `RelationshipBackgroundEditor` still owns the draft and hands out its
+    fields (`RelationshipBackgroundFields`).
+  - *Work* is the client's whole queue, one line each with paging and Refresh, and the service timeline, which moved
+    here from the top of the page.
+  - *Onboarding* (`ClientOnboardingSection`) shows progress, each step with what the client submitted, the link
+    controls and, for admins, the access links. It reads `GET .../relationships/<id>/onboarding`, which follows the
+    onboarding record page step for step: the same panel check, relationship checks, list of sessions the person may
+    open and access-scoped loader (`lib/onboarding/staff-detail.ts`, moved out of the page unchanged so both use it).
+    Restarting or archiving onboarding and the client-view preview stay on the full record, linked from the section.
+  - *Connections* (`ClientConnections`) is the existing connections workspace narrowed to the client, without its
+    page frame, fed by `GET .../relationships/<id>/connections`: the same two reads as the Client Connections page,
+    behind the same panel check plus the relationship access check.
+  - *Files and notes* is the attachments block.
+  - *Chat* is on every tab, because every tab is the client's own page. The framed full records still carry the
+    header (`FramedClientPageHeader`) and ask the shell through the bridge's `client-chat` message.
+  - *Reads.* Overview, Work and Files draw on the page's own snapshot and the per-section reads the record page
+    already made (queue, services, contacts, engagement, timeline, attachments), each still triggered only when its
+    part is on screen; a hidden section reads nothing. Onboarding and Connections each make one read the first time
+    they are opened or pointed at, shared and deduplicated (`lib/client-section-read.ts`), kept while the page is
+    open, and not repeated within a minute. Nothing polls.
 - **Clients** (`ClientsTable` in `NativeRelationshipsPanel.tsx`). The relationships list as one table: client, stage,
   manager, services, open work, updated. Saved views in one rail (All, Open work, No manager, No services, then the
   service stages) are answered from the rows already read, so choosing one is instant; the address carries `?view=`,
@@ -74,14 +87,19 @@ because it lives in the shared primitives and tokens; the structure below is the
   exposes only a total, and widening it is an alerts change. The docked chat following the selected client.
 - **Still reachable, no longer in the sidebar:** the Onboarding and Client Connections lists and Admin, by address,
   search, and (Admin) Settings. The tabbed layout is unchanged in structure.
-- **Speed.** No request, subscription, timer or resident frame is added to launch, navigation or switching. Opening
-  the Clients list makes the same reads (one profile query carries manager ids too). A client's Work read returns up
-  to 44 more small rows. Connections narrowed to a client adds one single-row read. Nothing was measured signed in;
-  the pilot comparison in slice 5 still applies.
+- **Speed.** No request, subscription, timer or resident frame is added to launch, navigation or switching.
+  Opening the Clients list makes the same reads (one profile query carries manager ids too). Opening a client reads
+  its snapshot, queue, services, contacts and engagement; the timeline now waits for the Work tab and the access links
+  for the Onboarding tab, and the engagement read happens when the page opens instead of when it is scrolled to.
+  Opening Onboarding or Connections costs one request instead of a framed document. Pointing at either tab starts its
+  read early, so a read can be made for a tab the person then does not open (at most once a minute per client and
+  section). Nothing was measured signed in; the pilot comparison in slice 5 still applies.
 - **Checked:** unit tests (`tests/today-layout.test.ts`, `tests/flat-design-language.test.ts`), and
   `scripts/serve-client-rail-fixture.mjs`, which runs the real sidebar, Today sections, client header, summary, table
-  and shared primitives with synthetic data at desktop and phone width. **Not checked:** the signed-in app, the real
-  framed Onboarding and Connections pages under the header, WebKit by eye, real data volumes, a phone.
+  and shared primitives with synthetic data at desktop and phone width, including the Overview's Details column,
+  the engagement trends and the Onboarding section against synthetic reads. **Not checked:** the signed-in app; the
+  real services workspace, contact rows and Connections section inside the client page (they need the app's data and
+  server actions); the two new endpoints against real sessions and access scopes; real data volumes; a phone.
 
 ## History: the client rail (16 November 2026)
 

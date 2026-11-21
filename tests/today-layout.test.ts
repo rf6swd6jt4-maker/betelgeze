@@ -302,16 +302,22 @@ test("the Today layout has no client column at desktop width; the breadcrumb nam
     assert.match(shell, /if \(target === "clients"\) openTodayDestination\(clientsHref\)\n\s+else if \(activeClientId\) void openWorkspaceTab\(`\$\{clientsHref\}\/\$\{activeClientId\}`\)/, "both go through the shell's resident owner")
 })
 
-test("a client's page is one header with a tab for each thing of theirs", async () => {
+test("a client's page is one destination whose tabs are sections of it", async () => {
     // @ts-expect-error Node's built-in TypeScript test runner requires the source extension.
-    const { clientPageTabs, clientPageRelationshipId, clientPageActiveTab } = await import("../lib/client-page.ts")
+    const { clientPageTabs, clientPageRelationshipId, clientPageActiveTab, clientPageSection } = await import("../lib/client-page.ts")
     const id = "11111111-2222-4333-8444-555555555555"
     assert.deepEqual(clientPageTabs("acme", id, ["relationships", "onboarding", "fulfilment", "client-connections"]).map((tab: { key: string; href: string }) => [tab.key, tab.href]), [
-        ["overview", `/acme/relationships/${id}`], ["work", `/acme/work/${id}`], ["onboarding", `/acme/onboarding/${id}`],
-        ["connections", `/acme/client-connections?relationship=${id}`], ["files", `/acme/relationships/${id}?tab=files`],
-    ], "every tab is an existing route")
-    assert.deepEqual(clientPageTabs("acme", id, ["fulfilment"]).map((tab: { key: string }) => tab.key), ["work"], "a person sees only the tabs they may open")
-    assert.equal(clientPageRelationshipId(`/acme/relationships/${id}?tab=files`, "acme"), id)
+        ["overview", `/acme/relationships/${id}`], ["work", `/acme/relationships/${id}?tab=work`], ["onboarding", `/acme/relationships/${id}?tab=onboarding`],
+        ["connections", `/acme/relationships/${id}?tab=connections`], ["files", `/acme/relationships/${id}?tab=files`],
+    ], "every tab is a section of the one relationship page, so no frame and no second destination is involved")
+    assert.deepEqual(clientPageTabs("acme", id, ["onboarding", "fulfilment"]).map((tab: { key: string; href: string }) => [tab.key, tab.href]), [
+        ["work", `/acme/work/${id}`], ["onboarding", `/acme/onboarding/${id}`],
+    ], "someone who cannot open the relationship page keeps the standalone pages they may open")
+    assert.deepEqual(clientPageTabs("acme", id, ["relationships"]).map((tab: { key: string }) => tab.key), ["overview", "files"], "a person sees only the tabs they may open")
+    assert.equal(clientPageSection("onboarding"), "onboarding")
+    assert.equal(clientPageSection("nonsense"), "overview")
+    assert.equal(clientPageSection(null), "overview")
+    assert.equal(clientPageRelationshipId(`/acme/relationships/${id}?tab=connections`, "acme"), id)
     assert.equal(clientPageRelationshipId(`/acme/work/${id}`, "acme"), id)
     assert.equal(clientPageRelationshipId(`/acme/onboarding/${id}?session=${id}`, "acme"), id)
     assert.equal(clientPageRelationshipId(`/acme/client-connections?relationship=${id}`, "acme"), id)
@@ -320,37 +326,97 @@ test("a client's page is one header with a tab for each thing of theirs", async 
     assert.equal(clientPageRelationshipId(`/other/relationships/${id}`, "acme"), null)
     assert.equal(clientPageRelationshipId("/acme/relationships/not-an-id", "acme"), null)
     assert.equal(clientPageActiveTab(`/acme/relationships/${id}`, "acme"), "overview")
-    assert.equal(clientPageActiveTab(`/acme/relationships/${id}?tab=files`, "acme"), "files")
+    assert.equal(clientPageActiveTab(`/acme/relationships/${id}?tab=work`, "acme"), "work")
+    assert.equal(clientPageActiveTab(`/acme/relationships/${id}?tab=connections`, "acme"), "connections")
     assert.equal(clientPageActiveTab(`/acme/client-connections?relationship=${id}`, "acme"), "connections")
     assert.equal(clientPageActiveTab("/acme/queue", "acme"), null)
 
     const header = source("components/relationships/ClientPageHeader.tsx")
     assert.match(header, /<header data-client-page-header data-workspace-record-title=\{name\}>/, "the destination is still titled by the client's name")
-    assert.match(header, /if \(!navigation \|\| !current \|\| pathOf\(tab\.href\) !== pathOf\(current\.href\)\) return/, "only two sections of the same route switch in place; every other tab is an ordinary link the shell handles")
+    assert.match(header, /if \(!navigation \|\| !current \|\| pathOf\(tab\.href\) !== pathOf\(current\.href\)\) return/, "sections of the same route switch in place; any other link is left to the shell")
+    assert.match(header, /onPointerEnter=\{onWarm && tab\.key !== active \? \(\) => onWarm\(tab\.key\) : undefined\}/, "pointing at a tab may start its section's read")
     assert.match(header, /\{onChat \? <Button size="sm" data-client-chat onClick=\{onChat\}>Chat<\/Button> : chatHref \? <Button size="sm" data-client-chat href=\{chatHref\}>Chat<\/Button> : null\}/, "Chat is the page's one primary action; where the dock is not offered it opens the full conversation")
     assert.doesNotMatch(header, /fetch\(|router\.push|window\.location/, "it reads nothing and never navigates on its own")
 
     const page = source("components/workspace/NativeRelationshipsPanel.tsx")
     assert.match(page, /return today \? <ClientDetail data=\{data\} today=\{today\} \/> : <RelationshipDetail data=\{data\} \/>/, "only in the Today layout")
-    assert.match(page, /<div hidden=\{section !== "overview"\} data-client-section="overview"/)
-    assert.match(page, /<div hidden=\{section !== "files"\} data-client-section="files"/, "Overview and Files and notes both stay mounted, so drafts survive the switch and nothing is read again")
-    assert.match(page, /data\.context\?\.clientTabs \?\? data\.context\?\.allowedDestinations \?\? \["relationships"\]/)
-    assert.match(page, /<DetailDangerAction title="Archive client"[\s\S]*<DetailDangerAction title="Delete client permanently"/, "archive stays before delete")
-    const summary = source("components/relationships/ClientSummary.tsx")
-    assert.match(summary, /<DetailFields columns=\{1\}/, "contact, manager and source use the shared fields block, in one column beside the overview")
-    assert.doesNotMatch(summary, /<Button|relationshipContextDestinations/, "no buttons: the tabs are the way to the client's other things")
-    assert.doesNotMatch(summary, /fetch\(/, "it renders the context the page already loaded; no request is added")
+    const detail = page.slice(page.indexOf("function ClientDetail"), page.indexOf("function RelationshipDetail"))
+    assert.match(detail, /const section = may\(requested\) \? requested : "overview"/, "a section the person may not open is never shown, whatever the address says")
+    for (const key of ["overview", "work", "onboarding", "connections", "files"]) assert.match(detail, new RegExp(`<div hidden=\\{section !== "${key}"\\} data-client-section="${key}"`), `${key} is a section of this page`)
+    assert.match(detail, /\{may\("onboarding"\) && opened\.includes\("onboarding"\) \? <div hidden=/, "Onboarding is mounted the first time it is opened, then stays")
+    assert.match(detail, /\{may\("connections"\) && opened\.includes\("connections"\) \? <div hidden=/, "and so is Connections")
+    assert.match(detail, /if \(key === "onboarding"\) warmClientOnboarding\(target\); else if \(key === "connections"\) warmClientConnections\(target\)/)
+    assert.match(detail, /<RelationshipBackgroundEditor key=\{`\$\{data\.userId\}:\$\{record\.id\}:background`\} fields=\{false\}/, "the editable details are placed by the page, in its Details column")
+    assert.match(detail, /\{parts\.queue\(\{ limit: 5, onMore: may\("work"\) \? \(\) => go\("work"\) : undefined \}\)\}/, "Overview shows the next few items and leads to Work for the rest")
+    assert.match(detail, /<section aria-label="Open work"><SectionHeading>Open work<\/SectionHeading>\{parts\.queue\(\)\}<\/section>\s*<section aria-label="Timeline"><SectionHeading>Timeline<\/SectionHeading>\{parts\.timeline\}<\/section>/, "the timeline lives with the work")
+    assert.match(detail, /\{may\("work"\) \? null : <section aria-label="Timeline">/, "someone without the Work tab still sees the timeline")
+    assert.match(detail, /<DetailDangerAction title="Archive client"[\s\S]*<DetailDangerAction title="Delete client permanently"/, "archive stays before delete")
+    assert.doesNotMatch(detail, /AttachmentCard|<Card\b|rounded-xl border/, "no cards on the client page")
 
-    const work = source("components/workspace/NativeWorkPanel.tsx")
-    assert.match(work, /return today \? <ClientWork data=\{data\} today=\{today\} \/> : <WorkDetail data=\{data\} \/>/)
-    assert.match(work, /active="work"/)
-    const onboarding = source("app/[workspaceSlug]/onboarding/[relationshipId]/page.tsx")
-    assert.match(onboarding, /const today = workspaceLayoutFor\(workspace\.id, user\.id\) === "today"/)
-    assert.match(onboarding, /\{today \? <FramedClientPageHeader [\s\S]*active="onboarding"[\s\S]*: <DetailPageHeader/, "the tabbed layout keeps the record header")
-    const connections = source("app/[workspaceSlug]/client-connections/page.tsx")
-    assert.match(connections, /const clientTab = relationshipId && workspaceLayoutFor\(authorization\.workspace\.id, authorization\.user\.id\) === "today" \? relationshipId : null/, "the unfiltered page and the tabbed layout read nothing more")
-    assert.match(connections, /clientTab \? requireRelationshipAccess\(authorization\.access, clientTab\)\.then\(\(\) => getRelationship\(authorization\.workspace\.id, clientTab\)\) : null,/, "one single-row read, beside the page's own two, after the access check")
-    assert.match(connections, /active="connections" chat=\{false\}/, "this page reports no client to the shell, so it offers no docked chat")
+    const workspace = source("components/relationships/RelationshipServicesWorkspace.tsx")
+    assert.match(workspace, /return <>\{props\.render\(\{ timeline, queue, services, contacts, addService: props\.canAdd \? startAdding : undefined \}\)\}\{dialogs\}<\/>/, "the page arranges the parts; every dialog and command stays with the workspace")
+    const queue = source("components/relationships/RelationshipServiceTimeline.tsx")
+    assert.match(queue, /setVisible\(previous => compact \? previous \|\| seen : seen\)/, "the one-line queue does not read again each time its tab is shown")
+    const summary = source("components/relationships/ClientSummary.tsx")
+    assert.doesNotMatch(summary, /<Button|fetch\(|ContactLink/, "manager and source only, from the context the page already loaded")
+    const contacts = source("components/relationships/RelationshipContactCards.tsx")
+    assert.match(contacts, /<li key=\{method\}><button type="button" data-icon-button onClick=\{\(\) => open\(method\)\}/, "each way to reach the client is one row that opens the same dialog as its card did")
+})
+
+test("Onboarding and Connections each make one bounded read, behind the checks their pages make", async () => {
+    const connections = source("app/api/workspaces/[workspaceSlug]/relationships/[relationshipId]/connections/route.ts")
+    assert.match(connections, /await requireWorkspacePanel\(workspaceSlug, "client-connections"\)\n\s+if \(request\.headers\.get\("x-workspace-user"\) !== user\.id\) return Response\.json\(\{ error: "Your account changed\. Reload the page\." \}, \{ status: 409, headers \}\)\n\s+await requireRelationshipAccess\(access, relationshipId\)/, "panel, account, then this client, before anything is read")
+    assert.match(connections, /readCurrentClientConnections\(workspace\.id, user\.id, relationshipId\),\s+listWorkspaceConnections\(workspace\.id\),/, "the same two reads as the Client Connections page narrowed to a client")
+    assert.doesNotMatch(connections, /export async function (POST|PUT|PATCH|DELETE)/)
+
+    const onboarding = source("app/api/workspaces/[workspaceSlug]/relationships/[relationshipId]/onboarding/route.ts")
+    assert.match(onboarding, /await requireWorkspacePanel\(workspaceSlug, "onboarding"\)\n\s+if \(request\.headers\.get\("x-workspace-user"\) !== user\.id\)/)
+    assert.match(onboarding, /if \(!relationship \|\| \(allowedRelationshipIds && !allowedRelationshipIds\.has\(relationshipId\)\)\) return Response\.json\(\{ error: "Client not found\." \}, \{ status: 404, headers \}\)/, "a client the person may not open is not found")
+    assert.match(onboarding, /const sessionId = requested \?\? \(sessions\.length === 1 && !listed\.hasMore \? sessions\[0\]\.id : null\)/, "one session opens directly; several are listed for the person to choose, as the record page does")
+    assert.match(onboarding, /if \(requested && !listed\.hasMore && !sessions\.some\(session => session\.id === requested\)\) return Response\.json\(\{ error: "Onboarding session not found\." \}, \{ status: 404, headers \}\)/, "a named session must be one the person is offered")
+    assert.match(onboarding, /const data = startOnboardingDetailData\(\{/, "the same access-scoped loader as the record page")
+    assert.match(onboarding, /canOpenCompleteClientSession: !fullyAllowedRelationshipIds \|\| fullyAllowedRelationshipIds\.has\(relationship\.id\),/)
+    assert.match(onboarding, /const mayCopy = Boolean\(activity\.onboardingUrl\) && \(\(session\.status !== "archived" && activity\.canManage\) \|\| \(!session\.token_revoked_at && activity\.canOpenCompleteClientSession\)\)/, "the link is returned only where the record page shows or manages it")
+    assert.doesNotMatch(onboarding, /export async function (POST|PUT|PATCH|DELETE)|session_token/, "read-only, and the raw token never leaves the loader")
+    const record = source("app/[workspaceSlug]/onboarding/[relationshipId]/page.tsx")
+    assert.match(record, /startOnboardingDetailData[^\n]* from "@\/lib\/onboarding\/staff-detail"/, "the record page reads through the same module")
+
+    // @ts-expect-error Node's built-in TypeScript test runner requires the source extension.
+    const { onboardingAnswerText } = await import("../lib/onboarding/staff-detail-view.ts")
+    assert.equal(onboardingAnswerText(["a", "b"]), "2 uploaded files")
+    assert.equal(onboardingAnswerText(["a"]), "1 uploaded file")
+    assert.equal(onboardingAnswerText("  Leeds "), "Leeds")
+    assert.equal(onboardingAnswerText(""), "No answer provided")
+
+    // The shared section read: one request however many places show it, nothing repeated while fresh, and a failed
+    // later read keeps what was already shown.
+    // @ts-expect-error Node's built-in TypeScript test runner requires the source extension.
+    const { createSectionRead } = await import("../lib/client-section-read.ts")
+    const original = globalThis.fetch
+    let calls = 0, fail = false
+    globalThis.fetch = (async (_url: string, init: { headers: Record<string, string> }) => {
+        calls++
+        assert.equal(init.headers["x-workspace-user"], "user-1")
+        return fail ? new Response(JSON.stringify({ error: "nope" }), { status: 503 }) : new Response(JSON.stringify({ value: calls }), { status: 200 })
+    }) as unknown as typeof fetch
+    try {
+        const store = createSectionRead((_response: Response, body: { error?: string } | null) => body?.error ?? "failed")
+        let notified = 0
+        const stop = store.subscribe("k", () => { notified++ })
+        await Promise.all([store.read("k", "/x", "user-1"), store.read("k", "/x", "user-1")])
+        assert.equal(calls, 1, "two consumers share one request")
+        assert.deepEqual(store.snapshot("k"), { data: { value: 1 }, error: null, loading: false })
+        await store.read("k", "/x", "user-1")
+        assert.equal(calls, 1, "a fresh answer is not read again")
+        fail = true
+        await store.read("k", "/x", "user-1", true)
+        assert.equal(calls, 2)
+        assert.deepEqual(store.snapshot("k"), { data: { value: 1 }, error: "nope", loading: false }, "what was shown stays shown when a later read fails")
+        assert.ok(notified >= 3)
+        stop()
+    } finally { globalThis.fetch = original }
+    const hook = source("components/relationships/useClientSection.ts")
+    assert.doesNotMatch(hook + source("lib/client-section-read.ts"), /setInterval|setTimeout\(/, "nothing polls")
 })
 
 test("a framed client page asks the shell for Chat, and the shell decides where it opens", () => {

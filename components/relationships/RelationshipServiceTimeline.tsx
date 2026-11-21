@@ -3,7 +3,7 @@ import dynamic from "next/dynamic"
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useWorkspaceNavigation } from "@/components/workspace/WorkspaceNavigation"
 import { Assignee, RoundPill, Status } from "@/components/ui"
-import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle, ListTrailing } from "@/components/list/List"
+import { List, ListItem, ListPrimaryRow, ListRow, ListSecondaryRow, ListTitle, ListTrailing } from "@/components/list/List"
 import { DetailContentLoading } from "@/components/detail"
 import type { RelationshipGanttPlan } from "@/lib/relationship-gantt"
 import type { RelationshipServiceRow } from "@/lib/service-stages"
@@ -25,12 +25,16 @@ async function get<T>(endpoint: string, userId: string, signal: AbortSignal): Pr
 function Paging({ page, hasMore, change }: {page:number;hasMore:boolean;change:(n:number)=>void}) {
     return page || hasMore ? <div className="mt-2 flex items-center justify-between gap-3 text-sm"><button disabled={!page} className="min-h-11 px-2 disabled:opacity-40" onClick={() => change(page-1)}>Previous</button><span className="text-neutral-500">Page {page+1}</span><button disabled={!hasMore} className="min-h-11 px-2 disabled:opacity-40" onClick={() => change(page+1)}>Next</button></div> : null
 }
-type RelationshipQueueProps = {endpoint:string;slug:string;relationshipId:string;userId:string;revision:unknown;publishedQueue?:RelationshipQueuePage|null;onGeneration?:(instanceId:string)=>void}
+type RelationshipQueueProps = {endpoint:string;slug:string;relationshipId:string;userId:string;revision:unknown;publishedQueue?:RelationshipQueuePage|null;onGeneration?:(instanceId:string)=>void
+    /** The client page's form: one line per item on the page itself, with no pane, heading or pills. */
+    compact?:boolean
+    /** With `compact`: show only the first items, and offer `onMore` when there are others. */
+    limit?:number;onMore?:()=>void}
 export function RelationshipQueue(props: RelationshipQueueProps) {
     // A different account or destination must never inherit the preceding queue.
     return <RelationshipQueueContent key={`${props.userId}:${props.endpoint}`} {...props} />
 }
-function RelationshipQueueContent({ endpoint, slug, relationshipId, userId, revision, publishedQueue, onGeneration }: RelationshipQueueProps) {
+function RelationshipQueueContent({ endpoint, slug, relationshipId, userId, revision, publishedQueue, onGeneration, compact = false, limit, onMore }: RelationshipQueueProps) {
     const active = useWorkspaceNavigation()?.active ?? true
     const host = useRef<HTMLDivElement>(null)
     const inFlight = useRef<AbortController | null>(null)
@@ -48,7 +52,9 @@ function RelationshipQueueContent({ endpoint, slug, relationshipId, userId, revi
         if (run && onGeneration) { presented.current.add(run.instance_id); onGeneration(run.instance_id) }
     }, [data, onGeneration])
     if (publishedQueue !== receivedQueue) { setReceivedQueue(publishedQueue); if (publishedQueue) { setData(publishedQueue); setPage(0); setError("") } }
-    useEffect(() => { const observer = new IntersectionObserver(entries => { setVisible(entries.some(e => e.isIntersecting)) },{rootMargin:"160px"}); if(host.current)observer.observe(host.current); return () => observer.disconnect() },[])
+    // The pane re-reads each time it scrolls back into view. The compact form sits in a tab that is shown and hidden
+    // as the person moves between sections, so it stays "seen" and does not read again on every return.
+    useEffect(() => { const observer = new IntersectionObserver(entries => { const seen = entries.some(e => e.isIntersecting); setVisible(previous => compact ? previous || seen : seen) },{rootMargin:"160px"}); if(host.current)observer.observe(host.current); return () => observer.disconnect() },[compact])
     useEffect(() => {
         if(!visible || !active)return
         const controller = new AbortController()
@@ -63,6 +69,26 @@ function RelationshipQueueContent({ endpoint, slug, relationshipId, userId, revi
     },[endpoint,userId,page,revision,visible,active,retry,publishedQueue])
     useEffect(() => {if(typeof BroadcastChannel === "undefined")return;const channel=new BroadcastChannel(ganttSyncChannelName(slug));channel.onmessage=()=>setRetry(n=>n+1);return()=>channel.close()},[slug])
     const refresh = () => { if (!inFlight.current) setRetry(n => n + 1) }
+    if (compact) {
+        const shown = data ? limit ? data.items.slice(0, limit) : data.items : []
+        return <div ref={host} aria-label="Relationship work queue" data-client-queue={limit ? "next" : "all"}>
+            {error ? <p role="alert" className="py-2 text-sm text-red-200">{error}<button type="button" disabled={!active || refreshing} className="ml-2 min-h-11 underline disabled:opacity-50" onClick={refresh}>Retry</button></p> : null}
+            {!data ? !error ? <p role="status" className="py-2 text-sm text-neutral-500">Loading work…</p> : null : <>
+                {shown.length ? <List flush ariaLabel="Open work">{shown.map(item => {
+                    const href = item.workflow_action === "sell_client" ? `/${slug}/relationships/${relationshipId}/pos` : `/${slug}/work-items/${item.id}`
+                    return <ListItem key={item.id}><ListRow>
+                        <ListTitle href={href} className="flex-1">{item.title}</ListTitle>
+                        {item.services[0] ? <span className="hidden min-w-0 max-w-[11rem] shrink truncate text-neutral-500 md:inline">{item.services[0]}{item.services.length > 1 ? ` +${item.services.length - 1}` : ""}</span> : null}
+                        <span className="hidden shrink-0 sm:inline-flex">{item.assignees[0] ? <Assignee name={item.assignees[0].username} userId={item.assignees[0].userId} />  : <span className="text-neutral-600">Unassigned</span>}</span>
+                        {item.due_date ? <span className="hidden shrink-0 tabular-nums text-neutral-500 lg:inline">Due {new Date(`${item.due_date}T12:00:00`).toLocaleDateString("en-IE",{day:"numeric",month:"short"})}</span> : null}
+                        <Status label={item.queue_state} tone={item.queue_state === "Blocked" ? "red" : ["Waiting","Scheduled"].includes(item.queue_state) ? "yellow" : "green"} className="shrink-0 text-[13px]!" />
+                    </ListRow></ListItem>
+                })}</List> : <p className="py-2 text-sm text-neutral-400">No open work for this client.</p>}
+                {limit ? onMore && (data.items.length > limit || data.hasMore) ? <p className="pt-2"><button type="button" data-icon-button onClick={onMore} className="text-[13px] text-neutral-400 hover:text-neutral-100">All work</button></p> : null
+                    : <div className="flex items-center justify-between gap-3"><Paging page={page} hasMore={data.hasMore} change={next=>{setPage(next);setData(null)}} /><button type="button" disabled={!active || refreshing} onClick={refresh} className="ml-auto min-h-11 text-[13px] text-neutral-400 hover:text-neutral-100 disabled:opacity-50 sm:min-h-8"><span aria-live="polite">{refreshing ? "Refreshing…" : "Refresh"}</span></button></div>}
+            </>}
+        </div>
+    }
     return <div ref={host} className="flex h-full min-h-0 flex-col" aria-label="Relationship work queue"><div className="mb-3 flex shrink-0 items-center justify-between gap-3"><h2 className="text-base font-semibold">Queue</h2><button type="button" disabled={!active || !data || refreshing} onClick={refresh} className="min-h-11 text-sm text-neutral-400 hover:text-white disabled:opacity-50"><span aria-live="polite">{refreshing ? "Refreshing…" : "Refresh queue"}</span></button></div>
 
         {error ? <p role="alert" className="py-2 text-sm text-red-200">{error}<button type="button" disabled={!active || refreshing} className="ml-2 min-h-11 underline disabled:opacity-50" onClick={refresh}>Retry</button></p> : null}

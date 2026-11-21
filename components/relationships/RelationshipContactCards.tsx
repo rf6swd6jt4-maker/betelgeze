@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, useTransition } from "react"
 import { AttachmentCard, AttachmentCards, AddAttachmentCard, Button, CenteredDialog, Status } from "@/components/ui"
 import { CommunicationMethodMark } from "@/components/ui/CommunicationMethod"
 import { List, ListItem, ListPrimaryRow, ListTitle } from "@/components/list/List"
+import { SectionHeading } from "@/components/detail"
 import { useRelationshipBackground } from "./RelationshipBackgroundEditor"
 import { useRouter, useWorkspaceNavigation } from "@/components/workspace/WorkspaceNavigation"
 import { attachRelationshipContact, requestRelationshipContactConfirmation } from "@/app/[workspaceSlug]/relationships/contact-actions"
@@ -14,8 +15,10 @@ const inputClass = "mt-2 min-h-11 w-full rounded-lg border border-neutral-700 bg
 export function ContactThumbnail({ method }: { method: Method }) {
     return <span className="flex h-full w-full items-center justify-center">{method === "meta_whatsapp" || method === "twilio_sms" || method === "phone" ? <CommunicationMethodMark method={method} size="lg" /> : <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="block h-8 w-8">{method === "email" ? <><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 6 9 7 9-7"/></> : <><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/></>}</svg>}</span>
 }
-export function RelationshipContactCards({ workspaceSlug, relationshipId, userId, revision, canAdd }: {
+export function RelationshipContactCards({ workspaceSlug, relationshipId, userId, revision, canAdd, rows = false }: {
     workspaceSlug: string; relationshipId: string; userId: string; revision: unknown; canAdd: boolean
+    /** The client page's Details column: each way to reach the client is one property row that opens the same dialog. */
+    rows?: boolean
 }) {
     const background = useRelationshipBackground()
     const router = useRouter()
@@ -66,8 +69,26 @@ export function RelationshipContactCards({ workspaceSlug, relationshipId, userId
             } catch (error) { setNotice(error instanceof Error ? error.message : "Contact could not be saved.") }
         })
     }
-    return <section ref={host} className="mt-6" aria-label="Relationship contacts"><h2 className="mb-3 text-base font-semibold">Contact</h2>
-        <AttachmentCards label="Contact methods" compact>{methods.map(method => { const choice = choices.find(choice => choice.provider === method); const broken = choice?.state === "broken" || method === "portal" && !data?.portal?.active; return <AttachmentCard compact key={method} title={contactMethodName(method)} thumbnail={<ContactThumbnail method={method} />} inactive={choice?.state === "inactive"} broken={broken} subtitle={method === "email" ? background.draft.primaryEmail : method === "phone" ? background.draft.primaryPhone : method === "portal" ? broken ? "Unavailable" : "Client access" : choice?.state === "active" ? "Confirmed" : broken ? "Needs attention" : "Not confirmed"} onClick={() => open(method)} /> })}{canAdd ? <AddAttachmentCard compact label="Add contact" onClick={() => open("add")} /> : null}</AttachmentCards>
+    const describe = (method: Method) => {
+        const choice = choices.find(choice => choice.provider === method)
+        const broken = choice?.state === "broken" || method === "portal" && !data?.portal?.active
+        return { choice, broken }
+    }
+    return <section ref={host} className={rows ? undefined : "mt-6"} aria-label="Relationship contacts" data-client-contacts={rows ? "" : undefined}>{rows ? <>
+        <SectionHeading action={canAdd ? <button type="button" data-icon-button onClick={() => open("add")} className="text-[13px] text-neutral-400 outline-none hover:text-neutral-100 focus-visible:underline">Add</button> : null}>Contact</SectionHeading>
+        {methods.length ? <ul className="flex flex-col">{methods.map(method => {
+            const { choice, broken } = describe(method)
+            const value = method === "email" ? background.draft.primaryEmail : method === "phone" ? background.draft.primaryPhone : null
+            return <li key={method}><button type="button" data-icon-button onClick={() => open(method)} title={value ?? undefined}
+                className="-mx-1 grid min-h-9 w-[calc(100%+0.5rem)] grid-cols-[5.5rem_minmax(0,1fr)] items-center gap-2 rounded-md px-1 py-1.5 text-left text-sm outline-none hover:bg-[var(--color-surface-hover)] focus-visible:bg-[var(--color-surface-hover)]">
+                <span className="text-neutral-500">{contactMethodName(method)}</span>
+                {value ? <span className="min-w-0 truncate text-neutral-200">{value}</span>
+                    : method === "portal" ? <Status label={broken ? "Unavailable" : "Client access"} tone={broken ? "red" : "green"} />
+                    : <Status label={choice?.state === "active" ? "Confirmed" : broken ? "Needs attention" : "Not confirmed"} tone={choice?.state === "active" ? "green" : broken ? "red" : "grey"} />}
+            </button></li>
+        })}</ul> : data ? <p className="py-1.5 text-sm text-neutral-500">No way to reach this client yet.</p> : null}
+    </> : <><h2 className="mb-3 text-base font-semibold">Contact</h2>
+        <AttachmentCards label="Contact methods" compact>{methods.map(method => { const choice = choices.find(choice => choice.provider === method); const broken = choice?.state === "broken" || method === "portal" && !data?.portal?.active; return <AttachmentCard compact key={method} title={contactMethodName(method)} thumbnail={<ContactThumbnail method={method} />} inactive={choice?.state === "inactive"} broken={broken} subtitle={method === "email" ? background.draft.primaryEmail : method === "phone" ? background.draft.primaryPhone : method === "portal" ? broken ? "Unavailable" : "Client access" : choice?.state === "active" ? "Confirmed" : broken ? "Needs attention" : "Not confirmed"} onClick={() => open(method)} /> })}{canAdd ? <AddAttachmentCard compact label="Add contact" onClick={() => open("add")} /> : null}</AttachmentCards></>}
         {!data && !error ? <p className="mt-2 text-xs text-neutral-500">Checking connections…</p> : null}
         {error ? <p role="alert" className="mt-2 text-sm text-red-300">{error} <button className="min-h-11 underline" onClick={() => setRetry(value => value + 1)}>Retry</button></p> : null}
         {opened ? <CenteredDialog title={opened === "add" ? "Add contact" : contactMethodName(opened)} busy={busy} onClose={() => { setOpened(null); void background.flush().catch(() => {}) }}>

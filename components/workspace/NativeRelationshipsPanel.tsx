@@ -5,7 +5,10 @@ import { ArchiveRelationshipForm } from "@/app/[workspaceSlug]/relationships/[re
 import { RelationshipServicesWorkspace } from "@/components/relationships/RelationshipServicesWorkspace"
 import { RecordAttachments } from "@/components/detail/RecordAttachments"
 import { RelationshipLinks } from "@/components/relationships/RelationshipLinks"
-import { RelationshipBackgroundEditor } from "@/components/relationships/RelationshipBackgroundEditor"
+import { RelationshipBackgroundEditor, RelationshipBackgroundFields } from "@/components/relationships/RelationshipBackgroundEditor"
+import { ClientActivity, ClientEngagementTrends, ClientOnboardingStatus } from "@/components/relationships/ClientEngagement"
+import { ClientConnections, warmClientConnections } from "@/components/relationships/ClientConnections"
+import { ClientOnboardingSection, warmClientOnboarding } from "@/components/relationships/ClientOnboarding"
 import { RelationshipEngagement } from "@/components/relationships/RelationshipEngagement"
 import { DetailDangerAction, DetailDangerButton, DetailDangerZone, DetailPageHeader, SectionHeading } from "@/components/detail"
 import { ListActionMenu, type ListAction } from "@/components/list/ListActionMenu"
@@ -21,7 +24,7 @@ import { Assignee, Button, RelationshipStage, RoundPill, SquarePill, Status } fr
 import { ClientPageHeader } from "@/components/relationships/ClientPageHeader"
 import { ClientSummary } from "@/components/relationships/ClientSummary"
 import Link from "./WorkspaceLink"
-import { clientPageTabs } from "@/lib/client-page"
+import { clientPageSection, clientPageTabs, type ClientPageTabKey } from "@/lib/client-page"
 import { clientInitials } from "@/lib/client-rail"
 import { serializeWorkspaceDetailPreview } from "@/lib/workspace-detail-preview"
 import { RELATIONSHIP_PHASES, type RelationshipPhase } from "@/lib/relationship-phases"
@@ -29,7 +32,7 @@ import { SERVICE_STAGES } from "@/lib/service-stages"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import type { NativeRelationshipsSnapshot } from "@/lib/workspace-native-relationships"
 import { useSearchParams, useWorkspaceNavigation } from "./WorkspaceNavigation"
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { useTodayLayout } from "./TodayLayout"
 
 type ListSnapshot = Extract<NativeRelationshipsSnapshot, { kind: "relationships" }>
@@ -159,40 +162,84 @@ function ClientsTable({ data }: { data: ListSnapshot }) {
 }
 
 /**
- * Today layout: the client's page. Overview and Files and notes are two sections of this one route, so both stay
- * mounted and switching between them reads nothing and keeps drafts. The client's other tabs are their own routes.
+ * Today layout: the client's page. Its five tabs are sections of this one route, so the client is a single resident
+ * destination and switching tabs is in place. Overview, Work and Files draw on what the page already reads; Onboarding
+ * and Connections each make one read the first time they are opened (or pointed at) and then stay mounted. Nothing a
+ * hidden section shows is read while it is hidden. See docs/today-layout.md, "Client page".
  */
 function ClientDetail({ data, today }: { data: DetailSnapshot; today: NonNullable<ReturnType<typeof useTodayLayout>> }) {
     const record = data.record
-    const section = useSearchParams().get("tab") === "files" ? "files" : "overview"
-    const chatTitle = record.businessName?.trim() || record.name
+    const navigation = useWorkspaceNavigation()
+    const requested = clientPageSection(useSearchParams().get("tab"))
     const tabs = clientPageTabs(data.workspaceSlug, record.id, data.context?.clientTabs ?? data.context?.allowedDestinations ?? ["relationships"])
+    const may = (key: ClientPageTabKey) => tabs.some(tab => tab.key === key)
+    // A section the person may not open is never shown, whatever the address says.
+    const section = may(requested) ? requested : "overview"
+    const [opened, setOpened] = useState<readonly ClientPageTabKey[]>([section])
+    if (!opened.includes(section)) setOpened([...opened, section])
+    const target = { workspaceSlug: data.workspaceSlug, relationshipId: record.id, userId: data.userId }
+    const go = (key: ClientPageTabKey) => { const tab = tabs.find(entry => entry.key === key); if (tab) navigation?.push(tab.href) }
+    const warm = (key: ClientPageTabKey) => { if (key === "onboarding") warmClientOnboarding(target); else if (key === "connections") warmClientConnections(target) }
+    const chatTitle = record.businessName?.trim() || record.name
     const chat = today.chat
+    const quietAction = "text-[13px] text-neutral-400 outline-none hover:text-neutral-100 focus-visible:underline"
     return <main className="min-h-full bg-neutral-950 px-4 pb-10 pt-5 text-white sm:px-7"><div className="@container mx-auto max-w-[84rem]">
-        <ClientPageHeader name={record.name} business={record.businessName} phase={record.phase} isTest={record.isTest} tabs={tabs} active={section}
+        <ClientPageHeader name={record.name} business={record.businessName} phase={record.phase} isTest={record.isTest} tabs={tabs} active={section} onWarm={warm}
             onChat={chat ? () => chat({ id: record.id, title: chatTitle }) : undefined}
             chatHref={`/${encodeURIComponent(data.workspaceSlug)}/communications?mode=clients&conversation=${encodeURIComponent(record.id)}`} />
-        <div hidden={section !== "overview"} data-client-section="overview" className="grid gap-x-10 gap-y-6 pt-5 @4xl:grid-cols-[minmax(0,1fr)_19rem]">
-            <div className="order-last min-w-0 @4xl:order-none">
-                <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm font-medium text-neutral-200"><RelationshipValues values={data.services.values} showAllTime={data.canImport} workspaceSlug={data.workspaceSlug} relationshipId={record.id} userId={data.userId} /></div>
-                <RelationshipBackgroundEditor key={`${data.userId}:${record.id}:background`} workspaceSlug={data.workspaceSlug} relationshipId={record.id} userId={data.userId} initial={data.background} updatedAt={record.updatedAt} canEdit={data.canEdit} commandsEnabled={data.backgroundCommandsEnabled}>
-                    <RelationshipServicesWorkspace key={`${data.userId}:${record.id}:services`} workspaceSlug={data.workspaceSlug} relationshipId={record.id} userId={data.userId} initial={data.services} canAdd={data.canAdd} canImport={data.canImport} canSeeHistory={data.canSeeHistory} legacy={data.legacy} />
-                    <RelationshipEngagement key={`${data.userId}:${record.id}:engagement`} workspaceSlug={data.workspaceSlug} relationshipId={record.id} userId={data.userId} />
-                    {data.canArchive ? <RelationshipLinks key={`${data.userId}:${record.id}:links`} workspaceSlug={data.workspaceSlug} relationshipId={record.id} userId={data.userId} /> : null}
-                </RelationshipBackgroundEditor>
-                {data.canArchive ? <DetailDangerZone>
-                    <DetailDangerAction title="Archive client" description="Removes them from active client lists and WhatsApp confirmation matching while preserving billing records, messages, and other history." control={<ArchiveRelationshipForm action={archiveRelationshipForNativePanel.bind(null, data.workspaceSlug, record.id)} relationshipName={record.businessName ?? record.name} />} />
-                    <DetailDangerAction title="Delete client permanently" description="Permanent deletion will be enabled after the shared archive lifecycle and dependent-record safeguards are implemented." control={<DetailDangerButton type="button" tone="delete" disabled>Delete permanently</DetailDangerButton>} />
-                </DetailDangerZone> : null}
+        <RelationshipBackgroundEditor key={`${data.userId}:${record.id}:background`} fields={false} workspaceSlug={data.workspaceSlug} relationshipId={record.id} userId={data.userId} initial={data.background} updatedAt={record.updatedAt} canEdit={data.canEdit} commandsEnabled={data.backgroundCommandsEnabled}>
+            <RelationshipServicesWorkspace key={`${data.userId}:${record.id}:services`} workspaceSlug={data.workspaceSlug} relationshipId={record.id} userId={data.userId} initial={data.services} canAdd={data.canAdd} canImport={data.canImport} canSeeHistory={data.canSeeHistory} legacy={data.legacy} render={parts => <>
+                <div hidden={section !== "overview"} data-client-section="overview" className="grid gap-x-10 gap-y-8 pt-5 @4xl:grid-cols-[minmax(0,1fr)_19rem]">
+                    <div className="order-last flex min-w-0 flex-col gap-8 @4xl:order-none">
+                        <div className="flex flex-wrap gap-x-6 gap-y-2 text-sm font-medium text-neutral-200"><RelationshipValues values={data.services.values} showAllTime={data.canImport} workspaceSlug={data.workspaceSlug} relationshipId={record.id} userId={data.userId} /></div>
+                        <section aria-label="Next up">
+                            <SectionHeading action={may("work") ? <button type="button" data-icon-button onClick={() => go("work")} className={quietAction}>All work</button> : null}>Next up</SectionHeading>
+                            {parts.queue({ limit: 5, onMore: may("work") ? () => go("work") : undefined })}
+                        </section>
+                        <section aria-label="Services">
+                            <SectionHeading action={parts.addService ? <button type="button" data-icon-button onClick={parts.addService} className={quietAction}>Add service</button> : null}>Services</SectionHeading>
+                            {parts.services}
+                        </section>
+                        <section aria-label="Engagement">
+                            <SectionHeading>Engagement, last 14 days</SectionHeading>
+                            <ClientEngagementTrends {...target} />
+                        </section>
+                        {/* Someone without the Work tab still sees the timeline, here. */}
+                        {may("work") ? null : <section aria-label="Timeline"><SectionHeading>Timeline</SectionHeading>{parts.timeline}</section>}
+                        {data.canArchive && !may("onboarding") ? <RelationshipLinks rows key={`${data.userId}:${record.id}:links`} workspaceSlug={data.workspaceSlug} relationshipId={record.id} userId={data.userId} /> : null}
+                        {data.canArchive ? <DetailDangerZone>
+                            <DetailDangerAction title="Archive client" description="Removes them from active client lists and WhatsApp confirmation matching while preserving billing records, messages, and other history." control={<ArchiveRelationshipForm action={archiveRelationshipForNativePanel.bind(null, data.workspaceSlug, record.id)} relationshipName={record.businessName ?? record.name} />} />
+                            <DetailDangerAction title="Delete client permanently" description="Permanent deletion will be enabled after the shared archive lifecycle and dependent-record safeguards are implemented." control={<DetailDangerButton type="button" tone="delete" disabled>Delete permanently</DetailDangerButton>} />
+                        </DetailDangerZone> : null}
+                    </div>
+                    <aside aria-label="Client details" className="flex min-w-0 flex-col gap-6">
+                        <div>
+                            <SectionHeading>Details</SectionHeading>
+                            <RelationshipBackgroundFields compact part="fields" />
+                            {data.context ? <ClientSummary context={data.context} /> : null}
+                            <ClientOnboardingStatus {...target} onOpen={may("onboarding") ? () => go("onboarding") : undefined} />
+                        </div>
+                        {parts.contacts}
+                        <div><SectionHeading>Activity</SectionHeading><ClientActivity {...target} /></div>
+                        <div><SectionHeading>Notes</SectionHeading><RelationshipBackgroundFields compact part="notes" /></div>
+                    </aside>
+                </div>
+                {may("work") ? <div hidden={section !== "work"} data-client-section="work" className="flex flex-col gap-8 pt-5">
+                    <section aria-label="Open work"><SectionHeading>Open work</SectionHeading>{parts.queue()}</section>
+                    <section aria-label="Timeline"><SectionHeading>Timeline</SectionHeading>{parts.timeline}</section>
+                </div> : null}
+            </>} />
+            {may("onboarding") && opened.includes("onboarding") ? <div hidden={section !== "onboarding"} data-client-section="onboarding" className="flex flex-col gap-8 pt-5">
+                <ClientOnboardingSection {...target} />
+                {data.canArchive ? <RelationshipLinks rows key={`${data.userId}:${record.id}:links`} workspaceSlug={data.workspaceSlug} relationshipId={record.id} userId={data.userId} /> : null}
+            </div> : null}
+            {may("connections") && opened.includes("connections") ? <div hidden={section !== "connections"} data-client-section="connections" className="pt-5">
+                <ClientConnections {...target} />
+            </div> : null}
+            <div hidden={section !== "files"} data-client-section="files" className="pt-1">
+                <RecordAttachments key={`${data.userId}:${record.id}:attachments`} workspaceSlug={data.workspaceSlug} userId={data.userId} owner="relationship" ownerId={record.id} canEdit={data.canArchive} />
             </div>
-            {data.context ? <aside className="min-w-0">
-                <SectionHeading>Details</SectionHeading>
-                <ClientSummary context={data.context} />
-            </aside> : null}
-        </div>
-        <div hidden={section !== "files"} data-client-section="files" className="pt-1">
-            <RecordAttachments key={`${data.userId}:${record.id}:attachments`} workspaceSlug={data.workspaceSlug} userId={data.userId} owner="relationship" ownerId={record.id} canEdit={data.canArchive} />
-        </div>
+        </RelationshipBackgroundEditor>
     </div></main>
 }
 

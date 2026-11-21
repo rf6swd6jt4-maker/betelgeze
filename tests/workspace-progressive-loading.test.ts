@@ -89,7 +89,8 @@ test("relationship detail streams the light service view and loads the legacy ti
 
 test("detail bootstrap queries share access reads and defer editor-only choices", () => {
     const access = source("lib/workspace-access.ts")
-    const onboarding = source("app/[workspaceSlug]/onboarding/[relationshipId]/page.tsx")
+    // The record's page plus the data module it reads through (lib/onboarding/staff-detail.ts).
+    const onboarding = source("app/[workspaceSlug]/onboarding/[relationshipId]/page.tsx") + source("lib/onboarding/staff-detail.ts")
     const workItem = source("app/[workspaceSlug]/work-items/[id]/page.tsx")
     const workItemFields = source("app/[workspaceSlug]/work-items/[id]/InlineWorkItemFields.tsx")
     const editorOptions = source("app/api/workspaces/[workspaceSlug]/work-items/[id]/editor-options/route.ts")

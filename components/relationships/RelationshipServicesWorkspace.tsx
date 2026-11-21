@@ -1,11 +1,11 @@
 "use client"
 import { ServicePriceSummary } from "@/components/services/ServicePriceSummary"
 import { servicePricingText } from "@/lib/service-pricing"
-import { useEffect, useRef, useState, useTransition, type FormEvent } from "react"
+import { useEffect, useRef, useState, useTransition, type FormEvent, type ReactNode } from "react"
 import dynamic from "next/dynamic"
 import { useRouter, useSearchParams, useWorkspaceNavigation } from "@/components/workspace/WorkspaceNavigation"
 import { AssignmentSelector, Button, Selector, AttachmentCards, AttachmentCard, AddAttachmentCard, CenteredDialog, ServiceStage, RoundPill, Status } from "@/components/ui"
-import { List, ListItem, ListPrimaryRow, ListSecondaryRow } from "@/components/list/List"
+import { List, ListItem, ListPrimaryRow, ListRow, ListSecondaryRow } from "@/components/list/List"
 import { SopWorkProgress } from "@/components/sops/SopWorkProgress"
 import type { RelationshipQueuePage } from "@/lib/relationship-service-plan"
 import { RelationshipServiceTimeline, RelationshipQueue } from "./RelationshipServiceTimeline"
@@ -26,7 +26,19 @@ import { runWorkspaceMutation } from "@/lib/workspace-mutations"
 const ServiceTeam = dynamic(() => import("./ServiceTeam").then(module => module.ServiceTeam), { ssr: false })
 const ServiceTransferDialog = dynamic(() => import("./ServiceTransferDialog").then(module => module.ServiceTransferDialog), { ssr: false })
 
-type Props = { workspaceSlug: string; relationshipId: string; userId: string; initial: RelationshipServicePage; canAdd: boolean; canImport: boolean; canSeeHistory: boolean; legacy: boolean }
+/** The workspace's parts, for a page that places them itself. Every dialog and command stays with the workspace. */
+export type ServicesWorkspaceParts = {
+    timeline: ReactNode
+    /** The client's open work, one line each. With `limit` it shows the first few and offers `onMore`. */
+    queue: (options?: { limit?: number; onMore?: () => void }) => ReactNode
+    services: ReactNode
+    contacts: ReactNode
+    /** Opens Add service; absent when the person may not add one. */
+    addService?: () => void
+}
+type Props = { workspaceSlug: string; relationshipId: string; userId: string; initial: RelationshipServicePage; canAdd: boolean; canImport: boolean; canSeeHistory: boolean; legacy: boolean
+    /** The client page (Today layout) lays the parts out across its Overview and Work sections. Without it the workspace keeps its own arrangement. */
+    render?: (parts: ServicesWorkspaceParts) => ReactNode }
 const inputClass = "min-h-11 w-full rounded-lg border border-neutral-700 bg-black px-3 py-2 text-base text-white sm:text-sm"
 async function read<T>(url: string, signal?: AbortSignal, userId?: string): Promise<T> {
     const response = await fetch(url, { signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(30000)]) : AbortSignal.timeout(30000), cache: "no-store", credentials: "same-origin", headers: userId ? { "x-workspace-user": userId } : undefined })
@@ -214,17 +226,8 @@ export function RelationshipServicesWorkspace(props: Props) {
     function saved(queue?: RelationshipQueuePage) { if (queue) setPublishedQueue(queue); setGenerating(false); setResumedGeneration(null); setAdding(false); setEditing(null); setOpened(null); setCanceling(null); setTransferring(null); setRetry(value => value + 1); router.refresh() }
     function closePos() { setPos(null); if (search.has("sell")) { const next = new URLSearchParams(search.toString()); next.delete("sell"); router.replace(`/${props.workspaceSlug}/relationships/${props.relationshipId}${next.size ? `?${next}` : ""}`) } }
     const requestedPos = pos ?? search.get("sell")
-    return <section className="mt-5" aria-label="Relationship services and work">
-        <RelationshipServiceTimeline endpoint={endpoint} workspaceSlug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} revision={props.initial} canEdit={props.canImport} canEditService={() => true} onEditService={row => setOpened(cards.items.find(card => card.id === row.id) ?? row)} />
-        <div className="mt-5 grid min-w-0 gap-x-6 gap-y-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(18rem,1fr)]">
-            <div className="relative h-[25.5rem] min-w-0 pt-6 xl:h-auto xl:min-h-0"><div className="h-full xl:absolute xl:inset-0 xl:pt-6"><RelationshipQueue endpoint={endpoint} slug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} revision={props.initial} publishedQueue={publishedQueue} onGeneration={resumeGeneration} /></div>
-            </div>
-            <div className="min-w-0"><section ref={host} className="mt-6" aria-label="Assigned services"><h2 className="mb-3 text-base font-semibold">Services</h2>
-                <AttachmentCards label="Assigned services" compact>{cards.items.map(row => <AttachmentCard compact thumbnailFit="contain" key={row.id} title={row.name} thumbnail={<ServiceThumbnail service={row} />} inactive={row.disposition === "cancelled" || ["negotiating", "declined", "for_later"].includes(row.stage ?? "")} subtitle={row.disposition === "cancelled" ? "Cancelled" : SERVICE_STAGES.find(stage => stage.key === row.stage)?.label ?? "Review needed"} onClick={() => setOpened(row)} />)}{props.canAdd ? <AddAttachmentCard compact label="Add service" onClick={() => { setGenerating(false); setAdding(true) }} /> : null}</AttachmentCards>
-                {error ? <p role="alert" className="mt-2 text-sm text-red-300">{error} <button className="min-h-11 underline" onClick={() => setRetry(value => value + 1)}>Retry</button></p> : null}
-                <Pagination page={page} hasMore={cards.hasMore} onChange={setPage} />
-            </section><RelationshipContactCards workspaceSlug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} revision={props.initial} canAdd={props.canAdd} /></div>
-        </div>
+    const startAdding = () => { setGenerating(false); setAdding(true) }
+    const dialogs = <>
         {adding ? <CenteredDialog title={generating ? "Generating work…" : "Add service"} busy={serviceBusy} onClose={() => setAdding(false)}><ServiceForm onGenerating={setGenerating} onBusyChange={setServiceBusy} endpoint={endpoint} props={props} onDone={saved} onClose={() => setAdding(false)} /></CenteredDialog> : null}
         {editing ? <CenteredDialog title={generating ? "Generating work…" : "Edit service"} busy={serviceBusy} onClose={() => setEditing(null)}><ServiceForm onGenerating={setGenerating} onBusyChange={setServiceBusy} key={editing.id} row={editing} endpoint={endpoint} props={props} onDone={saved} onClose={() => setEditing(null)} /></CenteredDialog> : null}
         {resumedGeneration ? <CenteredDialog title="Generating work…" busy={serviceBusy} onClose={() => setResumedGeneration(null)}><SopWorkProgress onBusyChange={setServiceBusy} endpoint={endpoint} instanceId={resumedGeneration} userId={props.userId} onComplete={saved} onClose={() => setResumedGeneration(null)} /></CenteredDialog> : null}
@@ -232,6 +235,38 @@ export function RelationshipServicesWorkspace(props: Props) {
         {transferring ? <ServiceTransferDialog key={`${props.userId}:${transferring.id}`} row={transferring} endpoint={endpoint} workspaceSlug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} recoveryOnly={transferring.disposition !== "active" || !["onboarding", "setup", "maintenance"].includes(transferring.stage ?? "")} onClose={() => setTransferring(null)} onDone={() => saved()} /> : null}
         {canceling ? <CancelServiceDialog row={canceling} props={props} onDone={saved} onClose={() => setCanceling(null)} /> : null}
         {requestedPos ? <PosDialog workspaceSlug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} selectedId={requestedPos === "1" ? undefined : requestedPos} onClose={closePos} /> : null}
+    </>
+    if (props.render) {
+        // The same data, state and dialogs; only the arrangement belongs to the page. Services are one line each.
+        const timeline = <RelationshipServiceTimeline endpoint={endpoint} workspaceSlug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} revision={props.initial} canEdit={props.canImport} canEditService={() => true} onEditService={row => setOpened(cards.items.find(card => card.id === row.id) ?? row)} />
+        const queue: ServicesWorkspaceParts["queue"] = (options = {}) => <RelationshipQueue compact limit={options.limit} onMore={options.onMore} endpoint={endpoint} slug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} revision={props.initial} publishedQueue={publishedQueue} onGeneration={resumeGeneration} />
+        const services = <section ref={host} aria-label="Assigned services" data-client-services>
+            {cards.items.length ? <List flush ariaLabel="Services">{cards.items.map(row => {
+                const quiet = row.disposition === "cancelled" || ["negotiating", "declined", "for_later"].includes(row.stage ?? "")
+                return <ListItem key={row.id}><ListRow>
+                    <button type="button" data-icon-button onClick={() => setOpened(row)} className={`min-w-0 flex-1 truncate text-left text-sm font-medium outline-none hover:underline hover:decoration-neutral-600 hover:underline-offset-4 focus-visible:underline ${quiet ? "text-neutral-400" : "text-neutral-100"}`}>{row.name}</button>
+                    <span className="hidden min-w-0 max-w-[10rem] shrink truncate text-neutral-500 sm:inline">{row.assignee_name}</span>
+                    {row.disposition === "cancelled" ? <Status label="Cancelled" tone="red" className="shrink-0 text-[13px]!" /> : <ServiceStage stage={row.stage} className="text-[13px]!" />}
+                </ListRow></ListItem>
+            })}</List> : <p className="py-2 text-sm text-neutral-400">No services yet.</p>}
+            {error ? <p role="alert" className="mt-2 text-sm text-red-300">{error} <button className="min-h-11 underline" onClick={() => setRetry(value => value + 1)}>Retry</button></p> : null}
+            <Pagination page={page} hasMore={cards.hasMore} onChange={setPage} />
+        </section>
+        const contacts = <RelationshipContactCards rows workspaceSlug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} revision={props.initial} canAdd={props.canAdd} />
+        return <>{props.render({ timeline, queue, services, contacts, addService: props.canAdd ? startAdding : undefined })}{dialogs}</>
+    }
+    return <section className="mt-5" aria-label="Relationship services and work">
+        <RelationshipServiceTimeline endpoint={endpoint} workspaceSlug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} revision={props.initial} canEdit={props.canImport} canEditService={() => true} onEditService={row => setOpened(cards.items.find(card => card.id === row.id) ?? row)} />
+        <div className="mt-5 grid min-w-0 gap-x-6 gap-y-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(18rem,1fr)]">
+            <div className="relative h-[25.5rem] min-w-0 pt-6 xl:h-auto xl:min-h-0"><div className="h-full xl:absolute xl:inset-0 xl:pt-6"><RelationshipQueue endpoint={endpoint} slug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} revision={props.initial} publishedQueue={publishedQueue} onGeneration={resumeGeneration} /></div>
+            </div>
+            <div className="min-w-0"><section ref={host} className="mt-6" aria-label="Assigned services"><h2 className="mb-3 text-base font-semibold">Services</h2>
+                <AttachmentCards label="Assigned services" compact>{cards.items.map(row => <AttachmentCard compact thumbnailFit="contain" key={row.id} title={row.name} thumbnail={<ServiceThumbnail service={row} />} inactive={row.disposition === "cancelled" || ["negotiating", "declined", "for_later"].includes(row.stage ?? "")} subtitle={row.disposition === "cancelled" ? "Cancelled" : SERVICE_STAGES.find(stage => stage.key === row.stage)?.label ?? "Review needed"} onClick={() => setOpened(row)} />)}{props.canAdd ? <AddAttachmentCard compact label="Add service" onClick={startAdding} /> : null}</AttachmentCards>
+                {error ? <p role="alert" className="mt-2 text-sm text-red-300">{error} <button className="min-h-11 underline" onClick={() => setRetry(value => value + 1)}>Retry</button></p> : null}
+                <Pagination page={page} hasMore={cards.hasMore} onChange={setPage} />
+            </section><RelationshipContactCards workspaceSlug={props.workspaceSlug} relationshipId={props.relationshipId} userId={props.userId} revision={props.initial} canAdd={props.canAdd} /></div>
+        </div>
+        {dialogs}
     </section>
 }
 function ServiceDetailDialog({ row, endpoint, workspaceSlug, relationshipId, userId, onClose, onEdit, onSell, onCancel, onTransfer }: { row: ServiceCardDetail; endpoint: string; workspaceSlug: string; relationshipId: string; userId: string; onClose: () => void; onEdit?: () => void; onSell?: () => void; onCancel?: () => void; onTransfer?: (row: ServiceCardDetail) => void }) {

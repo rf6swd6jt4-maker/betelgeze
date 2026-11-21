@@ -9,6 +9,7 @@ import { useMemo, useState, useTransition, useRef, useEffect, type FormEvent, ty
 import { saveClientAccount, removeClientAccount, refreshClientAccount } from "@/app/[workspaceSlug]/client-connections/actions"
 import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle, ListTrailing } from "@/components/list/List"
 import { PanelTabHeader } from "@/components/panel/PanelTabHeader"
+import { SectionHeading } from "@/components/detail"
 import { Button, Card, CenteredDialog, Selector, Status } from "@/components/ui"
 import type { ClientConnectionAccount } from "@/lib/client-connections"
 import { AdvertisingConnectionRows } from "./AdvertisingConnectionRows"
@@ -19,7 +20,10 @@ const AddConnectionDialog = dynamic(() => import("./AddConnectionDialog").then(m
 const GoogleAdsConnectionDialog = dynamic(() => import("./GoogleAdsConnectionDialog").then(module => module.GoogleAdsConnectionDialog))
 const MetaReportingDialog = dynamic(() => import("./MetaReportingDialog").then(module => module.MetaReportingDialog))
 
-export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAccounts, agency, canManageAgency, clientHeader }: {
+export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAccounts, agency, canManageAgency, clientHeader, embedded = false, relationshipId: embeddedRelationshipId }: {
+    /** The Connections section of a client's page: no page frame or panel heading, narrowed to `relationshipId`. */
+    embedded?: boolean
+    relationshipId?: string
     /** Today layout, narrowed to one client: their page header (this is its Connections tab) instead of the panel's. */
     clientHeader?: ReactNode
     workspaceSlug: string
@@ -47,7 +51,7 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAcc
     const calendarRequest = useRef<AbortController | null>(null)
     useEffect(() => () => calendarRequest.current?.abort(), [])
     const router = useRouter(), search = useSearchParams()
-    const selectedRelationship = search.get("relationship")
+    const selectedRelationship = embeddedRelationshipId ?? search.get("relationship")
     const returnedFromHighLevel = search.get("ghl")
     const [handledReturn, setHandledReturn] = useState<string | null>(null)
     const [appDialog, setAppDialog] = useState<{ account?: ClientConnectionAccount; choices?: ClientConnectionAccount[]; resume?: boolean } | null>(null)
@@ -129,10 +133,12 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAcc
         })
     }
 
-    return <div className="mx-auto max-w-7xl px-4 pb-8 pt-5 text-white sm:px-6">
-        {clientHeader ? <>{clientHeader}<div className="flex justify-end pt-4"><Button size="sm" variant="secondary" onClick={() => setAdding(true)}>Add connection</Button></div></>
+    return <div className={embedded ? "text-white" : "mx-auto max-w-7xl px-4 pb-8 pt-5 text-white sm:px-6"} data-client-connections={embedded ? "" : undefined}>
+        {embedded ? <SectionHeading action={<Button size="sm" variant="secondary" onClick={() => setAdding(true)}>Add connection</Button>}>Connected accounts</SectionHeading>
+            : clientHeader ? <>{clientHeader}<div className="flex justify-end pt-4"><Button size="sm" variant="secondary" onClick={() => setAdding(true)}>Add connection</Button></div></>
             : <PanelTabHeader title="Client Connections" description="Manage GHL, Meta Ads and Google Ads connections for active relationships." actions={<Button onClick={() => setAdding(true)}>Add connection</Button>} />}
 
+        {embedded ? null : <>
         <Card className="mt-6">
             <div className="flex flex-wrap items-start justify-between gap-4"><div><h2 className="font-semibold">Agency connection</h2><p className="mt-1 text-sm leading-6 text-neutral-400">Used to verify agency sub-accounts connected with a private token. App connections are authorised directly in HighLevel.</p></div><Status label={agency.connected ? "Connected" : "Not connected"} tone={agency.connected ? "green" : "grey"} /></div>
             {agency.connected ? <p className="mt-4 text-sm text-neutral-300">{agency.name ?? "HighLevel agency"}{agency.id ? ` · ${agency.id}` : ""}</p> : <p className="mt-4 text-sm text-neutral-400">The HighLevel app can connect your own agency’s sub-accounts without a separate agency-token setup here.</p>}
@@ -140,9 +146,10 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAcc
             {canManageAgency ? <Button href={`/${workspaceSlug}/settings#connections`} variant="secondary" size="sm" className="mt-3">Open Settings</Button> : null}
         </Card>
 
+        </>}
         {error ? <p role="alert" className="mt-4 rounded-xl border border-red-900/70 bg-red-950/20 p-3 text-sm text-red-200">{error}</p> : null}
-        {selectedRelationship && !clientHeader ? <div className="mt-5 flex items-center justify-between gap-3 text-sm"><span className="text-neutral-400">Selected relationship</span><Link href={`/${workspaceSlug}/client-connections`} className="py-2 text-neutral-200 underline underline-offset-4">Show all clients</Link></div> : null}
-        <List ariaLabel="Client connections">
+        {selectedRelationship && !clientHeader && !embedded ? <div className="mt-5 flex items-center justify-between gap-3 text-sm"><span className="text-neutral-400">Selected relationship</span><Link href={`/${workspaceSlug}/client-connections`} className="py-2 text-neutral-200 underline underline-offset-4">Show all clients</Link></div> : null}
+        <List ariaLabel="Client connections" flush={embedded}>
             {visibleAccounts.length ? visibleAccounts.map((account) => {
                 const title = account.businessName ? `${account.clientName} – ${account.businessName}` : account.clientName
                 const status = account.historyId ? { label: "Retired", tone: "red" as const } : account.connected ? { label: "Active", tone: account.error ? "yellow" as const : "green" as const } : { label: "Not configured", tone: "yellow" as const }
@@ -158,6 +165,7 @@ export function ClientConnectionsWorkspace({ workspaceSlug, accounts: initialAcc
             }) : null}
             <AdvertisingConnectionRows key={`${workspaceSlug}:${selectedRelationship ?? "all"}`} workspaceSlug={workspaceSlug} relationshipId={selectedRelationship ?? undefined} refresh={advertisingRefresh} onManageWindsor={setMetaReporting} onManageGoogle={setGoogleAds} hasGhlConnections={visibleAccounts.length > 0} />
         </List>
+        {embedded ? <p className="flex flex-wrap items-center gap-x-2 gap-y-1 pt-3 text-[13px] text-neutral-500">Agency HighLevel connection: <Status label={agency.connected ? agency.name ?? "Connected" : "Not connected"} tone={agency.connected ? "green" : "grey"} className="text-[13px]!" /></p> : null}
 
         {adding ? <AddConnectionDialog workspaceSlug={workspaceSlug} onClose={() => setAdding(false)} onChoose={(provider, account) => {
             setAdding(false)

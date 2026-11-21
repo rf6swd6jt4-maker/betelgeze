@@ -1,5 +1,5 @@
 export { DetailDangerAction, DetailDangerButton, DetailDangerZone } from "./DetailDangerZone"
-export { DetailField, DetailFields, SectionHeading } from "./DetailFields"
+export { DetailField, DetailFields, SectionHeading, narrowPropertyGrid, touchPropertyRow, touchPropertyRows, touchPropertyValue } from "./DetailFields"
 export type { DetailFieldIcon } from "./DetailFields"
 export { DetailContentLoading, DetailFieldsLoading, DetailLoadingLabel } from "./DetailLoadingState"
 export { DetailPageHeader } from "./DetailPageHeader"

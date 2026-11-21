@@ -18,7 +18,7 @@ export function OnboardingSettings({ workspaceSlug, schemaReady }: {
                 <h3 className="font-semibold">Build the client journey</h3>
                 <p className="mt-1 max-w-2xl text-sm leading-6 text-neutral-400">Create modules, choose which are mandatory, connect service modules, and build every onboarding block in one place.</p>
             </div>
-            <OnboardingBuilderLauncher workspaceSlug={workspaceSlug} href={`/${workspaceSlug}/onboarding-builder`} className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-lg bg-white px-4 text-sm font-medium text-black" />
+            <OnboardingBuilderLauncher workspaceSlug={workspaceSlug} href={`/${workspaceSlug}/onboarding-builder`} className="inline-flex min-h-10 shrink-0 items-center justify-center rounded-lg bg-[var(--color-accent)] px-4 text-sm font-medium text-[var(--color-accent-contrast)]" />
         </section>
         {!schemaReady ? <p className="rounded-xl border border-yellow-500/30 bg-yellow-500/10 px-4 py-3 text-sm text-yellow-100">The onboarding configuration schema is not available in this environment yet. Deploy the current migrations before publishing Builder changes.</p> : null}
     </div>

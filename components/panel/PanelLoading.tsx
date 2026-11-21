@@ -63,7 +63,7 @@ export function PanelLoadingList({ kind = "default", rows = 5, label = "Loading 
 
 export function PanelLoadingGallery({ count = 5 }: { count?: number }) {
     return <section className="mt-5" aria-label="Loading assets">
-        <AssetGallery label="Loading assets">{Array.from({ length: count }, (_, index) => <div key={index} className="min-w-0 overflow-hidden rounded-xl border border-neutral-800 bg-black">
+        <AssetGallery label="Loading assets">{Array.from({ length: count }, (_, index) => <div key={index} className="min-w-0 overflow-hidden rounded-xl border border-card-border">
             <LoadingPulse className="aspect-[4/3] w-full rounded-none bg-neutral-900" />
             <div className="p-3 sm:p-4"><LoadingPulse className="h-4 w-4/5" /><LoadingPulse className="mt-2 h-3 w-16" /><LoadingPulse className="mt-3 h-3 w-2/3" /></div>
         </div>)}</AssetGallery>
@@ -89,7 +89,7 @@ export function OnboardingPanelLoading() {
 export function ActivityTrendsLoading() {
     return <section aria-label="Loading activity trends" aria-busy="true">
         <PanelLoadingFilters widths={[62, 62, 62, 62]} />
-        <div className="mt-5 grid gap-3 md:grid-cols-2">{Array.from({ length: 4 }, (_, index) => <div key={index} className="aspect-[2/1] rounded-xl border border-neutral-800 bg-neutral-900 motion-safe:animate-pulse" />)}</div>
+        <div className="mt-5 grid gap-3 md:grid-cols-2">{Array.from({ length: 4 }, (_, index) => <div key={index} className="aspect-[2/1] rounded-xl border border-card-border motion-safe:animate-pulse" />)}</div>
     </section>
 }
 

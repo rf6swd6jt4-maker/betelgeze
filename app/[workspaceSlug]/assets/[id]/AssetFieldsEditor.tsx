@@ -11,7 +11,7 @@ type Draft = { title: string; description: string }
 type StoredDraft = { version: string; values: Draft }
 
 const same = (left: Draft, right: Draft) => left.title === right.title && left.description === right.description
-const fieldClass = "min-h-9 w-full min-w-0 rounded-md bg-transparent px-1 py-1 text-base text-neutral-200 outline-none hover:bg-neutral-900/60 focus:bg-neutral-900 disabled:opacity-70 sm:text-sm"
+const fieldClass = "min-h-9 w-full min-w-0 rounded-md bg-transparent px-1 py-1 text-base text-neutral-200 outline-none hover:bg-[var(--color-surface-hover)] focus:bg-neutral-900 disabled:opacity-70 sm:text-sm"
 
 export function AssetFieldsEditor({ workspaceSlug, assetId, userId, initialTitle, initialDescription, updatedAt, canEdit, children }: {
     workspaceSlug: string
@@ -124,7 +124,7 @@ export function AssetFieldsEditor({ workspaceSlug, assetId, userId, initialTitle
         }
     }, [flush, initialDescription, initialTitle, persist, storageKey, updatedAt])
 
-    return <section aria-label="Asset information" className="mt-4 border-b border-neutral-800">
+    return <section aria-label="Asset information" className="mt-4 border-b border-card-border">
         <DetailFields className="!mt-0">
             <DetailField label="Name" icon="identity"><input aria-label="Asset name" disabled={!canEdit} value={draft.title} maxLength={500} onChange={(event) => edit({ title: event.target.value })} onBlur={() => void flush()} onKeyDown={(event) => { if (event.key === "Enter" && !event.nativeEvent.isComposing) { event.preventDefault(); event.currentTarget.blur() } }} className={fieldClass} /></DetailField>
             {children}

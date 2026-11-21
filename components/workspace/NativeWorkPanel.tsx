@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "@/components/workspace/WorkspaceLink"
-import { List, ListItem, ListPrimaryRow, ListSecondaryRow, ListTitle, ListTrailing } from "@/components/list/List"
+import { List, ListItem, ListPrimaryRow, ListRow, ListSecondaryRow, ListTitle, ListTrailing } from "@/components/list/List"
 import { ListActionMenu } from "@/components/list/ListActionMenu"
 import { ListCreatorBadge } from "@/components/list/ListCreatorBadge"
 import { MobileListActionSurface } from "@/components/list/MobileCardActionSurface"
@@ -10,12 +10,15 @@ import { FilterRail, FilterRailCount, FilterRailLink } from "@/components/panel/
 import { InstantFilterResults } from "@/components/panel/InstantFilterResults"
 import { PanelTabHeader } from "@/components/panel/PanelTabHeader"
 import { QuickStats } from "@/components/panel/QuickStats"
-import { DetailDangerAction, DetailDangerButton, DetailDangerZone, DetailField, DetailFields, DetailPageHeader } from "@/components/detail"
+import { DetailDangerAction, DetailDangerButton, DetailDangerZone, DetailField, DetailFields, DetailPageHeader, SectionHeading } from "@/components/detail"
+import { ClientPageHeader } from "@/components/relationships/ClientPageHeader"
+import { clientPageTabs } from "@/lib/client-page"
 import { RelationshipStage, SquarePill, Status } from "@/components/ui"
 import { phaseLabel } from "@/lib/relationship-phases"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import type { NativeWorkSnapshot } from "@/lib/workspace-native-work"
 import { useSearchParams } from "./WorkspaceNavigation"
+import { useTodayLayout } from "./TodayLayout"
 
 function WorkList({ data }: { data: Extract<NativeWorkSnapshot, { kind: "work" }> }) {
     const search = useSearchParams()
@@ -101,6 +104,32 @@ function WorkList({ data }: { data: Extract<NativeWorkSnapshot, { kind: "work" }
     )
 }
 
+/** Today layout: the Work tab of the client's page. Their open work, one line each, and nothing that is not built yet. */
+function ClientWork({ data, today }: { data: Extract<NativeWorkSnapshot, { kind: "work-detail" }>; today: NonNullable<ReturnType<typeof useTodayLayout>> }) {
+    const { relationship, openItems, openCount } = data
+    const tabs = clientPageTabs(data.workspaceSlug, relationship.id, data.context?.clientTabs ?? data.context?.allowedDestinations ?? ["fulfilment"])
+    const chat = today.chat
+    return <main className="min-h-full bg-neutral-950 px-4 pb-10 pt-5 text-white sm:px-7"><div className="mx-auto max-w-[84rem]">
+        <ClientPageHeader name={relationship.primary_person_name} business={relationship.business_name} phase={relationship.lifecycle_phase} isTest={relationship.isTest} tabs={tabs} active="work"
+            onChat={chat ? () => chat({ id: relationship.id, title: relationship.business_name?.trim() || relationship.primary_person_name }) : undefined}
+            chatHref={`/${encodeURIComponent(data.workspaceSlug)}/communications?mode=clients&conversation=${encodeURIComponent(relationship.id)}`} />
+        <section className="pt-5">
+            <SectionHeading count={openCount}>Open work</SectionHeading>
+            {openItems.length ? <List flush ariaLabel="Open work">
+                {openItems.map(item => {
+                    const status = workItemStatusPresentation(item.status)
+                    return <ListItem key={item.id}><ListRow>
+                        <ListTitle href={item.href} className="flex-1">{item.title}</ListTitle>
+                        <span className="hidden shrink-0 text-neutral-500 sm:inline">{phaseLabel(item.lifecycle_phase)}</span>
+                        <Status label={status.label} tone={status.tone} className="shrink-0 text-[13px]!" />
+                    </ListRow></ListItem>
+                })}
+            </List> : <p className="py-2 text-sm text-neutral-400">No open work for this client.</p>}
+            {openCount > openItems.length ? <p className="pt-3 text-xs text-neutral-500">Showing the first {openItems.length} of {openCount}.</p> : null}
+        </section>
+    </div></main>
+}
+
 function WorkDetail({ data }: { data: Extract<NativeWorkSnapshot, { kind: "work-detail" }> }) {
     const { relationship, role, openItems, openCount } = data
     return (
@@ -124,14 +153,14 @@ function WorkDetail({ data }: { data: Extract<NativeWorkSnapshot, { kind: "work-
                             <DetailField label="Updated" icon="time" className="lg:border-l lg:border-neutral-900 lg:pl-8">{formatRelativeTime(relationship.updated_at)}</DetailField>
                         </DetailFields>
 
-                <section className="mt-6 rounded-2xl border border-neutral-800 bg-black p-5">
-                    <h2 className="text-lg font-semibold">Future fulfilment workspace</h2>
+                <section className="mt-6 rounded-2xl border border-card-border p-5">
+                    <h2 className="text-sm font-semibold">Future fulfilment workspace</h2>
                     <p className="mt-2 text-sm leading-6 text-neutral-400">
                         Placeholder for relationship fulfilment tasks, blockers, due dates, assigned work, assets, and links to global work-item detail panels.
                     </p>
                     <div className="mt-4 divide-y divide-neutral-900 rounded-xl border border-neutral-900">
                         {openItems.slice(0, 6).map((item) => (
-                            <Link key={item.id} href={item.href} className="block px-3 py-2 hover:bg-neutral-900/70">
+                            <Link key={item.id} href={item.href} className="block px-3 py-2 hover:bg-[var(--color-surface-hover)]">
                                 <p className="text-sm font-medium text-neutral-100">{item.title}</p>
                                 <p className="mt-1 text-xs text-neutral-500">{item.status} · {phaseLabel(item.lifecycle_phase)}</p>
                             </Link>
@@ -140,7 +169,7 @@ function WorkDetail({ data }: { data: Extract<NativeWorkSnapshot, { kind: "work-
                             <p className="px-3 py-4 text-sm text-neutral-500">No open work items are attached yet.</p>
                         )}
                     </div>
-                    {role !== "staff" ? <Link href={`/${data.workspaceSlug}/relationships/${relationship.id}`} className="mt-4 inline-flex rounded-lg border border-neutral-800 px-3 py-2 text-sm text-neutral-300 hover:text-white">
+                    {role !== "staff" ? <Link href={`/${data.workspaceSlug}/relationships/${relationship.id}`} className="mt-4 inline-flex rounded-lg border border-card-border px-3 py-2 text-sm text-neutral-300 hover:text-white">
                         Open relationship summary
                     </Link> : null}
                 </section>
@@ -158,5 +187,7 @@ function WorkDetail({ data }: { data: Extract<NativeWorkSnapshot, { kind: "work-
 }
 
 export default function NativeWorkPanel({ data }: { data: NativeWorkSnapshot }) {
-    return data.kind === "work" ? <WorkList data={data} /> : <WorkDetail data={data} />
+    const today = useTodayLayout()
+    if (data.kind === "work") return <WorkList data={data} />
+    return today ? <ClientWork data={data} today={today} /> : <WorkDetail data={data} />
 }

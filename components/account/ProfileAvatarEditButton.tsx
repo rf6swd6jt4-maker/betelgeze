@@ -22,7 +22,7 @@ export function ProfileAvatarEditButton({
             onClick={onClick}
             aria-label={label}
             disabled={disabled}
-            className={`inline-flex shrink-0 items-center justify-center rounded-full border border-white/20 bg-neutral-950 text-white shadow-lg transition hover:bg-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
+            className={`inline-flex shrink-0 items-center justify-center rounded-full border border-white/20 bg-neutral-950 text-white shadow-popup transition hover:bg-neutral-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 disabled:cursor-not-allowed disabled:opacity-50 ${className}`}
         >
             <PencilIcon />
         </button>

@@ -157,7 +157,7 @@ export function PushNotificationSettings({ compact = false }: { compact?: boolea
 
     const enabled = confirmedEnabled
     const disabled = state === "loading" || state === "saving" || state === "install" || state === "unsupported" || state === "unavailable"
-    return <section className={compact ? "mt-3 border-t border-neutral-800 pt-2" : "mt-7 border-t border-neutral-800 pt-5"}>
+    return <section className={compact ? "mt-3 border-t border-card-border pt-2" : "mt-7 border-t border-card-border pt-5"}>
         <div className="flex items-center justify-between gap-5">
             <div>
                 <h3 className={compact ? "text-sm text-neutral-300" : "font-medium"}>{compact ? "Notifications" : "Chat notifications"}</h3>

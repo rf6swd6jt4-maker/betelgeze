@@ -27,6 +27,8 @@ export async function loadRelationshipContext({ relationship, access, metrics = 
         source_label: relationship.source_label, primary_contact_role: relationship.primary_contact_role,
         notes_summary: relationship.notes_summary, lifecycle_phase: relationship.lifecycle_phase, metrics,
         allowedDestinations: relationshipContextShortcuts(access.capabilities, false),
+        // The client's page shows the same tabs everywhere: every destination this person's capabilities allow.
+        clientTabs: relationshipContextShortcuts(access.capabilities, true),
     }
     try {
         const [serviceResult, people, setupAccess] = await Promise.all([

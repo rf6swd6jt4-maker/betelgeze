@@ -43,8 +43,8 @@ function BrandAssetCard({
     accept: string
     action: (formData: FormData) => Promise<void>
 }) {
-    return <div className="flex min-w-0 flex-col rounded-xl border border-neutral-800 bg-black p-4">
-        <div className="flex h-20 items-center justify-center overflow-hidden rounded-lg border border-neutral-800 bg-white p-3">
+    return <div className="flex min-w-0 flex-col rounded-xl border border-card-border p-4">
+        <div className="flex h-20 items-center justify-center overflow-hidden rounded-lg border border-card-border bg-white p-3">
             {src ? <>
                 {/* Signed previews are restricted to the current workspace's stored brand assets. */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -55,7 +55,7 @@ function BrandAssetCard({
         <p className="mt-1 min-h-10 text-xs leading-5 text-neutral-500">{description}</p>
         <form action={action} data-workspace-mutation="background" className="mt-4 flex min-w-0 flex-col gap-2">
             <input name={inputName} required type="file" accept={accept} aria-label={inputLabel} className="min-w-0 max-w-full text-xs text-neutral-400 file:mr-2 file:max-w-full file:rounded-lg file:border-0 file:bg-neutral-800 file:px-3 file:py-2 file:text-sm file:text-white" />
-            <WorkspaceActionButton pendingLabel="Uploading…" className="h-10 rounded-lg bg-white px-3 text-sm font-medium text-black">{src ? "Replace" : "Upload"}</WorkspaceActionButton>
+            <WorkspaceActionButton pendingLabel="Uploading…" className="h-10 rounded-lg bg-[var(--color-accent)] px-3 text-sm font-medium text-[var(--color-accent-contrast)]">{src ? "Replace" : "Upload"}</WorkspaceActionButton>
         </form>
     </div>
 }
@@ -221,7 +221,7 @@ export function AgencyBrandingEditor({ workspaceSlug, workspaceName, initialThem
             <Card>
                 <h3 className="font-semibold">Client colour roles</h3>
                 <p className="mt-1 text-sm leading-6 text-neutral-500">Select a role to view the palette or change its assigned colour.</p>
-                <div className="mt-4 grid overflow-hidden rounded-xl border border-neutral-800 bg-black sm:grid-cols-2">
+                <div className="mt-4 grid overflow-hidden rounded-xl border border-card-border sm:grid-cols-2">
                     {ONBOARDING_THEME_SLOTS.map((slot, index) => {
                         const assigned = theme.swatches.find((swatch) => swatch.id === theme.assignments[slot])
                         return <button
@@ -231,7 +231,7 @@ export function AgencyBrandingEditor({ workspaceSlug, workspaceName, initialThem
                             aria-expanded={assignmentVisible && assignmentEditor?.slot === slot}
                             disabled={!schemaReady}
                             onClick={() => openAssignmentEditor(slot)}
-                            className={`flex min-w-0 items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-neutral-900 disabled:cursor-default disabled:opacity-50 ${index > 0 ? "border-t border-neutral-800" : ""} ${index === 1 ? "sm:border-t-0" : ""} ${index % 2 === 1 ? "sm:border-l sm:border-neutral-800" : ""}`}
+                            className={`flex min-w-0 items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-[var(--color-surface-hover)] disabled:cursor-default disabled:opacity-50 ${index > 0 ? "border-t border-card-border" : ""} ${index === 1 ? "sm:border-t-0" : ""} ${index % 2 === 1 ? "sm:border-l sm:border-card-border" : ""}`}
                         >
                             <span aria-hidden="true" className="h-7 w-7 shrink-0 rounded-md border border-white/10" style={{ backgroundColor: normalizeHexColour(assigned?.hex) ?? "#000000" }} />
                             <span className="min-w-0 flex-1"><span className="block truncate text-sm text-neutral-200">{ONBOARDING_THEME_SLOT_LABELS[slot]}</span><span className="mt-0.5 block truncate text-xs text-neutral-500">{assigned?.name ?? "Default colour"}</span></span>
@@ -245,22 +245,22 @@ export function AgencyBrandingEditor({ workspaceSlug, workspaceName, initialThem
         {ownerActive && previewOpen && modalTarget ? createPortal(<div ref={previewRootRef} data-agency-branding-preview className="betelgeze-popup-fade fixed inset-0 z-[2147483646] overflow-hidden bg-neutral-100 text-white">
             <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between gap-3 p-3 sm:p-4">
                 <button type="button" onClick={() => { setPreviewOpen(false); setPublishReviewOpen(false) }} className="pointer-events-auto rounded-full border border-white/20 bg-neutral-700 px-5 py-2.5 text-sm font-semibold text-white shadow-[0_8px_20px_rgba(0,0,0,0.24)] transition hover:bg-neutral-600 focus:outline-none focus:ring-2 focus:ring-white/70">Exit preview</button>
-                <button type="button" disabled={!schemaReady || publishPending || !colourChanges.length} onClick={() => { setError(null); setPublishReviewOpen(true) }} className="pointer-events-auto rounded-full bg-white px-4 py-2.5 text-sm font-semibold text-black shadow-[0_8px_24px_rgba(15,23,42,0.30),0_2px_6px_rgba(15,23,42,0.18)] transition hover:bg-neutral-100 disabled:cursor-default disabled:opacity-45">{colourChanges.length ? "Publish" : "Published"}</button>
+                <button type="button" disabled={!schemaReady || publishPending || !colourChanges.length} onClick={() => { setError(null); setPublishReviewOpen(true) }} className="pointer-events-auto rounded-full bg-[var(--color-accent)] px-4 py-2.5 text-sm font-semibold text-[var(--color-accent-contrast)] shadow-[0_8px_24px_rgba(15,23,42,0.30),0_2px_6px_rgba(15,23,42,0.18)] transition hover:bg-[var(--color-accent-hover)] disabled:cursor-default disabled:opacity-45">{colourChanges.length ? "Publish" : "Published"}</button>
             </div>
             <div className="h-full min-h-0"><BuilderPreview fullWindow bookend={previewBookend} theme={theme} help={help} workspaceName={workspaceName} logoSrc={logoSrc} /></div>
             {publishReviewOpen ? <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/75 p-3 sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget && !publishPending) setPublishReviewOpen(false) }}>
-                <section role="dialog" aria-modal="true" aria-labelledby="publish-colour-title" className="betelgeze-popup-enter flex max-h-[min(90dvh,42rem)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-950 shadow-2xl shadow-black/70">
-                    <div className="flex shrink-0 items-start justify-between gap-4 border-b border-neutral-800 p-4 sm:p-5"><div className="min-w-0"><h2 id="publish-colour-title" className="text-lg font-semibold">Review colour changes</h2><p className="mt-1 text-sm leading-5 text-neutral-500">Compare the colours clients see now with the latest saved draft.</p></div><button type="button" disabled={publishPending} aria-label="Close publish review" onClick={() => setPublishReviewOpen(false)} className="flex h-8 w-8 shrink-0 items-center justify-center text-lg text-neutral-500 hover:text-white disabled:opacity-30">×</button></div>
+                <section role="dialog" aria-modal="true" aria-labelledby="publish-colour-title" className="betelgeze-popup-enter flex max-h-[min(90dvh,42rem)] w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-950 shadow-popup">
+                    <div className="flex shrink-0 items-start justify-between gap-4 border-b border-card-border p-4 sm:p-5"><div className="min-w-0"><h2 id="publish-colour-title" className="text-lg font-semibold">Review colour changes</h2><p className="mt-1 text-sm leading-5 text-neutral-500">Compare the colours clients see now with the latest saved draft.</p></div><button type="button" disabled={publishPending} aria-label="Close publish review" onClick={() => setPublishReviewOpen(false)} className="flex h-8 w-8 shrink-0 items-center justify-center text-lg text-neutral-500 hover:text-white disabled:opacity-30">×</button></div>
                     <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
                         <div className="space-y-5">{colourChanges.map((change) => <div key={change.slot} className="px-1"><p className="mb-2 text-center text-xs font-medium text-neutral-500">{ONBOARDING_THEME_SLOT_LABELS[change.slot]}</p><div className="grid items-center gap-2" style={{ gridTemplateColumns: "minmax(0, 1fr) 2rem minmax(0, 1fr)" }}><span className="flex min-w-0 items-center justify-end gap-2"><span className="min-w-0 text-right"><span className="block truncate text-xs text-neutral-200">{change.current.name}</span><span className="block truncate font-mono text-[10px] text-neutral-600">{change.current.hex}</span></span><span aria-hidden="true" className="h-8 w-8 shrink-0 rounded-md border border-white/10" style={{ backgroundColor: change.current.hex }} /></span><svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="h-4 w-4 justify-self-center text-neutral-500"><path d="M5 12h14M14 7l5 5-5 5" /></svg><span className="flex min-w-0 items-center gap-2"><span aria-hidden="true" className="h-8 w-8 shrink-0 rounded-md border border-white/10" style={{ backgroundColor: change.next.hex }} /><span className="min-w-0"><span className="block truncate text-xs text-neutral-200">{change.next.name}</span><span className="block truncate font-mono text-[10px] text-neutral-600">{change.next.hex}</span></span></span></div></div>)}</div>
                     </div>
                     {error ? <p role="alert" className="shrink-0 border-t border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-200">{error}</p> : null}
-                    <div className="flex shrink-0 flex-col items-end gap-3 border-t border-neutral-800 p-4 sm:flex-row sm:justify-end"><p className="text-sm font-medium text-neutral-200">Publish {colourChanges.length} {colourChanges.length === 1 ? "change" : "changes"}?</p><Button className="w-full sm:w-auto" disabled={publishPending || !colourChanges.length} onClick={publishLatestTheme}>{publishPending ? "Publishing…" : "Publish changes"}</Button></div>
+                    <div className="flex shrink-0 flex-col items-end gap-3 border-t border-card-border p-4 sm:flex-row sm:justify-end"><p className="text-sm font-medium text-neutral-200">Publish {colourChanges.length} {colourChanges.length === 1 ? "change" : "changes"}?</p><Button className="w-full sm:w-auto" disabled={publishPending || !colourChanges.length} onClick={publishLatestTheme}>{publishPending ? "Publishing…" : "Publish changes"}</Button></div>
                 </section>
             </div> : null}
         </div>, modalTarget) : null}
         {assignmentEditor && editedSlot && modalTarget ? createPortal(<div ref={assignmentRootRef} hidden={!assignmentVisible} inert={!assignmentVisible} style={assignmentVisible ? undefined : { display: "none" }} className="fixed inset-0 z-[2147483646] flex items-center justify-center overflow-hidden overscroll-none bg-black/75 p-3 sm:p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setAssignmentEditor(null) }}>
-            <section role="dialog" aria-modal="true" aria-labelledby="colour-style-editor-title" className="betelgeze-popup-enter max-h-[min(92dvh,38rem)] w-full max-w-sm overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-950 text-white shadow-2xl shadow-black/70">
+            <section role="dialog" aria-modal="true" aria-labelledby="colour-style-editor-title" className="betelgeze-popup-enter max-h-[min(92dvh,38rem)] w-full max-w-sm overflow-hidden rounded-2xl border border-neutral-700 bg-neutral-950 text-white shadow-popup">
                 <ColourStyleEditor
                     key={editedSlot}
                     titleId="colour-style-editor-title"

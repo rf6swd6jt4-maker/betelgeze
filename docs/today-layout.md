@@ -1,11 +1,13 @@
 # Today layout
 
-The redesigned workspace shell: a **client rail** on the left (Today, then your clients as initials, then the other
-destinations), a **work area** showing what you opened, and **Comms docked on the right** when you ask for it, with no
-visible tab strip. It is selected per workspace by `WORKSPACE_TODAY_LAYOUT` (see `.env.example` and
-`lib/workspace-layout.ts`); everyone else keeps the tabbed shell. Mockups: the first cockpit
-(https://claude.ai/artifact/TE7Yan13qkzgMzDv2f37Rn) and the client rail that replaced its Today column
-(https://claude.ai/artifact/XK4YHnSgRiqYViDYQPjUhK).
+The redesigned workspace shell: a **sidebar of names** on the left (Today, the workspace destinations, then your
+clients), a **work area** showing what you opened, and **Comms docked on the right** when you ask for it, with no
+visible tab strip and no client column. Everything that belongs to a client lives on that client's page, behind tabs.
+It is selected per workspace by `WORKSPACE_TODAY_LAYOUT` (see `.env.example` and `lib/workspace-layout.ts`); everyone
+else keeps the tabbed shell. Mockups, oldest first: the first cockpit
+(https://claude.ai/artifact/TE7Yan13qkzgMzDv2f37Rn), the client rail that replaced its Today column
+(https://claude.ai/artifact/XK4YHnSgRiqYViDYQPjUhK), and the client page the current build follows
+(https://claude.ai/artifact/NwHRenwtiv5YsaG22XV1MD).
 
 ## Principle: change what surrounds the work area, not how it works
 
@@ -13,13 +15,80 @@ Measured speed (`docs/performance-baseline/shell-revamp-baseline-2026-11-15.md`)
 model: up to eight destinations stay mounted, so returning to one is a 30-160 ms p95 switch instead of a 1.3-2.6 s
 first load. The Today layout keeps that model and hides only its strip:
 
-- Opening anything from the rail, the Today page, a link or the client column goes through the shell's existing
-  owners (`openWorkspaceTab`, `switchTab`, `navigateActiveTab`). An already-resident destination is re-activated
-  (memory switch); a new one becomes a hidden resident tab.
+- Opening anything from the sidebar, the Today page, a link, a tab of a client's page or the breadcrumb goes through
+  the shell's existing owners (`openWorkspaceTab`, `switchTab`, `navigateActiveTab`). An already-resident destination
+  is re-activated (memory switch); a new one becomes a hidden resident tab.
 - Draft departure checks, history, scroll and filters per destination and native panel caching are unchanged, because
   they belong to the same owners as before.
 
-## Client rail (built on `client-rail`, 16 November 2026)
+## Sidebar, client page and Clients (built on `client-pages`, 21 November 2026)
+
+Decided with the person from the approved mockup: navigation is split by client, not by kind of record, and the
+interface is flat (docs/ui-standards.md, "Design language"). The look applies to the whole workspace, in both layouts,
+because it lives in the shared primitives and tokens; the structure below is the Today layout only.
+
+- **Sidebar** (`components/workspace/ClientRail.tsx`). From `md` up it is a full-height column, flush left with a
+  hairline edge, 15rem wide, headed by the workspace's mark and name; the top bar starts beside it. It shows names
+  at desktop width and starts folded between `md` and `lg`, until the person chooses otherwise with the top bar's toggle (3.25rem of marks, widening over the page on hover as the rail did; CSS only,
+  `--workspace-sidebar-width` does not change while hovering). Order: **Today**, **Clients**, Library, Staff, Settings,
+  then `Your clients` with a find box from nine clients. Communications follows Clients only where the docked panel is
+  not offered. There is no More: Relationships became Clients; Onboarding and Client Connections are tabs on each
+  client's page; Admin and Onboarding Builder are reached from Settings (two links under its heading; the sidebar marks
+  Settings while Admin is open). Someone who cannot open Clients keeps Onboarding and Client Connections as rows. The
+  first paint is already laid out: the shell renders the sidebar's width in a style tag and the top bar's offset keys
+  on the server-rendered shell root. A person who folded it sees it fold once the stored choice is read.
+- **Top bar.** At `lg` the left corner is a breadcrumb: the destination's name, `Clients / client` on a client's page,
+  `Clients / client / record` on a record of theirs (the first two parts lead back). Below `lg` the strip shows the
+  same words. Search, presence, Comms, New and the account menu are unchanged.
+- **No client column.** The breadcrumb and the client's page replace it at desktop width, so the work area is never
+  narrowed by it and framed pages are told the column is closed. Below `lg` the context sheet still opens from the
+  strip on records that belong to a client.
+- **Client page** (`lib/client-page.ts`, `components/relationships/ClientPageHeader.tsx`). One header on every page
+  of a client: initials, name, stage, business, the primary **Chat**, and the tabs **Overview**, **Work**,
+  **Onboarding**, **Connections**, **Files and notes**. Each tab is an existing route, so nothing new is mounted or
+  cached: Overview and Files and notes are the relationship page (two sections that both stay mounted and switch in
+  place); Work is `work/<id>`; Onboarding is `onboarding/<id>`; Connections is Client Connections with
+  `?relationship=<id>`. Work, Onboarding and the relationship page are record routes, so the shell opens each as its
+  own resident destination, exactly as their links did before; returning to one is a memory switch. The sidebar marks
+  the client on all of them.
+  - *Overview* shows the client's values, the editable details, services, engagement, links and the danger zone, with
+    a `Details` column beside them (email, phone, manager, source) that renders the context the page already loads.
+  - *Work* lists the client's open work, one line each. The server sends at most 50 rows (it sent 6); the rows were
+    already read to count them. The "Future fulfilment workspace" placeholder and its disabled archive and delete
+    buttons are gone from this layout.
+  - *Onboarding* is the existing framed onboarding record under the client header; *Connections* is the existing
+    framed connections page under it, with one added single-row read of the relationship (after the access check,
+    beside the page's two reads). Neither changed otherwise.
+  - *Chat* on a native tab asks the shell directly; on the framed Onboarding tab it sends the bridge's `client-chat`
+    message, and the shell docks the conversation where the panel is offered or opens the full conversation where it
+    is not. The Connections tab reports no client to the shell, so it has no Chat and a docked chat is not shown
+    beside it. Changing that needs the person's permission under `app-alerts.md`.
+- **Clients** (`ClientsTable` in `NativeRelationshipsPanel.tsx`). The relationships list as one table: client, stage,
+  manager, services, open work, updated. Saved views in one rail (All, Open work, No manager, No services, then the
+  service stages) are answered from the rows already read, so choosing one is instant; the address carries `?view=`,
+  and an older `?serviceStage=` link is restated once. Manager names ride on the creators' profile lookup: the same
+  single query, with a few more ids.
+- **Not built.** The mockup's Onboarding, Connections and Last message columns, and its "Onboarding stuck" and
+  "Connection broken" views: each needs a read the Clients list does not make today, which `app_speed.md` requires
+  the person to accept first. Per-client unread marks in the sidebar and a Today count: the shell's unread owner
+  exposes only a total, and widening it is an alerts change. The docked chat following the selected client.
+- **Still reachable, no longer in the sidebar:** the Onboarding and Client Connections lists and Admin, by address,
+  search, and (Admin) Settings. The tabbed layout is unchanged in structure.
+- **Speed.** No request, subscription, timer or resident frame is added to launch, navigation or switching. Opening
+  the Clients list makes the same reads (one profile query carries manager ids too). A client's Work read returns up
+  to 44 more small rows. Connections narrowed to a client adds one single-row read. Nothing was measured signed in;
+  the pilot comparison in slice 5 still applies.
+- **Checked:** unit tests (`tests/today-layout.test.ts`, `tests/flat-design-language.test.ts`), and
+  `scripts/serve-client-rail-fixture.mjs`, which runs the real sidebar, Today sections, client header, summary, table
+  and shared primitives with synthetic data at desktop and phone width. **Not checked:** the signed-in app, the real
+  framed Onboarding and Connections pages under the header, WebKit by eye, real data volumes, a phone.
+
+## History: the client rail (16 November 2026)
+
+Replaced on 21 November 2026 by the section above. The read (`GET .../client-rail`), the opening rule, Today as a
+page, the docked Comms panel and the phone bottom bar described here still apply; the narrow rail of initials is now
+the sidebar's folded state, More is gone, `ClientSummary` holds only properties, and the client column no longer
+shows at desktop width.
 
 Decided with the person after the declutter passes: the same thing was reachable from too many buttons, and the screen
 had no single organising idea. Now you work on a client, and each thing has one way in.

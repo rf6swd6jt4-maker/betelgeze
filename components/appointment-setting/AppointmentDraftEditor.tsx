@@ -121,13 +121,13 @@ export function AppointmentDraftEditor({ queue, snapshot, configuration, messagi
                 </div> : null}
             </> : <button type="button" className="min-h-9 underline underline-offset-4" onClick={() => void queue.retry()}>Retry saving</button>}
         </div> : null}
-        <div className="border-t border-neutral-800 pt-4">
+        <div className="border-t border-card-border pt-4">
             <p className="text-sm text-neutral-200">{appointmentScheduleLabel(row)} · {APPOINTMENT_MEDIUM_OPTIONS.find((option) => option.key === row.meeting_medium)?.label}</p>
             <p className="mt-1 text-xs text-neutral-400">Submitting notifies the client and locks this appointment for editing.</p>
             {messagingError ? <p className="mt-2 text-sm text-amber-300">{messagingError} <Link href={communicationsHref} className="underline underline-offset-4">Open Communications</Link></p> : null}
             <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                 <p role="status" className="text-xs text-neutral-400">{snapshot.error ? "Changes not saved" : snapshot.saving || dirty ? "Saving…" : "Saved"}</p>
-                <button type="submit" disabled={disabled || Boolean(messagingError) || snapshot.conflict} className="min-h-11 rounded-md bg-white px-4 text-sm font-medium text-black hover:bg-neutral-200 disabled:opacity-50">{submitting ? "Submitting…" : "Submit appointment"}</button>
+                <button type="submit" disabled={disabled || Boolean(messagingError) || snapshot.conflict} className="min-h-11 rounded-md bg-[var(--color-accent)] px-4 text-sm font-medium text-[var(--color-accent-contrast)] hover:bg-[var(--color-accent-hover)] disabled:opacity-50">{submitting ? "Submitting…" : "Submit appointment"}</button>
             </div>
         </div>
     </form>

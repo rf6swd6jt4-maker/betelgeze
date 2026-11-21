@@ -57,14 +57,14 @@ export default async function FulfilmentDetailPlaceholder({ params }: PageProps)
                             <DetailField label="Updated" icon="time" className="lg:border-l lg:border-neutral-900 lg:pl-8">{formatRelativeTime(relationship.updated_at)}</DetailField>
                         </DetailFields>
 
-                <section className="mt-6 rounded-2xl border border-neutral-800 bg-black p-5">
-                    <h2 className="text-lg font-semibold">Future fulfilment workspace</h2>
+                <section className="mt-6 rounded-2xl border border-card-border p-5">
+                    <h2 className="text-sm font-semibold">Future fulfilment workspace</h2>
                     <p className="mt-2 text-sm leading-6 text-neutral-400">
                         Placeholder for relationship fulfilment tasks, blockers, due dates, assigned work, assets, and links to global work-item detail panels.
                     </p>
                     <div className="mt-4 divide-y divide-neutral-900 rounded-xl border border-neutral-900">
                         {openItems.slice(0, 6).map((item) => (
-                            <Link key={item.id} href={item.synthesized ? item.native_href ?? workItemHref(workspace.slug, item.id) : workItemHref(workspace.slug, item.id)} className="block px-3 py-2 hover:bg-neutral-900/70">
+                            <Link key={item.id} href={item.synthesized ? item.native_href ?? workItemHref(workspace.slug, item.id) : workItemHref(workspace.slug, item.id)} className="block px-3 py-2 hover:bg-[var(--color-surface-hover)]">
                                 <p className="text-sm font-medium text-neutral-100">{item.title}</p>
                                 <p className="mt-1 text-xs text-neutral-500">{item.status} · {phaseLabel(item.lifecycle_phase)}</p>
                             </Link>
@@ -73,7 +73,7 @@ export default async function FulfilmentDetailPlaceholder({ params }: PageProps)
                             <p className="px-3 py-4 text-sm text-neutral-500">No open work items are attached yet.</p>
                         )}
                     </div>
-                    {role !== "staff" ? <Link href={relationshipHubHref(workspace.slug, relationship.id)} className="mt-4 inline-flex rounded-lg border border-neutral-800 px-3 py-2 text-sm text-neutral-300 hover:text-white">
+                    {role !== "staff" ? <Link href={relationshipHubHref(workspace.slug, relationship.id)} className="mt-4 inline-flex rounded-lg border border-card-border px-3 py-2 text-sm text-neutral-300 hover:text-white">
                         Open relationship summary
                     </Link> : null}
                 </section>

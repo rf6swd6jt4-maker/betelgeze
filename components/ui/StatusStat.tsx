@@ -4,7 +4,7 @@ export function StatusStat({ value, label, tone = "grey", className = "" }: { va
     const classes = statusToneClasses[tone]
     return (
         <span className={`inline-flex items-center gap-1.5 whitespace-nowrap text-xs leading-4 ${classes.text} ${className}`}>
-            <span className="font-semibold tabular-nums">{value}</span>
+            <span className={`font-semibold tabular-nums ${classes.accent}`}>{value}</span>
             {label}
         </span>
     )

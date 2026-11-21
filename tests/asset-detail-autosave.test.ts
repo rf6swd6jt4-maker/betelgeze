@@ -11,7 +11,7 @@ test("asset details use the relationship-style inline autosave fields", async ()
 
     assert.match(page, /<AssetFieldsEditor/)
     assert.doesNotMatch(page, /label="Reference"/)
-    assert.match(editor, /className="mt-4 border-b border-neutral-800"/)
+    assert.match(editor, /className="mt-4 border-b border-card-border"/)
     assert.match(editor, /<DetailFields className="!mt-0">/)
     assert.match(editor, /aria-label="Asset name"/)
     assert.match(editor, /aria-label="Asset description"/)

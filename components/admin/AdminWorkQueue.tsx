@@ -151,7 +151,7 @@ export function AdminWorkQueue({ items, workspaceSlug, currentUserId, names, ava
         <List ariaLabel="Work queue">
             {ranked.length ? ranked.map((item) => <QueueRow key={item.id} item={item} workspaceSlug={workspaceSlug} names={names} avatarUrls={avatarUrls} />) : <p className="px-4 py-5 text-sm text-neutral-400">There is no actionable Admin work right now.</p>}
             {deferred.length ? (
-                <div className="border-t border-neutral-800">
+                <div className="border-t border-card-border">
                     <div className="bg-neutral-950/70 px-4 py-2 text-xs font-semibold uppercase tracking-[0.16em] text-neutral-500">Blocked, waiting, or scheduled later</div>
                     {deferred.map((item) => <QueueRow key={item.id} item={item} workspaceSlug={workspaceSlug} names={names} avatarUrls={avatarUrls} />)}
                 </div>

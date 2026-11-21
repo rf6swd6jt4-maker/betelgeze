@@ -17,7 +17,7 @@ export function AttachmentsBlock({ children, actions, description, empty = "No a
     empty?: ReactNode
 }) {
     const renderedChildren = Children.toArray(children)
-    return <section className="mt-6 rounded-2xl border border-neutral-800 bg-black p-4 sm:p-5" aria-label="Attachments">
+    return <section className="mt-6 rounded-2xl border border-card-border p-4 sm:p-5" aria-label="Attachments">
         <div className="flex min-w-0 items-center justify-between gap-3">
             <h2 className="text-base font-semibold text-white">Attachments</h2>
             {actions ? <div className="flex shrink-0 flex-wrap justify-end gap-2">{actions}</div> : null}
@@ -35,9 +35,9 @@ export function AttachmentPreview({ href, title, subtitle, previewUrl, contentTy
     contentType?: string | null
     actions?: ReactNode
 }) {
-    return <article className="min-w-0 overflow-hidden rounded-xl border border-neutral-800 bg-neutral-950/70">
+    return <article className="min-w-0 overflow-hidden rounded-xl border border-card-border">
         <Link href={href} className="group block min-w-0 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-neutral-500">
-            <span className="block aspect-[4/3] overflow-hidden border-b border-neutral-800 bg-neutral-900">
+            <span className="block aspect-[4/3] overflow-hidden border-b border-card-border bg-neutral-900">
                 {previewUrl ? <img src={previewUrl} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover transition group-hover:scale-[1.02]" /> : <FilePreview contentType={contentType} />}
             </span>
             <span className="block min-w-0 p-2.5">
@@ -45,6 +45,6 @@ export function AttachmentPreview({ href, title, subtitle, previewUrl, contentTy
                 {subtitle ? <span className="mt-1 block truncate text-xs text-neutral-500">{subtitle}</span> : null}
             </span>
         </Link>
-        {actions ? <div className="border-t border-neutral-800 p-2">{actions}</div> : null}
+        {actions ? <div className="border-t border-card-border p-2">{actions}</div> : null}
     </article>
 }

@@ -33,7 +33,7 @@ function readableValue(value: unknown) {
 }
 
 function DetailGrid({ values }: { values: Array<{ label: string; value: unknown; mono?: boolean }> }) {
-    return <dl className="grid gap-px overflow-hidden rounded-xl border border-neutral-800 bg-neutral-800 sm:grid-cols-2">
+    return <dl className="grid gap-px overflow-hidden rounded-xl border border-card-border bg-neutral-800 sm:grid-cols-2">
         {values.map((item) => <div key={item.label} className="min-w-0 bg-black px-4 py-3">
             <dt className="text-xs font-medium uppercase tracking-wide text-neutral-600">{item.label}</dt>
             <dd className={`mt-1 break-words text-sm text-neutral-200 ${item.mono ? "font-mono" : ""}`}>{readableValue(item.value)}</dd>
@@ -104,21 +104,21 @@ export default async function AdminActivityDetailPage({ params }: PageProps) {
             </DetailFields>
 
             <div className="mt-5 grid gap-5 lg:grid-cols-2">
-                <section className="rounded-2xl border border-neutral-800 bg-black p-5">
-                    <h2 className="text-lg font-semibold">Changed fields and references</h2>
+                <section className="rounded-2xl border border-card-border p-5">
+                    <h2 className="text-sm font-semibold">Changed fields and references</h2>
                     {metadataEntries.length ? <dl className="mt-4 divide-y divide-neutral-900 rounded-xl border border-neutral-900">
                         {metadataEntries.map(([key, value]) => <div key={key} className="grid gap-1 px-3 py-3 sm:grid-cols-[180px_minmax(0,1fr)]"><dt className="text-sm text-neutral-500">{readableKey(key)}</dt><dd className="break-words whitespace-pre-wrap font-mono text-xs leading-5 text-neutral-300">{readableValue(value)}</dd></div>)}
                     </dl> : <p className="mt-3 text-sm text-neutral-500">No changed-field metadata was recorded.</p>}
                 </section>
-                <section className="rounded-2xl border border-neutral-800 bg-black p-5">
-                    <h2 className="text-lg font-semibold">Sanitized diagnostics</h2>
+                <section className="rounded-2xl border border-card-border p-5">
+                    <h2 className="text-sm font-semibold">Sanitized diagnostics</h2>
                     <div className="mt-4"><DetailGrid values={[
                         { label: "Error code", value: errorCode, mono: true },
                         { label: "Failure fingerprint", value: event.failure_fingerprint, mono: true },
                         { label: "Automation stage", value: automationStage },
                         { label: "Provider response", value: providerSummary },
                     ]} /></div>
-                    {diagnosticEntries.length ? <pre className="mt-4 max-h-96 overflow-auto rounded-xl border border-neutral-900 bg-neutral-950 p-4 text-xs leading-5 text-neutral-300">{JSON.stringify(diagnostics, null, 2)}</pre> : <p className="mt-3 text-sm text-neutral-500">No diagnostic payload was recorded.</p>}
+                    {diagnosticEntries.length ? <pre className="mt-4 max-h-96 overflow-auto rounded-xl border border-card-border p-4 text-xs leading-5 text-neutral-300">{JSON.stringify(diagnostics, null, 2)}</pre> : <p className="mt-3 text-sm text-neutral-500">No diagnostic payload was recorded.</p>}
                 </section>
             </div>
 

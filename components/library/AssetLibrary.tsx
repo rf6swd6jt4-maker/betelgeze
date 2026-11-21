@@ -21,7 +21,7 @@ type AssetEntry = {
 }
 type AssetMenu = { entry: AssetEntry; anchor: HTMLElement; point: { x: number; y: number } }
 
-const primaryActionClass = "inline-flex min-h-11 items-center justify-center rounded-lg bg-white px-4 py-2 text-center text-sm font-medium leading-none text-black disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-10 sm:px-3"
+const primaryActionClass = "inline-flex min-h-11 items-center justify-center rounded-lg bg-[var(--color-accent)] px-4 py-2 text-center text-sm font-medium leading-none text-[var(--color-accent-contrast)] disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-10 sm:px-3"
 
 function formatFileSize(size: number | null) {
     if (size === null || !Number.isFinite(size) || size < 0) return "Unknown size"
@@ -54,8 +54,8 @@ function AssetContextMenu({ menu, selected, busy, onSelect, onDownload, onDismis
         const index = event.key === "Home" ? 0 : event.key === "End" ? items.length - 1 : (current + (event.key === "ArrowUp" ? -1 : 1) + items.length) % items.length
         items[index]?.focus()
     }
-    const itemClass = "flex min-h-11 w-full items-center px-3 py-2 text-left text-sm text-neutral-200 hover:bg-neutral-900 focus-visible:bg-neutral-900 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
-    return <AnchoredPopup anchor={menu.anchor} anchorPoint={menu.point} onDismiss={onDismiss} className="w-44 rounded-lg border border-neutral-800 bg-neutral-950 shadow-2xl shadow-black/60">
+    const itemClass = "flex min-h-11 w-full items-center px-3 py-2 text-left text-sm text-neutral-200 hover:bg-[var(--color-surface-hover)] focus-visible:bg-neutral-900 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
+    return <AnchoredPopup anchor={menu.anchor} anchorPoint={menu.point} onDismiss={onDismiss} className="w-44 rounded-lg border border-card-border shadow-popup">
         <div ref={menuRef} role="menu" aria-label={`Actions for ${menu.entry.asset.title}`} onKeyDown={onKeyDown}>
             <button type="button" role="menuitem" className={itemClass} disabled={!menu.entry.downloadHref} onClick={onSelect}>{selected ? "Deselect" : "Select"}</button>
             {menu.entry.downloadHref && !busy ? <a role="menuitem" className={itemClass} href={menu.entry.downloadHref} download target="_blank" rel="noreferrer" onClick={onDownload}>Download</a> : <button type="button" role="menuitem" className={itemClass} disabled title={busy ? "A ZIP save is in progress" : "No downloadable file"}>Download</button>}
@@ -232,7 +232,7 @@ export function AssetLibrary({ workspaceSlug, previewEntries, counts }: {
                         setMenu({ entry, anchor: event.currentTarget, point: { x: event.currentTarget.clientWidth / 2, y: 0 } })
                     }}
                 />
-            })}</AssetGallery> : <div className="rounded-2xl border border-neutral-800 bg-black p-6">
+            })}</AssetGallery> : <div className="rounded-2xl border border-card-border p-6">
                 <p className="text-lg font-semibold">No assets yet.</p>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-400">Upload files from here or attach assets from relationship and work item pages.</p>
             </div>}

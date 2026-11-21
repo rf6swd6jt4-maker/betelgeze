@@ -17,7 +17,7 @@ export function WorkspaceBannerFallback({ bannerPath, logoPath, height }: Pick<P
     if (!bannerPath) {
         return <div aria-hidden="true" className="mb-5 flex h-[112px] items-end sm:h-[108px]"><div className="h-[112px] w-[112px] animate-pulse rounded-full border-4 border-neutral-950 bg-neutral-900 sm:h-[108px] sm:w-[108px]" /></div>
     }
-    return <div aria-hidden="true" className="relative mb-16 h-[calc(var(--workspace-banner-height)*0.6)] animate-pulse rounded-xl border border-neutral-800 bg-neutral-900 sm:h-[var(--workspace-banner-height)] sm:rounded-2xl" style={{ "--workspace-banner-height": `${height}px` } as CSSProperties}>{logoPath ? <div className="absolute bottom-0 left-4 h-[112px] w-[112px] translate-y-1/2 rounded-full border-4 border-neutral-950 bg-neutral-900 sm:left-7 sm:h-[108px] sm:w-[108px]" /> : null}</div>
+    return <div aria-hidden="true" className="relative mb-16 h-[calc(var(--workspace-banner-height)*0.6)] animate-pulse rounded-xl border border-card-border sm:h-[var(--workspace-banner-height)] sm:rounded-2xl" style={{ "--workspace-banner-height": `${height}px` } as CSSProperties}>{logoPath ? <div className="absolute bottom-0 left-4 h-[112px] w-[112px] translate-y-1/2 rounded-full border-4 border-neutral-950 bg-neutral-900 sm:left-7 sm:h-[108px] sm:w-[108px]" /> : null}</div>
 }
 
 export async function WorkspaceBanner({ bannerPath, logoPath, name, height, position }: Props) {
@@ -29,5 +29,5 @@ export async function WorkspaceBanner({ bannerPath, logoPath, name, height, posi
 
     if (!bannerSrc) return <div className="mb-5 flex h-[112px] items-end sm:h-[108px]"><img src={logoSrc!} alt={`${name} logo`} className="h-[112px] w-[112px] rounded-full border-4 border-neutral-950 bg-neutral-900 object-cover sm:h-[108px] sm:w-[108px]" /></div>
 
-    return <div className="relative mb-16 h-[calc(var(--workspace-banner-height)*0.6)] overflow-visible rounded-xl border border-neutral-800 bg-neutral-900 sm:h-[var(--workspace-banner-height)] sm:rounded-2xl" style={{ "--workspace-banner-height": `${height}px` } as CSSProperties}><img src={bannerSrc} alt={`${name} dashboard banner`} className="h-full w-full rounded-xl object-cover sm:rounded-2xl" style={{ objectPosition: `50% ${position}%` }} />{logoSrc && <img src={logoSrc} alt={`${name} logo`} className="absolute bottom-0 left-4 h-[112px] w-[112px] translate-y-1/2 rounded-full border-4 border-neutral-950 bg-neutral-900 object-cover sm:left-7 sm:h-[108px] sm:w-[108px]" />}</div>
+    return <div className="relative mb-16 h-[calc(var(--workspace-banner-height)*0.6)] overflow-visible rounded-xl border border-card-border sm:h-[var(--workspace-banner-height)] sm:rounded-2xl" style={{ "--workspace-banner-height": `${height}px` } as CSSProperties}><img src={bannerSrc} alt={`${name} dashboard banner`} className="h-full w-full rounded-xl object-cover sm:rounded-2xl" style={{ objectPosition: `50% ${position}%` }} />{logoSrc && <img src={logoSrc} alt={`${name} logo`} className="absolute bottom-0 left-4 h-[112px] w-[112px] translate-y-1/2 rounded-full border-4 border-neutral-950 bg-neutral-900 object-cover sm:left-7 sm:h-[108px] sm:w-[108px]" />}</div>
 }

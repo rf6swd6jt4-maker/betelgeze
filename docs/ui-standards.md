@@ -2,6 +2,20 @@
 
 Repeated interface elements use the primitives exported from `components/ui`, `components/panel`, `components/list`, and `components/detail`. New UI must not recreate them with page-local Tailwind classes.
 
+## Design language
+
+The workspace is flat and quiet. These rules come before any primitive below; a new screen that follows them needs very little else.
+
+1. **No boxes around sections.** A section is a small grey `SectionHeading`, its content, and space. Use one hairline (`border-card-border`) where a divider is needed. Borders belong to inputs, tables and the rare `Card`.
+2. **One small radius.** 6px for controls and chips, 8px for popups, dialogs and `Card`. Full circles only for avatars. Nothing is rounder.
+3. **No shadow, glass or blur** except the shadow under a floating menu, dialog or drawer (`shadow-popup` on `--color-surface-popup`).
+4. **Colour means state.** It lives in the Betelgeze diamond of a `Status` or stage, in a pill's tint, and in the one accent. Text beside a diamond is plain.
+5. **One primary action per page.** `Button` `primary` (the accent) appears once; everything else is `secondary`, `ghost`, or inside a three-dot menu.
+6. **One way into each thing.** Do not add a second button, link or panel that reaches something the sidebar, a tab or a row already reaches.
+7. **Tables for records compared down columns, lists for records with their own facts, property rows for one record's fields.** Never cards for a collection.
+
+Client-facing surfaces (`surface="light"`, onboarding and the client portal) are a different product face with agency branding. They keep their own colours and their rounder shape, and none of the changes described as "workspace" below apply to them.
+
 ## Design tokens
 
 Dark-workspace surface, border, and text colours are named CSS custom properties declared in `app/globals.css`'s `@theme inline` block, each exposing a matching Tailwind utility (e.g. `--color-surface-1` → `bg-surface-1`). Every value names a colour already in use elsewhere in the app; adding a new one is a decision, not a convenience, and belongs in this table alongside its rationale.
@@ -9,29 +23,35 @@ Dark-workspace surface, border, and text colours are named CSS custom properties
 | Token | Value | Use |
 |---|---|---|
 | `--color-surface-canvas` | `var(--background)` (`#0a0a0a`) | Page/body canvas |
-| `--color-surface-1` | `#171717` | Raised card/panel default |
-| `--color-surface-hover` | `rgb(255 255 255 / 0.04)` | Generic hover tint for interactive surfaces (`Button` ghost, `Card`) |
-| `--color-border-subtle` | `#171717` | Available for a future solid-border consumer that wants a near-invisible, surface-blending divider |
-| `--color-border-default` | `#262626` | Available for any future solid-border consumer that wants a plain, non-elevated divider |
-| `--color-border-strong` | `#404040` | Inputs, dialogs, drawers |
-| `--color-card-border` / `--shadow-card` | `rgb(255 255 255 / 0.08)` / soft shadow + top highlight | The shared "lifted surface" edge — a translucent hairline and subtle shadow instead of a solid divider. Used by `Card`'s own elevated edge, `List`'s outer perimeter and between-record dividers, `QuickStats`'s desktop boxes/mobile strip, the workspace sidebar, and the floating overlay primitives (`CenteredDialog`, `SideDrawer`, `SelectorDrawer`, `ListActionMenu`/`MobileCardActionSurface`, `ListCreatorBadge`'s tooltip), so a card, list, stat strip, dialog, drawer, or popup menu all read as "lifted" rather than "outlined" |
-| `--color-surface-glass` | `rgb(23 23 23 / 0.72)` | The frosted variant of `--color-surface-1`, paired with `backdrop-blur-lg`/`backdrop-blur-xl` and `backdrop-saturate-150`. Used only by floating popup/dialog/drawer surfaces, the relationship context panel and the floating sidebar box — never by the `dialog`/`[role="dialog"][aria-modal="true"]` host element, `dialog::backdrop`, or the workspace top bar/tab bar, which stay opaque (see Popup motion below and the forced `backdrop-filter: none` rule in `app/globals.css`) |
+| `--color-surface-1` | `var(--background)` | Kept for existing callers; the same as the canvas. The workspace has no raised fill |
+| `--color-surface-hover` | `rgb(255 255 255 / 0.045)` | Hover wash for rows and quiet controls (`Button` ghost, list and table rows, sidebar rows) |
+| `--color-surface-selected` | `rgb(255 255 255 / 0.075)` | The current row or chip: the sidebar's current destination, a selected `FilterRail` chip |
+| `--color-surface-popup` | `#141414` | The one raised surface: floating menus, dialogs, drawers and the phone's sidebar drawer. Opaque; never paired with `backdrop-blur` |
+| `--color-border-subtle` | `#171717` | A near-invisible solid divider |
+| `--color-border-default` | `#262626` | Inputs at rest (the search field, the sidebar's find box) |
+| `--color-border-strong` | `#404040` | Inputs and controls that need a firmer edge |
+| `--color-card-border` | `rgb(255 255 255 / 0.08)` | **The workspace hairline**: section dividers, list and table rows, the tab strip's line, `Card`'s outline, popup edges, the sidebar's and the docked panel's edge |
+| `--shadow-popup` | soft drop shadow | Floating surfaces only (`CenteredDialog`, `SideDrawer`, `SelectorDrawer`, `ListActionMenu`/`MobileCardActionSurface`, `ListCreatorBadge`'s tooltip, search results) |
+| `--color-accent` / `--color-accent-hover` / `--color-accent-contrast` | `#6e9bf5` / `#86acf8` / `#0a0a0a` | The one accent: `Button` `primary` and keyboard focus rings on new controls. Never a status colour |
 | `--color-text-primary` | `#f5f5f5` | Titles |
 | `--color-text-secondary` | `#d4d4d4` | Body text |
 | `--color-text-tertiary` | `#737373` | Meta/labels |
 | `--color-text-disabled` | `#525252` | Disabled text |
 | `--color-chart-*` | see `app/globals.css` | `TrendChart` only — its own namespace, not reused elsewhere |
 
+There is no `--color-surface-glass` and no `--shadow-card`: the frosted, lifted surface they described is gone. Do not reintroduce `backdrop-blur` on workspace surfaces.
+
 `components/ui/pill-styles.ts` (fixed RGB per pill tone), `components/ui/status-styles.ts` (the four `Status` tones), and the `--onboarding-*` variables used by every `surface="light"` primitive are intentionally **separate systems** and are not expressed through these tokens, even where a value happens to coincide (e.g. the pill-neutral tone's border colour is numerically the same as `--color-border-strong`). Do not refactor them to consume these tokens.
 
-Radius follows a fixed rule rather than its own token — Tailwind's default scale already produces exactly the four radii in use:
+Radius is collapsed in `app/globals.css` (`@theme`, "Shape"), so every existing `rounded-*` class already follows the rule:
 
-| Radius | Use |
-|---|---|
-| `rounded-md` (6px) | Inline chips/badges nested in a dense row |
-| `rounded-lg` (8px) | Controls: `Button`, inputs, `Selector`'s input surface |
-| `rounded-xl` (12px) | Popovers/dialogs/drawers (matches `SelectorDrawer`), and `Card`'s default |
-| `rounded-2xl` (16px) | A page/panel's single outermost container only (`List`'s outer wrapper is the reference case) |
+| Class | Workspace radius | Use |
+|---|---|---|
+| `rounded-md`, `rounded-lg` | 6px | Controls and chips: `Button`, inputs, `Selector`'s input surface, pills, `FilterRail` chips, sidebar rows |
+| `rounded-xl`, `rounded-2xl`, `rounded-3xl` | 8px | Popups, dialogs, drawers and `Card` |
+| `rounded-full` | circle | Avatars only |
+
+A client-themed subtree restores the rounder steps on its own root (`onboardingThemeStyle` in `lib/onboarding/theme.ts`), so the portal, onboarding and their previews inside the workspace keep their shape.
 
 ## Workspace shell layers
 
@@ -39,26 +59,27 @@ Only on top-level BE app launch, before the shell arrives, `AppStartupScreen` sh
 
 In the Today layout from `lg` up there is no tab bar row: the work area, the client column and the docked Comms panel start directly under the top bar (`body[data-workspace-layout="today"]` rules in `app/globals.css`). The client column has no toggle there. Do not put a page title in shell chrome; the page header owns it.
 
-Keep the shell stacking order explicit: tab content `30`, relationship context `35`, tab bar `40`, mobile sidebar dismiss surface `45`, sidebar `50`, the Today layout's phone bottom bar `52`, top bar and its dropdowns `55`, notices `60`, and dialogs `90` or higher. The top bar creates a stacking context, so increasing a dropdown's own z-index cannot lift it above a sibling sidebar. Keep the entire top bar above the sidebar so account and desktop/mobile search popups stay visible and clickable. Use `AnchoredPopup` for editors that must escape an iframe or clipping ancestor; loading overlays remain above all interactive surfaces.
+Keep the shell stacking order explicit: tab content `30`, relationship context `35`, tab bar `40`, mobile sidebar dismiss surface `45`, sidebar `50`, the Today layout's phone bottom bar `52`, top bar and its dropdowns `55`, notices `60`, and dialogs `90` or higher. The top bar creates a stacking context, so increasing a dropdown's own z-index cannot lift it above a sibling sidebar. Keep the entire top bar above the sidebar so account and desktop/mobile search popups stay visible and clickable. Use `AnchoredPopup` for editors that must escape an iframe or clipping ancestor; loading overlays remain above all interactive surfaces. In the Today layout a folded sidebar rises to `56` only while it is hovered or focused and so covers the page.
 
-In the Today layout the top bar carries, in order: workspace identity and the sidebar toggle; back, forward, reload and search; at most three presence avatars (connected first) and a `+N` count; `Comms`; one `New` menu; the account menu. Do not add another always-visible control to it without removing one.
+In the Today layout from `md` up the top bar starts beside the sidebar, which carries the workspace's name. It holds, in order: the sidebar fold toggle and, from `lg`, the breadcrumb; back, forward, reload and search; at most three presence avatars (connected first) and a `+N` count; `Comms`; one `New` menu; the account menu. The breadcrumb says where the person is: a destination's name alone (`Today`, `Clients`, `Library`), `Clients / client` on a client's page, and `Clients / client / record` on a record that belongs to a client, where the first two parts are buttons back. Below `lg` the strip under the top bar shows the same words as plain text. Do not add another always-visible control to the top bar without removing one. The top bar and strip have a hairline bottom edge and no shadow.
 
 Top-bar mutation feedback uses short, bounded labels (`Saving…`, `Saved`, `Action failed`). Full error details stay in the originating form and the status tooltip/accessibility label; they must never expand the header or displace search, navigation, presence, or account controls.
 
-The sidebar (`data-workspace-sidebar`) is a floating, inset box: `rounded-2xl`, 0.5rem from the left, below the top bar and above the bottom edge, with the frosted popup face (`--color-surface-glass`, `backdrop-blur-xl`, `backdrop-saturate-150`, `border-card-border`, `shadow-card`). From `md` up it is always present and has two states: expanded (17rem, icon + label) and collapsed to a 4rem icon rail where only the labels are hidden (kept as `sr-only` text, with a `title` tooltip, and the Communications unread count moves to the icon's corner). `--workspace-sidebar-width` (18rem expanded, 5rem collapsed, including gutters) offsets the tab bar, tab panels and legacy `main` content. Below `md` it is a slide-in drawer that is fully hidden (`invisible`, `aria-hidden`) when closed. Its active/hover items use translucent white washes (`bg-white/[0.06]`, `--color-surface-hover`). The sidebar blur is static; only transform/visibility (drawer) and the width/offset change (rail, matched with the 200ms content shift) transition.
+In the tabbed layout the sidebar (`data-workspace-sidebar`) is a floating, inset box: 8px corners, 0.5rem from the left, below the top bar and above the bottom edge, on the popup surface (`--color-surface-popup`, `border-card-border`, `shadow-popup`). From `md` up it is always present and has two states: expanded (17rem, icon + label) and collapsed to a 4rem icon rail where only the labels are hidden (kept as `sr-only` text, with a `title` tooltip, and the Communications unread count moves to the icon's corner). `--workspace-sidebar-width` (18rem expanded, 5rem collapsed, including gutters) offsets the tab bar, tab panels and legacy `main` content. Below `md` it is a slide-in drawer that is fully hidden (`invisible`, `aria-hidden`) when closed. Its active/hover items use translucent white washes (`bg-white/[0.06]`, `--color-surface-hover`). Only transform/visibility (drawer) and the width/offset change (rail, matched with the 200ms content shift) transition.
 
 ### Phone bottom bar (Today layout)
 
-Below `md` the Today layout has `PhoneBottomBar`: a 3.5rem bar (plus the bottom safe area) on the page canvas with a `border-neutral-800` top edge, holding at most four equal items of a 20px icon over a `text-xs` label. The current destination is `text-white font-semibold` with `aria-current="page"`; the others are `text-neutral-400`. An item that opens a drawer reports `aria-expanded` and reads as current while the drawer is open. Counts use `UnreadMessageCount` at the icon's corner. The bar is the only phone route to what it holds: do not repeat its items in the top bar, the strip or the drawer. It hides while the on-screen keyboard is up or a phone conversation is open, and the work area always ends where it begins (`--workspace-bottom-bar`); never float it over content.
+Below `md` the Today layout has `PhoneBottomBar`: a 3.5rem bar (plus the bottom safe area) on the page canvas with a hairline top edge (`border-card-border`), holding at most four equal items of a 20px icon over a `text-xs` label. The current destination is `text-white font-semibold` with `aria-current="page"`; the others are `text-neutral-400`. An item that opens a drawer reports `aria-expanded` and reads as current while the drawer is open. Counts use `UnreadMessageCount` at the icon's corner. The bar is the only phone route to what it holds: do not repeat its items in the top bar, the strip or the drawer. It hides while the on-screen keyboard is up or a phone conversation is open, and the work area always ends where it begins (`--workspace-bottom-bar`); never float it over content.
 
-### Client rail (Today layout)
+### Sidebar (Today layout)
 
-In the Today layout the same box holds `ClientRail` instead of the panel list. Each thing has one way in: **Today** first; then the person's clients; then Library, Staff and Settings, with the remaining destinations behind a **More** disclosure row. The rail looks the same on every page: nothing opens, closes or reorders by itself. More changes only when pressed, and when the current destination is behind a closed More, the More row carries the current wash. A row is a 2.5rem tile and a label on one activation target (`min-h-11` from `md`, `min-h-12` below).
+In the Today layout the sidebar is a full-height column of names, flush to the left edge with a hairline right edge and no box (`ClientRail`). From `md` up it is 15rem wide and the top bar starts beside it; `--workspace-sidebar-width` is 15rem, or 3.25rem when folded. It shows names from `lg` and starts folded between `md` and `lg`; the person's own choice with the top bar's toggle wins and is remembered per browser session under its own key. Below `md` it is the slide-in drawer on the popup surface, opened from the phone bottom bar.
 
-- A client's tile is a `bg-neutral-800` circle with two initials in `text-xs font-semibold` (first letter of the first and last word of the person's name, as Communications shows them); the label is the person's name with the business beneath in `text-xs text-neutral-400`. The client whose page, or whose record, is open in the work area has `aria-current="page"`, the `bg-white/[0.06]` wash and an inverted tile (`bg-neutral-100 text-neutral-950`), so it reads even when only tiles show. Today's tile is an outlined circle; other destinations use their existing icons without a circle.
-- Collapsed (4rem), labels are clipped but stay in the accessibility tree (`data-rail-label`), and wide-only content such as the find box is removed (`data-rail-wide`). With a mouse the rail widens to 17rem over the page on hover or keyboard focus, after 90ms, in 140ms; `--workspace-sidebar-width` does not change, so the page never moves. Pinning from the top bar is the only thing that moves the page. Reduced motion removes the transition. Never drive this from React state in the shell: it is CSS on `[data-client-rail][data-collapsed]`.
-- Do not add a second route to anything the rail already reaches (no "Open queue", "Open staff" or "Open full view" buttons), and do not add per-client badges or menus to tiles.
-- Loading shows four `LoadingPulse` circles; a failed read shows a short red line with Retry when wide; a list cut at 60 says so and links to Relationships.
+- Order, top to bottom: the workspace's 20px mark and name; **Today**; **Clients**; Library; Staff; Settings; then a small grey `Your clients` label, a find box from nine clients, and the person's clients. Communications appears after Clients only where the docked Comms panel is not offered. There is no More and nothing else: Onboarding and Client Connections are tabs on each client's page, and Admin and Onboarding Builder are reached from Settings. Someone who cannot open Clients keeps Onboarding and Client Connections as rows instead.
+- Every row is one shape: a 20px mark and a label on one activation target, 32px high from `md` (`min-h-12` below). Destinations use their 16px icon; a client's mark is a 5px-cornered square with two initials in `text-[10px] font-semibold`. The label is the person's name with the business after it in `text-xs text-neutral-500`, on one line, the business truncating first. Idle rows are `text-neutral-400`; hover uses `--color-surface-hover`; the current row uses `--color-surface-selected`, white text and, for a client, an inverted mark (`bg-neutral-100 text-neutral-950`) so it reads even when folded. A client stays current on every one of their pages and on any record of theirs. The Clients row ends with the number of clients, from the list the sidebar already read.
+- Folded, labels are clipped but stay in the accessibility tree (`data-rail-label`), wide-only content such as the find box is removed (`data-rail-wide`), and the `Your clients` label becomes a hairline. With a mouse the folded sidebar widens to 15rem over the page on hover or keyboard focus, after 90ms, in 140ms; `--workspace-sidebar-width` does not change, so the page never moves. Reduced motion removes the transition. Never drive this from React state in the shell: it is CSS on `[data-client-rail][data-collapsed]`.
+- The sidebar looks the same on every page: nothing opens, closes or reorders by itself. Do not add a second route to anything it already reaches, and do not add per-client badges or menus to rows.
+- Loading shows four `LoadingPulse` squares; a failed read shows a short red line with Retry; a list cut at 60 says so and links to Clients.
 
 ## Panel loading
 
@@ -85,8 +106,8 @@ The service worker's recovery document (`public/offline.html`) is deliberately i
 Every custom popup uses the shared opening motion on both mobile and desktop. Apply `betelgeze-popup-enter` to the visible menu, tooltip, field editor, or dialog surface: a `180ms` opacity/translateY/scale entrance (`4px` of upward travel, `0.97 → 1` scale) on the shared `cubic-bezier(0.22, 1, 0.36, 1)` ease, the same curve used by message-bubble entrance. `AnchoredPopup` applies this automatically once its initial position is measured; do not animate its children a second time.
 
 - Animate the dialog card, not its full-screen backdrop. Backdrops appear immediately and remain stationary, as a plain translucent black tint. The `dialog`/`[role="dialog"][aria-modal="true"]` host element, `dialog::backdrop`, and workspace top bar/tab bar chrome must never carry `backdrop-filter`, in every visible or hidden phase — `app/globals.css` forces this with `backdrop-filter: none` on those exact selectors so a retained blur layer can never recompose over hidden chrome (this was a real rendering bug, not just a style rule). Do not remove or weaken that rule, and do not add `backdrop-filter` to any element it targets.
-- Floating popup/dialog/drawer *cards* — `CenteredDialog`, `SideDrawer`, `SelectorDrawer`, `ListActionMenu`/`MobileCardActionSurface`, `ListCreatorBadge`'s tooltip — and the relationship context panel use a frosted glass surface instead of the opaque `Card` treatment: `--color-surface-glass` + `backdrop-blur-lg` (compact popups/menus) or `backdrop-blur-xl` (dialogs, drawers, the context panel) + `backdrop-saturate-150`, still with `border-card-border`/`shadow-card`. This blur is a static style present for the surface's whole mounted lifetime — it is never itself animated, toggled, or transitioned; only opacity/transform move during open/close, same as any other popup.
-- Use `betelgeze-popup-fade` for full-screen previews, lightboxes, and viewport-filling client panels where movement would expose an edge or disturb fixed descendants. It is a `160ms` opacity-only fade on the same ease; these surfaces are not frosted.
+- Floating popup/dialog/drawer surfaces — `CenteredDialog`, `SideDrawer`, `SelectorDrawer`, `ListActionMenu`/`MobileCardActionSurface`, `ListCreatorBadge`'s tooltip — and the relationship context panel use the opaque popup face: `--color-surface-popup`, `border-card-border` and `shadow-popup`, at the 8px popup radius. No workspace surface uses `backdrop-blur` or `backdrop-saturate`; only opacity/transform move during open/close.
+- Use `betelgeze-popup-fade` for full-screen previews, lightboxes, and viewport-filling client panels where movement would expose an edge or disturb fixed descendants. It is a `160ms` opacity-only fade on the same ease.
 - Closing is immediate. Do not delay dismissal, navigation, focus restoration, or input behind an exit animation.
 - Opening motion runs once when the surface appears, not when its contents load, resize, scroll, or update. Do not key an entire popup by changing form values or search results.
 - Both shared classes disable animation for `prefers-reduced-motion: reduce`.
@@ -150,7 +171,7 @@ Checklist controls remain usable while saving. `createChecklistUpdates` projects
 
 ## Status
 
-`Status` communicates operational state, health, or progress. Its appearance follows the lead-generation poll UI: a Betelgeze diamond followed by plain text.
+`Status` communicates operational state, health, or progress: a Betelgeze diamond followed by plain text. The diamond is the workspace's one piece of brand shape and the only coloured part: on the dark workspace the label is `text-neutral-200` for every tone, so a screen of statuses stays calm and the diamonds do the signalling.
 
 Statuses have exactly four tones:
 
@@ -180,7 +201,7 @@ In space-constrained visualisations such as Gantt bars, use `compact` to show on
 
 ### StatusStat
 
-`StatusStat` is the compact numerical sibling of `Status`. It uses the same four tone meanings and typography, but a bold tabular number takes the place of the Betelgeze diamond. Use it for small grouped state counts such as source-settings summaries; do not use a pill or a hand-built coloured count for this pattern.
+`StatusStat` is the compact numerical sibling of `Status`. It uses the same four tone meanings and typography, but a bold tabular number in the tone's colour takes the place of the Betelgeze diamond; its label is plain. Use it for small grouped state counts such as source-settings summaries; do not use a pill or a hand-built coloured count for this pattern.
 
 ```tsx
 <StatusStat value={12} label="Enabled" tone="green" />
@@ -191,9 +212,9 @@ In space-constrained visualisations such as Gantt bars, use `compact` to show on
 
 ## RoundPill
 
-`RoundPill` represents assigned or attached things: services, modules, people, categories, filters, or other compact metadata. Its aesthetic comes from the assigned service and module pills in onboarding detail.
+`RoundPill` represents assigned or attached things: services, modules, categories, filters, or other compact metadata. It is a flat tag: a dark tinted face and pale text in the tone's colours, the workspace's 6px corner, and no border.
 
-Pill colours are fixed RGB values rather than translucent utilities, so they remain identical on every surface. The first two recipes are sampled directly from the approved RoundPills; the remaining recipes preserve the same dark face, chromatic edge, and pale text relationship:
+Pill colours are fixed RGB values rather than translucent utilities, so they remain identical on every surface. A pill uses a tone's Background and Text. Border remains in the palette for timeline bars (the relationship Gantt), which outline their fills; `mark` (in `pill-styles.ts`) is the saturated colour of a stage's diamond:
 
 | Tone | Border | Background | Text |
 | --- | --- | --- | --- |
@@ -207,11 +228,11 @@ Pill colours are fixed RGB values rather than translucent utilities, so they rem
 
 These values are the palette definition. Do not substitute nearby framework colour tokens or recreate them with opacity.
 
-`yellow` is the canonical tone for `Test` labels across the platform. It retains the same glassy, near-black chromatic face as the rest of the palette, but keeps its red and green channels close so it reads as yellow rather than amber or brown. `amber` is warmer and more orange; retain it for labels that need that distinction rather than using it as a substitute for `Test`.
+`yellow` is the canonical tone for `Test` labels across the platform. It retains the same near-black chromatic face as the rest of the palette, but keeps its red and green channels close so it reads as yellow rather than amber or brown. `amber` is warmer and more orange; retain it for labels that need that distinction rather than using it as a substitute for `Test`.
 
-Use `Assignee` when the attached thing is a person assigned to something. Its default is the canonical avatar-and-name form of `RoundPill`; do not assemble a separate profile-picture treatment for assignees. In space-constrained visualisations such as Gantt bars, use its `compact` avatar-only mode.
+Use `Assignee` when the attached thing is a person assigned to something. Its default is an avatar followed by the person's plain name, with no pill chrome; do not assemble a separate profile-picture treatment for assignees. In space-constrained visualisations such as Gantt bars, use its `compact` avatar-only mode.
 
-Assignee avatars and their profile buttons share explicit square dimensions: 16px in a name pill, 18px in compact mode, 24px in medium compact mode, and 80px in large compact mode for a focused handoff portrait. Failed portrait images use the same person fallback without changing geometry. Profile buttons use `data-icon-button` to opt out of the ordinary mobile button minimum height. Keep the avatar centered beside the single-line, truncating name; interactive and read-only assignees must retain the same geometry on mobile and desktop.
+Assignee avatars and their profile buttons share explicit square dimensions: 16px beside a name, 18px in compact mode, 24px in medium compact mode, and 80px in large compact mode for a focused handoff portrait. Failed portrait images use the same person fallback without changing geometry. Profile buttons use `data-icon-button` to opt out of the ordinary mobile button minimum height. Keep the avatar centered beside the single-line, truncating name; interactive and read-only assignees must retain the same geometry on mobile and desktop.
 
 ```tsx
 <RoundPill tone="emerald">Paid Social</RoundPill>
@@ -223,7 +244,7 @@ Assignee avatars and their profile buttons share explicit square dimensions: 16p
 
 ## SquarePill
 
-`SquarePill` is the boxier, rounded-corner label treatment. Use it for categorical labels such as `Stuck` or `Test`. It shares RoundPill's border, background, text, spacing, and colour palette; only its shape differs.
+`SquarePill` is the label treatment for categorical labels such as `Stuck` or `Test`. With one radius in the workspace it now has the same flat tag shape as `RoundPill` (`pillClass` in `pill-styles.ts`); the two names are kept because they say what the tag is for: `RoundPill` for an attached thing, `SquarePill` for a classification.
 
 ```tsx
 <SquarePill tone="amber">Stuck</SquarePill>
@@ -232,20 +253,19 @@ Assignee avatars and their profile buttons share explicit square dimensions: 16p
 
 ## RelationshipStage
 
-`RelationshipStage` is reserved for relationship lifecycle stages. It reads its border, background, and text colours from the exact same `pillTones` definitions as `RoundPill`; it must never maintain a separate stage palette. It is otherwise identical in height, typography, border weight, and spacing. The only difference is its silhouette.
+`RelationshipStage` is reserved for relationship lifecycle stages, and `ServiceStage` for a service's stage. Both render `StageLabel`: a Betelgeze diamond in the stage's colour followed by the stage's plain name. The pointed-end pill is gone.
 
-The silhouette is a rectangle with half of a Betelgeze diamond attached to each end. It is exactly 24px high. Each pointed end is 12px deep, so its upper and lower edges travel at 45 degrees and meet at the vertical midpoint. In polygon terms, the six outer points are: top-left after 12px, top-right before 12px, right midpoint, bottom-right before 12px, bottom-left after 12px, and left midpoint. Do not soften, round, shorten, or reinterpret these four diagonal edges.
+A stage says where a client is on the journey; a `Status` says how something is going. They share the diamond, so the stage palette is chosen never to borrow a status meaning (`relationshipStageMarks`): Lead and Completed/Lost neutral; Nurturing and Potential Client sky; Sold and legacy Invoiced violet; Onboarding and Onboarding Review amber; Fulfilment and Retention emerald. **Red is never a stage.** Pass the lifecycle phase itself so the component owns both its canonical wording and colour.
 
-Relationship stages are categorical labels, not operational statuses. Their stage-specific colours therefore do not expand or alter the four-colour `Status` meanings. Pass the lifecycle phase itself so the component owns both its canonical wording and colour.
-
-The lifecycle palette assigns distinct tones to the active parent stages: Lead `sky`, Potential Client `amber`, Sold `emerald`, legacy Invoiced `yellow`, Onboarding `violet`, Onboarding Review `emerald`, Fulfilment `red`, and Retention `neutral`. These are categorical Gantt colours, not status meanings.
+The relationship Gantt keeps its own categorical colours (`relationshipPhaseTones`, one distinct tone per parent stage, including red for Fulfilment); those are timeline colours and are not used for the label.
 
 ```tsx
 <RelationshipStage phase="onboarding" />
 <RelationshipStage phase="fulfilment" />
+<ServiceStage stage="setup" />
 ```
 
-Do not use this shape for statuses, tests, warnings, services, modules, or arbitrary metadata.
+Do not use a stage label for statuses, tests, warnings, modules, or arbitrary metadata.
 
 ## Shared rules
 
@@ -255,8 +275,8 @@ Do not use this shape for statuses, tests, warnings, services, modules, or arbit
 - Extend a shared primitive when a new stable variant is required. Do not invent a one-off treatment in a page.
 - When the design changes, update `components/ui`, this document, and existing uses together.
 - A local exception must include a code comment explaining why the shared primitive cannot represent it.
-- Use `Button` (`components/ui/Button.tsx`) for every actionable control instead of a page-local `<button>`/`<a>` with hand-rolled classes. Variants: `primary` (the filled white action), `secondary` (bordered), `ghost` (borderless), `destructive` (for a non-final destructive action — the final, irreversible delete control in a danger zone still uses `DetailDangerZone`'s own treatment, not this variant). Sizes: `sm`/`md` (default). Pass `href` for a navigation control; it renders through the app's internal link component, or a plain external anchor when `external` is set.
-- Use `Card` (`components/ui/Card.tsx`) for a generic bordered container ("a box inside a page") instead of a page-local `rounded-xl/2xl border ... p-*` wrapper. `padding` is `none`/`sm` (default)/`md`/`lg`. It has no header slot — compose a heading above its children using the standard `mt-2`/`mt-5` rhythm, not a prop.
+- Use `Button` (`components/ui/Button.tsx`) for every actionable control instead of a page-local `<button>`/`<a>` with hand-rolled classes. Variants: `primary` (filled with the accent; **one per page**), `secondary` (a hairline outline), `ghost` (borderless), `destructive` (for a non-final destructive action — the final, irreversible delete control in a danger zone still uses `DetailDangerZone`'s own treatment, not this variant). Sizes: `sm` (28px from `sm` up) and `md` (32px, default); both keep the 44px touch height on phones. Pass `href` for a navigation control; it renders through the app's internal link component, or a plain external anchor when `external` is set.
+- Use `Card` (`components/ui/Card.tsx`) only where content must read as one separate object: a hairline outline (`border-card-border`, 8px) on the canvas, with no fill and no shadow. Most sections need no box; use a `SectionHeading` and space instead of a page-local `rounded-xl/2xl border ... p-*` wrapper. `padding` is `none`/`sm` (default)/`md`/`lg`. It has no header slot — compose a heading above its children, not a prop.
 
 ## Selectors and compact choice drawers
 
@@ -266,7 +286,7 @@ The trigger always shows the current value at the left and one small downward ch
 
 Use `Selector surface="light"` (or `SelectorTrigger surface="light"`) for client-facing light surfaces. It changes the trigger text, border and hover colours while retaining the shared drawer and keyboard behavior.
 
-`SelectorDrawer` is an anchored popup, not a screen-edge modal drawer. It uses the shared frosted popup face — `--color-surface-glass`, `border-card-border`, `shadow-card`, `backdrop-blur-lg` + `backdrop-saturate-150` — at a 12px radius, with a default width of 288px and a bounded internally scrolling list. Its header/footer dividers and selected/hover row use the same soft-hairline and translucent-wash language as `List` and the sidebar (`border-card-border`, `bg-white/[0.06]` for the selected row, `--color-surface-hover` on hover) so they stay visible against the lighter surface. It opens directly above the pressed trigger through `AnchoredPopup`, keeping the standard 6px trigger gap and 8px visible-viewport margin. It portals above the shell and same-origin panel frames, recalculates while either element or the visual viewport moves, and dismisses on outside press, Escape, navigation, inactive tab, or selection. Never implement a selector as a page-local absolutely positioned menu.
+`SelectorDrawer` is an anchored popup, not a screen-edge modal drawer. It uses the shared popup face — `--color-surface-popup`, `border-card-border`, `shadow-popup` — at the 8px popup radius, with a default width of 288px and a bounded internally scrolling list. Its header/footer dividers and selected/hover row use the same soft-hairline and translucent-wash language as `List` and the sidebar (`border-card-border`, `bg-white/[0.06]` for the selected row, `--color-surface-hover` on hover) so they stay visible on the popup surface. It opens directly above the pressed trigger through `AnchoredPopup`, keeping the standard 6px trigger gap and 8px visible-viewport margin. It portals above the shell and same-origin panel frames, recalculates while either element or the visual viewport moves, and dismisses on outside press, Escape, navigation, inactive tab, or selection. Never implement a selector as a page-local absolutely positioned menu.
 
 Each option is one compact row: leading identity, one truncating label, an optional short secondary line, and a trailing check for the selected value. Rows are 40px minimum on desktop and inherit the platform 44px touch target on mobile. Hover, keyboard focus, and current selection use the neutral row highlight; colour is reserved for the identity element rather than a full bright row. Arrow keys wrap through choices, Home and End jump to the bounds, and Enter or Space chooses the focused row. Search appears when there are seven or more choices, filters existing in-memory data, and must not introduce a fetch for each keystroke. Keep titles and descriptions short; explanations that apply to the entire choice set belong in the drawer header.
 
@@ -326,8 +346,8 @@ Provider availability is expressed by disabling the unavailable option and a con
 
 - A panel home route uses the home tab or list name: `Work Queue`, never `Admin`; `Leads`, never `Lead Gen`.
 - The description directly explains the active tab's content, ordering, or purpose. It must not summarize every capability in the parent panel. Begin with stable copy that identifies the list; a following sentence may adapt to the current list contents. Desktop descriptions occupy one visual line and truncate when necessary, so put the stable information first; mobile descriptions may wrap.
-- When the panel contains multiple tabs, `PanelTabs` occupy a dedicated row immediately beneath the description and above `QuickStats`, filters, or tab content. They remain horizontally scrollable on mobile.
-- The title-to-description gap is always `0.5rem` (`mt-2`). Do not reserve blank description lines or add a minimum height to the description slot.
+- When the panel contains multiple tabs, `PanelTabs` occupy a dedicated row immediately beneath the description and above `QuickStats`, filters, or tab content. Tabs are plain text on one hairline: the current tab is white, `font-medium`, with a 1.5px underline that sits on the line; the others are `text-neutral-400`. They scroll horizontally on mobile. `PanelSectionTabs` (local sections of one page) and a client page's tabs use the same strip (`panelTabStripClass`, `panelTabClass`). A tab is never a filled or outlined button.
+- The title is `text-xl`, semibold and tightly tracked. The title-to-description gap is always `0.25rem` (`mt-1`). Do not reserve blank description lines or add a minimum height to the description slot.
 - Optional primary actions occupy the header's right-hand action slot on desktop. The action row bottom-aligns with the actual bottom of the description line, not with an artificial header height.
 - Put one principal action in this slot, such as `New Poll` or `Start new relationship`. Supplementary metadata may sit immediately before it, but the primary action remains the final, rightmost control.
 - On mobile the action slot follows the description and uses the full available width without displacing the title or tab row.
@@ -361,9 +381,9 @@ A list tab must not insert a page-specific summary, capacity note, explanatory p
 ]} />
 ```
 
-- Use `surface="light"` in a themed client portal; dark remains the workspace default. The light treatment uses the same layout and non-clickable summary contract.
+- Use `surface="light"` in a themed client portal; dark remains the workspace default. The light treatment keeps its bordered strip and boxes.
 - Use three visible statistics on mobile. A fourth lower-priority statistic may set `hideOnMobile` and return from `sm` upward.
-- Mobile renders one consolidated, bordered strip with internal dividers, using the shared `Card`/`List` lifted-surface edge (`--color-surface-1`, `--color-card-border`, `--shadow-card`). Desktop separates the same statistics into evenly sized boxes using that same edge per box, rather than a flat `neutral-900` fill.
+- In the workspace the statistics are plain label-over-value pairs on the canvas: three columns on mobile, a left-aligned row with wide gaps from `sm`. No boxes, fills, dividers or shadows.
 - Labels are short neutral text; values are prominent, tabular, and limited to one line.
 - Prefer current list facts such as actionable count, reserved time, open failures, or poll results. Do not fill the strip with decorative totals.
 - Capacity and forecast information belongs here when it can be expressed compactly, for example `Capacity — 10h late`; do not repeat it in a prose block beneath the filters.
@@ -382,7 +402,7 @@ A list tab must not insert a page-specific summary, capacity note, explanatory p
 ```
 
 - Each rail represents one filtering dimension. Use a second rail with `spacing="tight"` when a list genuinely needs another dimension, such as Maintenance state plus category.
-- The selected option uses plain white text and a white underline. Unselected options remain neutral and acquire only a restrained hover underline.
+- In the workspace an option is a quiet chip: `text-neutral-400` at rest, a `--color-surface-hover` wash on hover, and when selected a `--color-surface-selected` wash with white text. The rail has no border above or below. A filter never looks like a tab: tabs are underlined, filters are washed chips. Light client-facing rails keep their underline.
 - Counts sit beside labels in subdued tabular text and should reflect the other currently selected filter dimensions.
 - Prefer `FilterRailLink` and URL-backed query parameters so filters survive refresh, back/forward navigation, sharing, and tab restoration.
 - When the complete candidate collection is already present in the page, add `instant` to `FilterRailLink` and render records through `InstantFilterResults`. This keeps the URL authoritative while applying the visible change locally instead of rerunning the server page. Keep paginated, permission-dependent, or data-dependent filters server-backed.
@@ -390,7 +410,7 @@ A list tab must not insert a page-specific summary, capacity note, explanatory p
 - Independently fetched panels in the client portal may retain their local filter state through `FilterRailButton`. Use `FilterRail surface="light"` for the same underline mechanic with theme-coloured selection, readable muted text, and 44px targets; the workspace default remains dark.
 - Client portals use the same light `FilterRailButton` treatment in their top-bar navigation: Results, Files, then the existing Chat action. Results contains appointments with relationship-scoped GHL reporting and a Google Ads connection placeholder in a right-hand column; on smaller screens the connection boxes stack below appointments. Use the existing `PortalSection` treatment for these task areas. GHL uses a light `Status`, a light `QuickStats` strip for open/won/lost opportunities, and plain count text for contacts and total opportunities. Only real connected metrics are displayed; connected results identify the GHL sub-account, scope, and last successful refresh. Keep the provider connection heading visible in phone landscape. Keep both content panels mounted when switching so filters, scroll positions, and uploads survive. The top bar uses a labelled `nav` with the light rail group styling, without the list-filter rail's outer spacing or divider.
 - Rails never wrap. They scroll horizontally on mobile while preserving option order.
-- Do not recreate filter pills, segmented boxes, dropdowns, or page-local category chips when the available choices fit a rail.
+- Do not recreate filter chips, segmented boxes, dropdowns, or page-local category chips when the available choices fit a rail. A table's saved views are a `FilterRail` (see Table).
 - When `QuickStats` and `FilterRail` are both present, every stats block comes first and the first rail follows beneath it.
 
 ## List
@@ -431,12 +451,13 @@ Use the primitives in `components/list`:
 </List>
 ```
 
-- `List` owns the consolidated surface, `rounded-2xl` outer corners, the shared Card elevation edge (`--color-surface-1` background, `--color-card-border` hairline, `--shadow-card`), clipping, and list semantics — the same "lifted" language as `Card` and `QuickStats` rather than a flat black box with a solid border.
-- `ListItem` owns the divider between records and the restrained hover highlight. Its divider uses the same `--color-card-border` hairline as the outer list edge, and its hover uses `--color-surface-hover`. Do not wrap every item in its own floating card.
-- `ListPrimaryRow` is the identity and state band. It has a subtle white-wash tint (`bg-white/[0.02]`) and an internal soft hairline divider (`border-white/[0.06]`), one step fainter than the between-record `--color-card-border` hairline.
-- `ListSecondaryRow` is the supporting-information band. It is always one line and never wraps.
-- `ListTitle` is the primary identity, always placed first and given the flexible width. Link it whenever the record has a canonical destination. It truncates rather than displacing state or actions.
+- `List` owns the collection: in the workspace, rows on the canvas between a top and a bottom hairline, with no perimeter, fill, radius or shadow. It extends 0.5rem past its container on each side (`-mx-2`) so the hover wash has room and row text lines up with the heading above; `embedded` lists inside a bordered section do not. The light client-facing list keeps its rounded, lifted box.
+- `ListItem` owns the hairline between records (`--color-card-border`) and the hover wash (`--color-surface-hover`). Do not wrap every item in its own card.
+- `ListPrimaryRow` is the identity and state line. In the workspace it has no tint and no divider beneath it: the two rows of a record read as one two-line entry.
+- `ListSecondaryRow` is the supporting-information line, `text-[13px]`. It is always one line and never wraps.
+- `ListTitle` is the primary identity, always placed first and given the flexible width: `text-sm font-medium`. Link it whenever the record has a canonical destination. It truncates rather than displacing state or actions.
 - `ListTrailing` is the stable audit/action cluster at the end of the supporting row.
+- `ListRow` is a one-line record for a short list inside a page section (a client's open work, their services): the title, quiet supporting text, and whatever trails, 40px high. Use it instead of the two rows when a record has only a title and a status to show.
 
 ### Information order
 
@@ -456,10 +477,10 @@ The meaning of the time may vary—created, updated, or latest activity—but it
 
 ### Content and density
 
-- Lists are intentionally two rows. Do not flatten them into a dense one-row table at wide breakpoints.
+- Lists are two lines per record at every breakpoint: identity and state, then supporting facts. When every record has the same facts and people compare them down the page, use `Table` instead of forcing columns onto a list.
 - Keep the primary row calm. It contains identity, categorical labels, and one operational status—not general metadata.
 - The secondary row is flexible rather than column-prescriptive. Omit unavailable fields cleanly; do not render empty column placeholders.
-- Use `text-sm` and neutral supporting colours. Reserve `text-base font-medium` for the primary name.
+- Use `text-[13px]` and neutral supporting colours. `text-sm font-medium` is the primary name.
 - Use the shared `Status`, pill, stage, creator, and action components. Do not recreate their appearance locally.
 - Use short, scannable values. Longer explanation belongs on the detail page or in an intentionally designed preview field.
 - Keep one obvious primary destination and move secondary operations into `ListActionMenu`.
@@ -479,7 +500,7 @@ The meaning of the time may vary—created, updated, or latest activity—but it
 - The outer list remains one consolidated collection on mobile and desktop; do not switch between separate cards and a table at an arbitrary breakpoint.
 - Mobile rows use slightly tighter vertical padding than desktop rows. Preserve the shared `py-2 sm:py-2.5` rhythm rather than overriding row height per feature.
 
-The two dividers are deliberately different weights of the same soft hairline language: the fainter `border-white/[0.06]` separates the primary and secondary bands within one record, while `--color-card-border` (`border-card-border`) separates records and matches the list perimeter. This alternating rhythm must remain visible on mobile and desktop.
+In the workspace there is one divider: the `--color-card-border` hairline between records. The light client-facing list keeps its fainter line between a record's two bands.
 
 ### Interaction and exceptional state
 
@@ -513,6 +534,18 @@ inside `List flush` (`flush` drops the list's top margin when a section heading 
 
 This variant is for companion columns only. Panel collections keep the two-band anatomy, and a companion list never
 gains per-row menus, pills or secondary actions.
+
+### Table
+
+`Table` (`components/list/Table.tsx`: `Table`, `TableHead`, `TableHeading`, `TableBody`, `TableRow`, `TableCell`, `TableEmpty`) is for a collection whose records share the same facts and are compared down the columns. Clients is the reference.
+
+- One line per record, 40px high, `text-[13px]`, with a hairline under the column labels and under every row. No perimeter, fill, zebra or shadow. Like `List`, it extends 0.5rem past its container on each side.
+- Column labels are `text-xs text-neutral-500`, sentence case. Numbers are right-aligned and tabular (`numeric`).
+- The first column is the record's identity (`primary`): a 20px mark where the record has one, the name as a real link marked `data-table-open`, and one quiet secondary identity after it. Pressing anywhere else on the row follows that same link; a control inside a row keeps its own behaviour. There is no per-row menu.
+- Other cells are plain grey text, a stage or `Status`, or an `Assignee`. A missing value is a dimmed word (`Unassigned`, `None`) or an en dash, never an empty cell.
+- Hide lower-priority columns as the page narrows (`max-lg:hidden`, `max-md:hidden`, `max-sm:hidden` on both the heading and the cell) so the identity, the stage and one number remain on a phone. The table scrolls sideways inside its own wrapper only as a last resort.
+- Saved views sit directly above it in one `FilterRail`: each is one question about the same rows, answered from data the page already holds, with its count. A thin divider may separate two kinds of view in the same rail.
+- An empty view shows `TableEmpty`: one quiet line saying so and how to widen it.
 
 On the Today page the person's own queue is the main column and always comes first; `TodaySide` sits beside it from a
 56rem work area and below it when narrower. Each side section's heading is its disclosure control (title, optional
@@ -575,7 +608,7 @@ The record-specific middle remains flexible. The header, fields, and destructive
 
 - The first line always identifies the record category and short ID in subdued monospaced text: `Relationship 69e381e`, `Poll e154d7a`, or `Asset c92f810`.
 - String record names also supply the automatic workspace tab label. Relationship and work-item tabs use the name; onboarding, fulfilment, and appointment-setting details append their section. Communications tabs use `Chat · Name` for the active client, direct, or team chat, and `Communications` when none is selected. Explicit custom tab names take precedence.
-- The record name is always `text-2xl`, semibold, and tightly tracked. Do not use a different title scale for a more complicated page.
+- The record name is always `text-xl`, semibold, and tightly tracked (`text-2xl` on light client-facing surfaces). Do not use a different title scale for a more complicated page.
 - An optional subtitle gives one stable secondary identity, such as company, event key, or source context. It is not a description of the whole panel.
 - The right-hand metadata rail is bottom-aligned with the identity block. Its order is key categorical labels, up to two short numerical facts, then `Updated …` as the final item.
 - Header labels are reserved for meaningful classification or exception labels such as `Test`, `Stuck`, an asset kind, a manual poll, or a relationship lifecycle stage when that stage is not already obvious from the page. Use the shared `SquarePill` or `RelationshipStage`; do not hand-build a badge.
@@ -583,14 +616,14 @@ The record-specific middle remains flexible. The header, fields, and destructive
 - Facts are optional, limited to two, and read value first (`2 assets`, `1m 42s duration`). Prefer facts that are not stated again below. If no unrepeated metric is useful, show only labels and `Updated …` rather than filling the rail for symmetry.
 - Do not promote field values such as progress, trigger, source, or status into the header merely because there is room.
 - On narrow screens the metadata rail moves below the identity, wraps between whole elements, and never splits a pill or status.
-- The header owns its `border-neutral-800`, `pb-4`, and internal `gap-3`. A page must not wrap it in a second card, add another record title, or override its typography and spacing.
+- The header owns its hairline (`border-card-border`), `pb-4`, and internal `gap-3`. A page must not wrap it in a second card, add another record title, or override its typography and spacing.
 - Use `surface="light"` for client-facing record summaries; it preserves the same header geometry with readable light-surface text and dividers.
 
 In the Today layout, native panels hide the reference line and `Updated …` and the icon beside each `DetailField` label (`body[data-workspace-layout="today"]` rules in `app/globals.css`); the record reference stays available as the title's tooltip. The components still render them, so the tabbed layout, framed pages and client-facing summaries are unchanged. Do not remove them from the components.
 
 Autosaving text fields (`WorkItemTextField`) say nothing at rest. The status line speaks only for an unsaved change, a save in flight, a just-confirmed save, a draft needing review or a failure, and keeps its height reserved so it never shifts the page. Do not add an idle "saves automatically" note to a field.
 
-In the Today layout a relationship's page is the client's home, so `ClientSummary` follows its header: a `DetailFields` block with only what the page does not already edit below (email and phone as link plus copy control, manager as `Assignee`, source), then one row of small buttons: primary `Chat`, then secondary links to Onboarding, Fulfilment and Client Connections, each under its existing permission. The lifecycle stage is a `RelationshipStage` header label there. Do not repeat name, company, role, location, notes or services in it.
+In the Today layout a relationship's page is the client's page and has its own header and tabs instead of `DetailPageHeader`; see "Client page" below.
 
 `DetailPageHeader` is distinct from `PanelTabHeader`: a panel-tab header names a workspace view or collection, while a detail header identifies one record. A detail route nested under a panel may retain the panel's shared tab navigation above it, but must not use a second panel heading as the record header.
 
@@ -609,9 +642,9 @@ In the Today layout a relationship's page is the client's home, so `ClientSummar
 
 - The fields block has the same background as the page and no outer border, rounded card, heading, or inset panel.
 - It starts exactly `1.25rem` (`mt-5`) below the header and uses one column on mobile and two columns from `lg` upward.
-- Every `DetailField` is a restrained row with a muted icon and label, a readable value, `min-h-10`, `py-2`, and a `border-neutral-900` bottom divider.
+- Every `DetailField` is a plain property row: a grey label, a readable value, `min-h-9` and `py-1.5`, with no icon and no divider in the workspace. Light client-facing fields keep their icon and `border-black/10` divider. The `icon` prop still names the kind of value for those surfaces.
 - Single-line field labels and values share their first baseline. Use `DetailField multiline` for editable multiline text so the label aligns with the first line rather than the bottom of the control.
-- Field icons describe the value rather than merely decorating the row: use the dedicated company, role and location marks for those relationship fields. Editable descriptions and notes use `AutoGrowTextarea`; it has no manual resize handle and expands vertically as lines are entered.
+- Editable descriptions and notes use `AutoGrowTextarea`; it has no manual resize handle and expands vertically as lines are entered. On light surfaces, field icons describe the value rather than merely decorating the row.
 - Desktop rows use a fixed `9rem` label track; mobile uses `8rem`. Values take the remaining width and may contain text, inputs, selectors, shared pills, `Status`, `Assignee`, or a popup trigger.
 - The second desktop column adds `border-l border-neutral-900 pl-8`. A full-width field uses `lg:col-span-2`. The page supplies only these placement classes; it must not restyle the row.
 - Editable values remain visually quiet on the page surface. Single-choice field values use the borderless `Selector` field appearance; people use `AssignmentSelector`; communication providers use `CommunicationMethodSelector`. Popups may use their own bordered floating surface. Use established shared primitives inside values instead of local imitations.
@@ -665,16 +698,33 @@ The heading is `Attachments`. Do not add Refresh or Upload header buttons. Cards
 ```
 
 - The danger zone is the final block in the primary content column. Nothing ordinary follows it.
-- It is one restrained red-tinted box: a low-opacity red-black background, muted red border, rounded corners, and small red heading. The treatment must read as a warning without becoming the visually loudest block on the page.
-- Actions are vertically divided by subdued dark-red rules. Each row presents a title and concise consequence on the left and one fixed control on the right; controls stack below the explanation on mobile.
+- It is not a box. A hairline separates it from the page, a small red `Danger zone` heading names it, and the red lives in the buttons. The treatment must read as a warning without becoming the visually loudest block on the page.
+- Actions are divided by the ordinary hairline. Each row presents a title and concise consequence on the left and one fixed control on the right; controls stack below the explanation on mobile.
 - Archive is always first and uses the quieter red-outline button. It removes a record from active views while preserving history and dependencies.
-- Permanent deletion is always last and uses a slightly stronger dark-red filled button, never a bright solid red. Its wording must be explicit, and its confirmation must identify irreversible consequences and dependent records.
+- Permanent deletion is always last and uses the slightly stronger button (a dark-red tint as well as the outline), never a bright solid red. Its wording must be explicit, and its confirmation must identify irreversible consequences and dependent records.
 - Other destructive lifecycle actions, such as restarting onboarding, may sit between Archive and Delete and use the outline treatment.
 - During the visual-definition phase, unavailable archive/delete actions remain visibly disabled with an honest explanation. Do not connect a destructive control to an unrelated mutation or imply that a placeholder works.
 - Owner/admin visibility, confirmation, server authorization, archive persistence, restoration, and dependency-aware permanent deletion are functional requirements. The shared visual primitive does not replace them.
 - Records that are deliberately immutable for audit or compliance may disable both controls pending a documented retention decision; they must not silently invent different danger-zone styling.
 
 When the archive lifecycle is implemented, active lists exclude archived records by default and the proposed Library `Archived` tab becomes the shared restoration and permanent-deletion surface. That future behaviour must reuse the same archive terminology and must not change this visual contract without updating the components and this document together.
+
+### SectionHeading
+
+`SectionHeading` (`components/detail`) heads a section inside a record or client page: `text-xs font-medium text-neutral-500`, with an optional count beside it and an optional quiet action at the far end. It is deliberately small so the content beneath it leads. Sections are separated by space (`mt-8`), not by boxes or rules. Do not use `text-lg` headings inside a page.
+
+### Client page
+
+In the Today layout everything that belongs to one client lives on that client's page. Every one of their pages starts with `ClientPageHeader` (`components/relationships/ClientPageHeader.tsx`; `FramedClientPageHeader` on pages the shell shows in a frame):
+
+- A 36px mark with the client's initials, the person's name as the `text-xl` title, and beneath it one quiet line: `RelationshipStage`, the business, and `Test` when it applies. Onboarding's `Stuck` label sits with the actions.
+- `Chat` is the page's one primary action, at the right. It docks the client's conversation where the docked Comms panel is offered and opens the full conversation where it is not. The Connections tab has no Chat (see below).
+- The tabs, in order: **Overview**, **Work**, **Onboarding**, **Connections**, **Files and notes**, in the `PanelTabs` text style. A person sees only the tabs they may open (`clientPageTabs` in `lib/client-page.ts`, from the context's `clientTabs`). There are no other buttons leading to the client's things.
+- Each tab is an existing route, so opening one is ordinary shell navigation and the address can be shared: Overview is the relationship page; Work is `work/<id>`; Onboarding is `onboarding/<id>`; Connections is Client Connections narrowed to the client; Files and notes is the relationship page with `?tab=files`. Overview and Files and notes are two sections of one route: both stay mounted and switch in place, so drafts survive and nothing is read again.
+
+Overview is two columns from a 56rem page (`@4xl`): the work of the page on the left (the client's values, the editable details, services, engagement, links and the danger zone), and on the right a `Details` column of properties from `ClientSummary`: email and phone as link plus copy control on one line, manager as `Assignee`, source. Narrower, the Details come first. `ClientSummary` holds no buttons. Work lists the client's open work as `ListRow`s under a `SectionHeading` with the count. Do not add placeholders for things that are not built.
+
+The Connections tab does not report the client to the shell, so a docked chat is not shown beside it and the tab offers no Chat; the sidebar and breadcrumb still mark the client from the address. Changing that changes where a chat is on screen, which `app-alerts.md` governs.
 
 ## TrendChart
 
@@ -721,7 +771,7 @@ Settings > Teams uses the shared `Assignee` treatment with compact Seller and Ma
 
 The relationship context is a companion reference, not a record detail page or a collection of navigable records. The shell and standalone pages share `ShellRelationshipContextPanel`: company/contact identity and `RelationshipStage`, services paired with `Assignee`, saved relationship notes, actionable contact details, optional secondary metadata, and `QuickStats`. Attached services use `RoundPill`; missing ownership reads `Unassigned`. Hide absent optional contact and metadata rows. Never label a failed data load as an empty service list or unassigned team.
 
-In the Today layout the panel renders `dense`, beside records that belong to a client (work items, assets, notes, onboarding) and never on the client's own page, which shows `ClientSummary` instead (see Detail pages). It has no hide control there, and offers one secondary `Chat` button under the stage. `dense` means: no "Relationship context" label or record id above the name; contact values without their per-value label (kept for assistive technology), one line each with the copy control; and one line per responsibility, with what it is on the left and who holds it on the right. The manager is a named `Assignee`; each service is its `RoundPill` and `ServiceStage` with a compact avatar-only `Assignee` whose tooltip is the name, or `Unassigned`. A long service name truncates first (its full name is the row's tooltip) so the stage and the owner always stay whole. The tabbed layout and standalone pages keep the fuller form.
+In the Today layout there is no client column from `lg` up. The top bar's breadcrumb names the client a record belongs to and leads back to their page, which holds what the column showed. Below `lg` the panel still opens as the context sheet from the strip, in its `dense` form, on records that belong to a client and never on the client's own pages. `dense` means: no "Relationship context" label or record id above the name; contact values without their per-value label (kept for assistive technology), one line each with the copy control; and one secondary `Chat` button under the stage where the dock is offered.
 
 Keep permission-aware shortcuts in a compact two-column navigation area outside the scrolling body; mark the current destination. Client Connections links to its supported collection with a relationship filter, never an invented detail route. That shortcut also requires a matching service and an eligible relationship. Service data respects the viewer's relationship/service scope. Use the existing relationship description as the notes source.
 
@@ -731,15 +781,9 @@ At `lg` and above, retain the desktop sidebar preference and reserve its width i
 
 ### Docked Comms panel and SegmentedSwitch
 
-In the Today layout at `lg` and above, Comms is a docked panel: flush to the right edge, from the top bar to the bottom,
-`border-l border-neutral-800` on the page canvas (`bg-neutral-950`), at level `35`. It is not a floating card. It is
-`--workspace-dock-width` wide: 20rem, then 24rem from 1280px, 26rem from 1440px and 30rem from 1680px. While it is on
-screen the work area ends where it begins (`body[data-workspace-dock="shown"]`), so no page, native or framed, is
-covered, and the client column gives way to it. Nothing dims or becomes inert. It is not offered below `lg`.
+In the Today layout at `lg` and above, Comms is a docked panel: flush to the right edge, from the top bar to the bottom, with a hairline left edge (`border-card-border`) on the page canvas, at level `35`. It is not a floating card. It is `--workspace-dock-width` wide: 20rem, then 24rem from 1280px, 26rem from 1440px and 30rem from 1680px. While it is on screen the work area ends where it begins (`body[data-workspace-dock="shown"]`), so no page, native or framed, is covered. Nothing dims or becomes inert. It is not offered below `lg`.
 
-The top bar's `Comms` button (`Button` secondary, with `UnreadMessageCount`) opens the conversation list; `Chat` on a
-client's page or in the client column opens that client's conversation, which shows only beside that client's own
-pages. The header carries `Comms` or the client's name and a close control, nothing else: there is no "Open full view".
+The top bar's `Comms` button (`Button` secondary, with `UnreadMessageCount`) opens the conversation list; `Chat` on a client's page opens that client's conversation, which shows only beside pages that report that client. The header carries `Comms` or the client's name in `text-sm font-medium` and a close control, nothing else: there is no "Open full view".
 
 `SegmentedSwitch` is the control for two or three views of one companion surface: a canvas-coloured track with a
 `border-card-border` edge, 30px segments, the selected segment on `bg-neutral-800` with primary text. It reports

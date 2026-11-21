@@ -20,7 +20,7 @@ export function AgencyPublicBrandingFields({
     return <WorkspaceAutosaveForm key={`${userId}:${workspaceSlug}`} action={saveAction}
         recoveryScope={{ userId, workspaceSlug, recordType: "workspace", recordId: workspaceSlug, field: "public-branding" }}
         recoveryFields={["agency_display_name", "agency_metadata_title", "agency_privacy_policy_url", "agency_terms_of_service_url", "agency_metadata_description"]}>
-        <section className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4 sm:p-5">
+        <section className="rounded-2xl border border-card-border p-4 sm:p-5">
             <div className="grid gap-4 lg:grid-cols-2">
                 <label className="block text-sm text-neutral-300">
                     Agency display name

@@ -33,9 +33,9 @@ export default async function LeadgenPollArchive({ params }: { params: Promise<{
                     <DetailField label="Last stage" icon="status">{poll.current_stage ?? "—"}</DetailField>
                     <DetailField label="Sources" icon="source" className="lg:border-l lg:border-neutral-900 lg:pl-8">{poll.source_count ?? 0}</DetailField>
                 </DetailFields>
-                {poll.error ? <section className="mt-6"><h2 className="text-lg font-semibold">Recorded error</h2><p className="mt-2 whitespace-pre-wrap break-words text-sm text-neutral-300">{poll.error}</p></section> : null}
-                <section className="mt-6"><h2 className="text-lg font-semibold">Saved diagnostics</h2><p className="mt-1 text-sm text-neutral-400">Historical snapshots remain unchanged. This archive does not run or resume processing.</p>
-                    <pre className="mt-3 max-h-96 overflow-auto rounded-lg border border-neutral-800 p-4 text-xs text-neutral-300">{JSON.stringify({ source_snapshot: poll.source_snapshot, icp_snapshot: poll.icp_snapshot, stage_summary: poll.stage_summary }, null, 2)}</pre>
+                {poll.error ? <section className="mt-6"><h2 className="text-sm font-semibold">Recorded error</h2><p className="mt-2 whitespace-pre-wrap break-words text-sm text-neutral-300">{poll.error}</p></section> : null}
+                <section className="mt-6"><h2 className="text-sm font-semibold">Saved diagnostics</h2><p className="mt-1 text-sm text-neutral-400">Historical snapshots remain unchanged. This archive does not run or resume processing.</p>
+                    <pre className="mt-3 max-h-96 overflow-auto rounded-lg border border-card-border p-4 text-xs text-neutral-300">{JSON.stringify({ source_snapshot: poll.source_snapshot, icp_snapshot: poll.icp_snapshot, stage_summary: poll.stage_summary }, null, 2)}</pre>
                 </section>
             </div>
         </div>

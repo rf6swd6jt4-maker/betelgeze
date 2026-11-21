@@ -136,7 +136,7 @@ export function PullToRefresh({ active, refreshing, onRefresh, getScrollElement,
         role="status"
         aria-live="polite"
         aria-label="Refreshing tab"
-        className={`pointer-events-none ${placement} left-1/2 top-2 z-[80] grid h-9 w-9 -translate-x-1/2 place-items-center rounded-full border border-neutral-700 bg-black/90 shadow-lg shadow-black/30 md:hidden`}
+        className={`pointer-events-none ${placement} left-1/2 top-2 z-[80] grid h-9 w-9 -translate-x-1/2 place-items-center rounded-full border border-neutral-700 bg-black/90 shadow-popup md:hidden`}
     >
         <span aria-hidden="true" className="h-5 w-5 animate-spin rounded-full border-2 border-neutral-700 border-t-neutral-100 motion-reduce:animate-none" />
     </div>
@@ -145,7 +145,7 @@ export function PullToRefresh({ active, refreshing, onRefresh, getScrollElement,
     const progress = Math.min(1, distance / PULL_TO_REFRESH_THRESHOLD)
     return <div
         aria-hidden="true"
-        className={`pointer-events-none ${placement} left-1/2 top-0 z-[80] grid h-9 w-9 place-items-center rounded-full border border-neutral-700 bg-black/90 shadow-lg shadow-black/30 md:hidden`}
+        className={`pointer-events-none ${placement} left-1/2 top-0 z-[80] grid h-9 w-9 place-items-center rounded-full border border-neutral-700 bg-black/90 shadow-popup md:hidden`}
         style={{ opacity: 0.25 + progress * 0.75, transform: `translate3d(-50%, ${-36 + progress * 52}px, 0) scale(${0.82 + progress * 0.18})` }}
     >
         <span className="h-5 w-5 rounded-full border-2 border-neutral-700 border-t-neutral-100" style={{ transform: `rotate(${progress * 300}deg)` }} />

@@ -17,6 +17,10 @@ import { MODULES } from "@/lib/onboarding/modules"
 import { relationshipServiceDisplayName } from "@/lib/onboarding/service-display"
 import { loadOnboardingServiceRevisionDisplays } from "@/lib/onboarding/service-revisions"
 import { Card, RoundPill, SquarePill, Status } from "@/components/ui"
+import { FramedClientPageHeader } from "@/components/relationships/FramedClientPageHeader"
+import { clientPageTabs } from "@/lib/client-page"
+import { relationshipContextShortcuts } from "@/lib/relationship-context"
+import { workspaceLayoutFor } from "@/lib/workspace-layout"
 import {
     assetHref,
     getRelationship,
@@ -350,7 +354,7 @@ function MobileTimeline({ steps }: { steps: OnboardingStepDetail[] }) {
                 return (
                     <li key={step.key} className="relative before:absolute before:bottom-[-0.25rem] before:left-[0.96875rem] before:top-8 before:w-px before:bg-neutral-800 last:before:hidden">
                         {done ? (
-                            <a href={`#${step.anchorId}`} className="relative flex min-h-12 items-center gap-3 rounded-lg px-2 py-2 hover:bg-neutral-900">{content}</a>
+                            <a href={`#${step.anchorId}`} className="relative flex min-h-12 items-center gap-3 rounded-lg px-2 py-2 hover:bg-[var(--color-surface-hover)]">{content}</a>
                         ) : (
                             <div className="relative flex min-h-12 items-center gap-3 px-2 py-2">{content}</div>
                         )}
@@ -393,7 +397,7 @@ function StepInformationSection({ step, workspaceSlug }: { step: OnboardingStepD
                     <p className="mt-2 text-xs text-neutral-600">{step.updatedAt ? `Updated ${formatRelativeTime(step.updatedAt)}` : "No activity yet"}</p>
                 </div>
                 {step.item ? (
-                    <Link href={workItemHref(workspaceSlug, step.item.id)} className="inline-flex min-h-10 shrink-0 items-center rounded-lg border border-neutral-800 px-3 text-sm text-neutral-300 hover:border-neutral-600 hover:text-white">
+                    <Link href={workItemHref(workspaceSlug, step.item.id)} className="inline-flex min-h-10 shrink-0 items-center rounded-lg border border-card-border px-3 text-sm text-neutral-300 hover:border-neutral-600 hover:text-white">
                         Open task
                     </Link>
                 ) : null}
@@ -402,7 +406,7 @@ function StepInformationSection({ step, workspaceSlug }: { step: OnboardingStepD
             {answers.length > 0 ? (
                 <div className="mt-5 grid gap-3">
                     {answers.map((answer) => (
-                        <div key={answer.key} className="rounded-lg border border-neutral-900 bg-neutral-950 px-4 py-3">
+                        <div key={answer.key} className="rounded-lg border border-card-border px-4 py-3">
                             <p className="text-sm font-medium text-neutral-300">{answer.label}</p>
                             <AnswerValue value={answer.value} />
                             {(uploadsByField.get(answer.key) ?? []).length > 0 ? (
@@ -416,7 +420,7 @@ function StepInformationSection({ step, workspaceSlug }: { step: OnboardingStepD
                     ))}
                 </div>
             ) : (
-                <div className="mt-5 rounded-lg border border-dashed border-neutral-800 bg-neutral-950 px-4 py-4">
+                <div className="mt-5 rounded-lg border border-dashed border-card-border bg-neutral-950 px-4 py-4">
                     <p className="text-sm font-medium text-neutral-200">
                         {step.kind === "video" && step.status === "submitted" ? "Instruction step completed." : step.status === "not_submitted" ? "Not submitted yet." : "No form answers were captured for this step."}
                     </p>
@@ -442,8 +446,8 @@ function StepInformationSection({ step, workspaceSlug }: { step: OnboardingStepD
 
 function AssetRowLink({ asset, workspaceSlug }: { asset: AssetRow; workspaceSlug: string }) {
     return (
-        <Link href={assetHref(workspaceSlug, asset.id)} className="grid gap-2 rounded-lg border border-neutral-800 bg-black px-3 py-2 text-sm hover:border-neutral-600 sm:grid-cols-[auto_1fr_auto] sm:items-center">
-            <span className="hidden h-8 w-8 items-center justify-center rounded-lg border border-neutral-800 text-neutral-400 sm:inline-flex"><FileIcon /></span>
+        <Link href={assetHref(workspaceSlug, asset.id)} className="grid gap-2 rounded-lg border border-card-border px-3 py-2 text-sm hover:border-neutral-600 sm:grid-cols-[auto_1fr_auto] sm:items-center">
+            <span className="hidden h-8 w-8 items-center justify-center rounded-lg border border-card-border text-neutral-400 sm:inline-flex"><FileIcon /></span>
             <span className="min-w-0">
                 <span className="block truncate text-neutral-100">{asset.title}</span>
                 <span className="mt-0.5 block text-xs text-neutral-600">{asset.content_type ?? asset.asset_kind ?? "Asset"}</span>
@@ -698,7 +702,7 @@ async function OnboardingActivity({ data, workspaceSlug, relationshipId }: { dat
         <Card padding="none" className="mt-4 overflow-hidden sm:mt-6">
                             <div className="border-b border-neutral-900 px-5 py-4">
                                 <div>
-                                    <h2 className="text-lg font-semibold">Onboarding timeline</h2>
+                                    <h2 className="text-sm font-semibold">Onboarding timeline</h2>
                                     <p className="mt-1 text-sm text-neutral-500">Completed steps jump to the submitted information below.</p>
                                 </div>
                             </div>
@@ -743,7 +747,7 @@ async function OnboardingActivity({ data, workspaceSlug, relationshipId }: { dat
 
         <Card padding="none" className="mt-6 overflow-hidden">
                             <div className="border-b border-neutral-900 px-5 py-4">
-                                <h2 className="text-lg font-semibold">Client information</h2>
+                                <h2 className="text-sm font-semibold">Client information</h2>
                                 <p className="mt-1 text-sm text-neutral-500">Information submitted during onboarding stays available here after fulfilment starts.</p>
                             </div>
                             {activity.steps.length ? activity.steps.map((step) => (
@@ -810,13 +814,18 @@ export default async function OnboardingDetailPage({ params, searchParams }: Pag
         canOpenCompleteClientSession: !fullyAllowedRelationshipIds || fullyAllowedRelationshipIds.has(relationship.id),
     })
     const immediateTestLabel = relationship.source_metadata.is_test === true ? <SquarePill tone="yellow">Test</SquarePill> : null
+    const today = workspaceLayoutFor(workspace.id, user.id) === "today"
 
     return <main className="min-h-screen bg-neutral-950 px-4 py-6 text-white sm:px-6">
         <WorkspaceTopBar userId={user.id} workspace={workspace} workspaceAccess={access} currentProduct="client-work" />
         <div className="mx-auto max-w-[92rem]">
             <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto]">
                 <div className="min-w-0">
-                    <DetailPageHeader
+                    {/* Today layout: this is the Onboarding tab of the client's page (docs/today-layout.md, "Client page"). */}
+                    {today ? <FramedClientPageHeader workspaceSlug={workspace.slug} relationshipId={relationship.id} name={relationship.primary_person_name} business={relationship.business_name} phase={relationship.lifecycle_phase}
+                        tabs={clientPageTabs(workspace.slug, relationship.id, relationshipContextShortcuts(access.capabilities, true))} active="onboarding"
+                        actions={<Suspense fallback={immediateTestLabel}><OnboardingHeaderLabels activityPromise={data.activityPromise} /></Suspense>} />
+                    : <DetailPageHeader
                         category="Onboarding"
                         reference={shortId(relationship.id)}
                         title={relationship.primary_person_name}
@@ -824,7 +833,7 @@ export default async function OnboardingDetailPage({ params, searchParams }: Pag
                         labels={<Suspense fallback={immediateTestLabel}><OnboardingHeaderLabels activityPromise={data.activityPromise} /></Suspense>}
                         facts={[{ label: "assets", value: <Suspense fallback="—"><OnboardingAssetCount activityPromise={data.activityPromise} /></Suspense> }]}
                         updated={<Suspense fallback={formatRelativeTime(relationship.updated_at)}><OnboardingUpdated activityPromise={data.activityPromise} fallback={relationship.updated_at} /></Suspense>}
-                    />
+                    />}
                     <Suspense fallback={<DetailFieldsLoading label="Loading onboarding details" rows={4} />}>
                         <OnboardingFields data={data} />
                     </Suspense>

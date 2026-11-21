@@ -37,7 +37,7 @@ export function WorkspaceTeamSettings({ workspaceSlug, operations, isOwner }: { 
                 </ListPrimaryRow>
             </ListItem>)}
         </List>
-        <details className="mt-4 border-t border-neutral-800 pt-3">
+        <details className="mt-4 border-t border-card-border pt-3">
             <summary className="cursor-pointer text-sm text-neutral-300">Maintenance responsibility</summary>
             <p className="mt-2 text-xs leading-5 text-neutral-500">Route platform issues to the right person. Membership of the Maintenance group follows these assignments.</p>
             <List ariaLabel="Maintenance responsibility" className="!mt-3">{operations.maintenance.map((route) => <ListItem key={route.key}><ListPrimaryRow className="!flex-wrap !whitespace-normal"><ListTitle className="flex-1">{route.label}</ListTitle><AssignmentSelector ariaLabel={`${route.label} responsible person`} disabled={!isOwner || pending} value={maintenance[route.key]} onChange={(value) => setMaintenance((all) => ({ ...all, [route.key]: value }))} people={people} placeholder="Choose person" clearLabel="Workspace owner" appearance="compact" className="w-56" title="Assign responsibility" /></ListPrimaryRow></ListItem>)}</List>

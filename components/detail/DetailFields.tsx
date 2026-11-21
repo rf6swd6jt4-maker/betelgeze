@@ -59,8 +59,22 @@ export function DetailFields({ children, surface = "dark", columns = 2, classNam
 }
 
 export function DetailField({ label, icon, children, multiline = false, stackOnMobile = false, className = "" }: { label: string; icon: DetailFieldIcon; children: ReactNode; multiline?: boolean; stackOnMobile?: boolean; className?: string }) {
-    return <div className={`grid min-h-10 ${stackOnMobile ? "grid-cols-1" : "grid-cols-[8rem_minmax(0,1fr)]"} ${multiline ? "items-start" : "items-baseline"} gap-2 border-b border-neutral-900 py-2 group-data-[surface=light]/fields:border-black/10 sm:grid-cols-[9rem_minmax(0,1fr)] ${className}`}>
-        <p className={`flex items-center gap-2 text-sm text-neutral-500 ${multiline ? "pt-1.5" : ""}`}><DetailFieldIconMark kind={icon} /><span>{label}</span></p>
+    // Workspace (dark): a plain property row, grey label then value, with no divider and no icon. Light client-facing
+    // panels keep their divider and icon.
+    return <div className={`grid min-h-9 ${stackOnMobile ? "grid-cols-1" : "grid-cols-[8rem_minmax(0,1fr)]"} ${multiline ? "items-start" : "items-baseline"} gap-2 py-1.5 group-data-[surface=light]/fields:min-h-10 group-data-[surface=light]/fields:border-b group-data-[surface=light]/fields:border-black/10 group-data-[surface=light]/fields:py-2 sm:grid-cols-[9rem_minmax(0,1fr)] ${className}`}>
+        <p className={`flex items-center gap-2 text-sm text-neutral-500 ${multiline ? "pt-1.5" : ""}`}><span className="hidden group-data-[surface=light]/fields:inline-flex"><DetailFieldIconMark kind={icon} /></span><span>{label}</span></p>
         <div className="min-w-0 text-sm text-neutral-200 group-data-[surface=light]/fields:text-[var(--onboarding-text,#0F172A)]">{children}</div>
+    </div>
+}
+
+/**
+ * The heading of a section inside a record or client page: small and grey, so the content beneath it leads. An optional
+ * count sits beside it and an optional action at the far end. Sections are separated by space, not boxes.
+ */
+export function SectionHeading({ children, count, action, className = "" }: { children: ReactNode; count?: ReactNode; action?: ReactNode; className?: string }) {
+    return <div className={`flex min-h-7 items-center gap-2 ${className}`}>
+        <h2 className="text-xs font-medium text-neutral-500">{children}</h2>
+        {count !== undefined && count !== null ? <span className="text-xs tabular-nums text-neutral-600">{count}</span> : null}
+        {action ? <span className="ml-auto flex items-center gap-2">{action}</span> : null}
     </div>
 }

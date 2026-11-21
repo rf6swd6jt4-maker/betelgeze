@@ -7,6 +7,8 @@ import { WorkspaceConnections } from "@/components/admin/WorkspaceConnections"
 import { WorkspaceOnboardingDomain } from "@/components/admin/WorkspaceOnboardingDomain"
 import { WorkspaceTeamSettings } from "@/components/settings/WorkspaceTeamSettings"
 import { SettingsSectionNav, type SettingsSectionNavItem } from "@/components/workspace/SettingsSectionNav"
+import { Button } from "@/components/ui"
+import { workspaceLayoutFor } from "@/lib/workspace-layout"
 import { AgencyBrandingEditor } from "@/components/settings/AgencyBrandingEditor"
 import { AgencyPublicBrandingFields } from "@/components/settings/AgencyPublicBrandingFields"
 import { OnboardingSettings } from "@/components/settings/OnboardingSettings"
@@ -77,7 +79,7 @@ function UnifiedSection({ id, title, description, children }: { id: string; titl
 
 function SettingsSectionFallback({ id, title, description, height = "min-h-40" }: { id: string; title: string; description: string; height?: string }) {
     return <UnifiedSection id={id} title={title} description={description}>
-        <div aria-label={`Loading ${title} settings`} aria-busy="true" className={`${height} motion-safe:animate-pulse rounded-2xl border border-neutral-800 bg-neutral-900/70 p-5`}>
+        <div aria-label={`Loading ${title} settings`} aria-busy="true" className={`${height} motion-safe:animate-pulse rounded-2xl border border-card-border p-5`}>
             <div className="h-4 w-40 max-w-full rounded bg-neutral-800" />
             <div className="mt-4 h-10 rounded-lg bg-neutral-950" />
             <div className="mt-3 h-10 w-2/3 rounded-lg bg-neutral-950" />
@@ -87,10 +89,10 @@ function SettingsSectionFallback({ id, title, description, height = "min-h-40" }
 
 function IdentityFallback({ workspace }: { workspace: WorkspaceRecord }) {
     return <div aria-label="Loading workspace identity" aria-busy="true">
-        <div className="relative mb-16 h-48 motion-safe:animate-pulse rounded-xl border border-neutral-800 bg-neutral-900 sm:h-[var(--workspace-cover-height)] sm:rounded-2xl" style={{ "--workspace-cover-height": `${workspace.banner_height}px` } as CSSProperties}>
+        <div className="relative mb-16 h-48 motion-safe:animate-pulse rounded-xl border border-card-border sm:h-[var(--workspace-cover-height)] sm:rounded-2xl" style={{ "--workspace-cover-height": `${workspace.banner_height}px` } as CSSProperties}>
             {workspace.logo_path ? <div className="absolute bottom-0 left-4 h-[112px] w-[112px] translate-y-1/2 rounded-full border-4 border-neutral-950 bg-neutral-900 sm:left-7 sm:h-[108px] sm:w-[108px]" /> : null}
         </div>
-        <h1 className="text-2xl font-semibold tracking-tight">Settings</h1>
+        <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
     </div>
 }
 
@@ -114,7 +116,7 @@ async function SettingsIdentity({ workspace }: { workspace: WorkspaceRecord }) {
 
 function WorkspaceSettingsSection({ workspace, userId }: { workspace: WorkspaceRecord; userId: string }) {
     return <UnifiedSection id="workspace" title="Workspace" description="Edit the workspace name shown in the top bar, menus, and account areas.">
-        <WorkspaceAutosaveForm key={`${userId}:${workspace.id}`} recoveryScope={{ userId, workspaceSlug: workspace.slug, recordType: "workspace", recordId: workspace.id, field: "name" }} recoveryFields={["name"]} action={updateWorkspaceName.bind(null, workspace.slug)} className="rounded-2xl border border-neutral-800 bg-neutral-900 p-4 sm:p-5">
+        <WorkspaceAutosaveForm key={`${userId}:${workspace.id}`} recoveryScope={{ userId, workspaceSlug: workspace.slug, recordType: "workspace", recordId: workspace.id, field: "name" }} recoveryFields={["name"]} action={updateWorkspaceName.bind(null, workspace.slug)} className="rounded-2xl border border-card-border p-4 sm:p-5">
             <label className="block text-sm text-neutral-300">Workspace name<input name="name" required defaultValue={workspace.name} className="mt-2 h-11 w-full rounded-lg border border-neutral-700 bg-neutral-950 px-3 text-sm text-white" /></label>
         </WorkspaceAutosaveForm>
     </UnifiedSection>
@@ -183,9 +185,9 @@ async function UsersSettingsSection({ workspace, isOwner, currentUserId, onboard
     const services = serviceOptions(onboardingSettings)
     return <UnifiedSection id="users" title="Users" description="Invite teammates and control workspace access.">
         <WorkspaceInvitationForm workspaceSlug={workspace.slug} action={inviteWorkspaceUser.bind(null, workspace.slug)} canInviteAdmins={isOwner} services={services.filter((service) => service.state === "active")} />
-        <div className="mt-5 overflow-hidden rounded-2xl border border-neutral-800 bg-neutral-900">
+        <div className="mt-5 overflow-hidden rounded-2xl border border-card-border">
             <PendingWorkspaceInvitations workspaceId={workspace.id} removeAction={removeWorkspaceInvitation.bind(null, workspace.slug)} services={services} />
-            {users.map(({ user: workspaceUser, role: assignedRole }) => <div key={workspaceUser?.id} className="flex flex-col gap-3 border-b border-neutral-800 p-4 last:border-0 sm:flex-row sm:items-center sm:justify-between sm:p-5">
+            {users.map(({ user: workspaceUser, role: assignedRole }) => <div key={workspaceUser?.id} className="flex flex-col gap-3 border-b border-card-border p-4 last:border-0 sm:flex-row sm:items-center sm:justify-between sm:p-5">
                 <div><p className="break-words font-medium">{workspaceUser?.email}</p><p className="text-sm text-neutral-500">{workspaceRoleLabel(assignedRole)}</p></div>
                 {normalizeWorkspaceRole(assignedRole) !== "owner" ? <div className="flex flex-wrap items-center gap-2">
                     {(isOwner || normalizeWorkspaceRole(assignedRole) === "staff") ? <AdminMfaResetButton email={workspaceUser?.email ?? "this user"} userId={workspaceUser?.id ?? ""} action={resetWorkspaceUserMfa.bind(null, workspace.slug)} /> : null}
@@ -213,6 +215,11 @@ export default async function SettingsPage({ params, searchParams }: PageProps) 
         <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
         <div className="mx-auto min-w-0 max-w-7xl pt-5">
             <Suspense fallback={<IdentityFallback workspace={workspace} />}><SettingsIdentity workspace={workspace} /></Suspense>
+            {/* Today layout: the sidebar has no Admin or Onboarding Builder entry; this is their one way in. */}
+            {workspaceLayoutFor(workspace.id, user.id) === "today" ? <nav aria-label="More workspace tools" className="mt-6 flex flex-wrap items-center gap-2">
+                <Button href={`/${workspace.slug}/admin`} variant="secondary" size="sm">Admin: OKRs, activity and maintenance</Button>
+                <Button href={`/${workspace.slug}/onboarding-builder`} external variant="secondary" size="sm">Onboarding Builder</Button>
+            </nav> : null}
             <div className="mt-8 grid min-w-0 max-w-full gap-8 lg:grid-cols-[16rem_minmax(0,1fr)]">
                 <SettingsSectionNav sections={settingsSections} />
                 <div id="workspace-settings-scroll" className="min-w-0 max-w-full space-y-10 pb-8 lg:pr-2">

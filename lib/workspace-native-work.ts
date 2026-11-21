@@ -7,6 +7,9 @@ import { getRelationship, listRelationshipTimelineItems, listWorkQueueItems, nat
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { accessibleRelationshipIds, accessibleWorkItemIds, requireRelationshipAccess, requireWorkspacePanel } from "@/lib/workspace-access"
 
+// A client's Work tab lists their open work. The rows are already read for the count; this only bounds what is sent.
+const OPEN_WORK_LIMIT = 50
+
 export async function loadNativeWork(workspaceSlug: string, relationshipId?: string) {
     const { workspace, user, role, access } = await requireWorkspacePanel(workspaceSlug, "fulfilment")
     const identity = { userId: user.id, workspaceId: workspace.id, workspaceSlug: workspace.slug }
@@ -20,7 +23,7 @@ export async function loadNativeWork(workspaceSlug: string, relationshipId?: str
         return {
             ...identity, kind: "work-detail" as const, role, context, openCount: openItems.length,
             relationship: { id: relationship.id, primary_person_name: relationship.primary_person_name, business_name: relationship.business_name, lifecycle_phase: relationship.lifecycle_phase, updated_at: relationship.updated_at, isTest: relationship.source_metadata.is_test === true },
-            openItems: openItems.slice(0, 6).map((item) => ({ id: item.id, title: item.title, status: item.status, lifecycle_phase: item.lifecycle_phase, href: item.synthesized ? item.native_href ?? workItemHref(workspace.slug, item.id) : workItemHref(workspace.slug, item.id) })),
+            openItems: openItems.slice(0, OPEN_WORK_LIMIT).map((item) => ({ id: item.id, title: item.title, status: item.status, lifecycle_phase: item.lifecycle_phase, href: item.synthesized ? item.native_href ?? workItemHref(workspace.slug, item.id) : workItemHref(workspace.slug, item.id) })),
         }
     }
     const allowedRelationships = await accessibleRelationshipIds(access)

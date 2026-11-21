@@ -208,7 +208,7 @@ export function GhlAppConnectionDialog({ workspaceSlug, accounts, initialAccount
                 <p className="text-sm leading-6 text-neutral-400">Clients can switch between the selected calendars in their portal. Saving turns notifications off until you enable them for this selection in the next step.</p>
                 <Button className="w-full" disabled={busy || !calendarIds.length} onClick={() => void connect()}>{savePending ? "Check and retry save" : "Save calendar connection"}</Button>
             </> : null}
-            {phase === "connected" ? <section className="space-y-3 border-t border-neutral-800 pt-4">
+            {phase === "connected" ? <section className="space-y-3 border-t border-card-border pt-4">
                 <Status label={notifications?.ready ? "App calendar connected" : (calendarIds.length || account?.calendarId ? "Calendar saved — app setup unfinished" : "Account saved — app setup unfinished")} tone={notifications?.ready ? "green" : "grey"} />
                 {notifications?.calendars?.length ? <p className="text-sm text-neutral-300">Calendars: {notifications.calendars.map(item => item.name).join(", ")}</p> : null}
                 <p className="text-sm leading-6 text-neutral-400">A saved connection does not confirm that appointments are up to date. Open the client’s portal calendar and check its last successful HighLevel refresh before handing it over. Appointment details and WhatsApp delivery must be checked separately.</p>
@@ -226,7 +226,7 @@ export function GhlAppConnectionDialog({ workspaceSlug, accounts, initialAccount
                 <button type="button" disabled={busy} onClick={() => void checkNotificationSetup()} className="block min-h-11 text-sm underline underline-offset-4">Check notification setup</button>
                 <button type="button" disabled={busy || !!authorizationUrl} onClick={() => { setPhase("start"); setError(null) }} className="block min-h-11 text-sm underline underline-offset-4">Reconnect HighLevel</button>
             </section> : null}
-            <div className="flex flex-wrap justify-between gap-3 border-t border-neutral-800 pt-3">
+            <div className="flex flex-wrap justify-between gap-3 border-t border-card-border pt-3">
                 <button type="button" disabled={busy} onClick={() => onManual(account ?? null)} className="min-h-11 text-sm text-neutral-400 underline underline-offset-4">Manual connection{account?.connected ? " and retirement" : ""}</button>
                 <Button variant="ghost" size="sm" disabled={busy} onClick={onClose}>Close</Button>
             </div>

@@ -72,5 +72,10 @@ export function onboardingThemeStyle(theme?: OnboardingThemeDefinition | null) {
         "--onboarding-surface": colours.surface,
         "--onboarding-text": colours.text,
         "--onboarding-muted": colours.mutedText,
+        // Client-facing surfaces keep their rounder shape; the workspace collapses these steps (app/globals.css, "Shape").
+        "--radius-lg": "0.5rem",
+        "--radius-xl": "0.75rem",
+        "--radius-2xl": "1rem",
+        "--radius-3xl": "1.5rem",
     } as CSSProperties
 }

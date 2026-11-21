@@ -13,7 +13,7 @@ export function AssetGalleryCard({ title, subtitle, detail, previewUrl, format, 
 }) {
     const disabledReason = selection?.disabled ? selection.disabledReason || "No downloadable file" : undefined
     const actionClassName = "absolute inset-0 z-10 block h-full w-full rounded-xl focus-visible:outline focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-neutral-400 disabled:cursor-not-allowed"
-    return <div className={`relative h-full min-w-0 w-full overflow-hidden rounded-xl border bg-black text-left ${selection?.checked ? "border-neutral-400" : "border-neutral-800 hover:border-neutral-600"}`} onContextMenu={onContextMenu} onKeyDown={onKeyDown} title={disabledReason}>
+    return <div className={`relative h-full min-w-0 w-full overflow-hidden rounded-xl border bg-black text-left ${selection?.checked ? "border-neutral-400" : "border-card-border hover:border-neutral-600"}`} onContextMenu={onContextMenu} onKeyDown={onKeyDown} title={disabledReason}>
         {/* Keep preview ancestors mounted when selection changes; swapping a link for a button reloads private media. */}
         <div>
             <div className="aspect-[4/3] overflow-hidden bg-neutral-900">{previewUrl ? <img src={previewUrl} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" /> : <div className="flex h-full flex-col items-center justify-center gap-2 text-neutral-500"><svg aria-hidden="true" viewBox="0 0 32 40" className="h-10 w-8 fill-none stroke-current" strokeWidth="1.5"><path d="M1 1h19l11 11v27H1ZM20 1v12h11M8 22h16M8 28h12" /></svg><span className="text-xs uppercase">{format || "File"}</span></div>}</div>

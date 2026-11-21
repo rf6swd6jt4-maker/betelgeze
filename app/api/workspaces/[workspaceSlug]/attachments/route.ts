@@ -33,7 +33,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ work
         }
         const page = query.get("view") === "choices"
             ? role !== "staff" ? await listAttachmentChoices(workspace.id, owner, ownerId, { cursor: query.get("cursor"), search: query.get("q") ?? "", allowAssets }) : { items: [], nextCursor: null }
-            : await listRecordAttachments(workspace.id, owner, ownerId, { cursor: query.get("cursor"), workspaceSlug })
+            : await listRecordAttachments(workspace.id, owner, ownerId, { cursor: query.get("cursor"), workspaceSlug, downloads: workspaceAccessHasCapability(access, "fulfilment.manage") || workspaceAccessHasCapability(access, "onboarding.manage") })
         return NextResponse.json(page, { headers: privateHeaders })
     } catch (error) {
         unstable_rethrow(error)

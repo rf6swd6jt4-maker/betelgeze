@@ -138,6 +138,7 @@ test("attachment paging reads through session RLS without per-row authorization 
     const loaded = load("lib/record-attachments.ts", {
         "server-only": {}, "@/lib/supabase/server": { createSupabaseServerClient: async () => client }, "@/lib/supabase/admin": { supabaseAdmin: client }, "@/lib/attachment-pages": pages,
         "@/lib/assets/attachment-cursor": { decodePrivateAttachmentCursor: pages.decodeAttachmentCursor, encodePrivateAttachmentCursor: pages.encodeAttachmentCursor },
+        "@/lib/assets/download": load("lib/assets/download.ts", {}),
         "@/lib/assets/preview": { assetPreviewUrl: async (w: string, slug: string, value: Values) => { assert.equal(w, workspace); assert.equal(slug, "alpha"); previews.push(value.id as string); return "private-preview" } },
     })
     const list = () => (loaded.listRecordAttachments as (w: string, owner: string, id: string, options: unknown) => Promise<{ items: Values[] }>)(workspace, "work-item", "work", { workspaceSlug: "alpha" })
@@ -191,6 +192,7 @@ test("native and legacy work details leave attachment loading to the bounded sha
         "@/lib/onboarding/uploads": { createUploadSignedUrls: async (paths: string[]) => { assert.deepEqual(paths, []); return new Map() } },
         "@/lib/assets/preview": { assetPreviewUrl: forbidPrefetch },
         "@/lib/assets/download": { assetDownloadHref: forbidPrefetch },
+        "@/lib/attachment-pages": { encodeAttachmentCursor: forbidPrefetch },
         "@/lib/admin/okrs": {}, "@/lib/profile-avatar": {},
         "@/lib/ui/relative-time": { shortId: () => "REF", formatRelativeTime: () => "Now" },
         "@/components/list/work-item-presentation": { workItemStatusPresentation: () => ({ label: "To do", tone: "neutral" }) },

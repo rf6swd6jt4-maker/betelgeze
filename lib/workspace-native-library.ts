@@ -7,10 +7,11 @@ import { workItemStatusPresentation } from "@/components/list/work-item-presenta
 import { loadRelationshipContext } from "@/components/workspace/ClientContextPanel"
 import { listWorkItemKeyResultLinks } from "@/lib/admin/okrs"
 import { assetDownloadHref } from "@/lib/assets/download"
+import { encodeAttachmentCursor } from "@/lib/attachment-pages"
 import { assetPreviewUrl } from "@/lib/assets/preview"
 import { createUploadSignedUrls } from "@/lib/onboarding/uploads"
 import { profileAvatarUrl } from "@/lib/profile-avatar"
-import { getAsset, getRelationship, getWorkItem, getWorkItemPlanningContext, listAssetRelationships, listAssetWorkItems, listWorkItemRelationships, listWorkspaceAssets, listWorkspaceWorkItems, onboardingDetailHref, type RelationshipAsset } from "@/lib/relationships"
+import { getAsset, getRelationship, getWorkItem, getWorkItemPlanningContext, firstWorkspaceAssetPage, listAssetRelationships, listAssetWorkItems, listWorkItemRelationships, listWorkspaceAssets, listWorkspaceWorkItems, onboardingDetailHref, type RelationshipAsset } from "@/lib/relationships"
 import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { shortId } from "@/lib/ui/relative-time"
@@ -23,10 +24,11 @@ function assetSummary(asset: RelationshipAsset) {
 async function loadAssetList(workspaceSlug: string) {
     const { workspace, user } = await requireWorkspacePanel(workspaceSlug, "library")
     const assets = await listWorkspaceAssets(workspace.id, await createSupabaseServerClient())
-    const previewEntries = await Promise.all(assets.slice(0, 24).map(async (asset) => ({ asset: assetSummary(asset), downloadHref: assetDownloadHref(workspace.slug, asset), previewUrl: asset.content_type?.startsWith("image/") && asset.storage_path ? await assetPreviewUrl(workspace.id, workspace.slug, asset, true) : null })))
+    const firstPage = firstWorkspaceAssetPage(assets)
+    const previewEntries = await Promise.all(firstPage.items.map(async (asset) => ({ asset: assetSummary(asset), downloadHref: assetDownloadHref(workspace.slug, asset), previewUrl: asset.content_type?.startsWith("image/") && asset.storage_path ? await assetPreviewUrl(workspace.id, workspace.slug, asset, true) : null })))
     return {
         userId: user.id, workspaceId: workspace.id, workspaceSlug: workspace.slug, kind: "assets" as const, context: null,
-        previewEntries, counts: { total: assets.length, images: assets.filter((asset) => asset.content_type?.startsWith("image/")).length, documents: assets.filter((asset) => asset.asset_kind === "document" || asset.content_type === "application/pdf").length, uploads: assets.filter((asset) => asset.source_kind === "upload").length },
+        previewEntries, nextCursor: encodeAttachmentCursor({ asset: firstPage.next, note: null }), counts: { total: assets.length, images: assets.filter((asset) => asset.content_type?.startsWith("image/")).length, documents: assets.filter((asset) => asset.asset_kind === "document" || asset.content_type === "application/pdf").length, uploads: assets.filter((asset) => asset.source_kind === "upload").length },
     }
 }
 

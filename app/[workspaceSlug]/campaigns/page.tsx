@@ -1,3 +1,4 @@
+import { headers } from "next/headers"
 import { redirect } from "next/navigation"
 import Link from "@/components/workspace/WorkspaceLink"
 import { PanelTabHeader } from "@/components/panel/PanelTabHeader"
@@ -5,17 +6,20 @@ import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeading, Table
 import { Status } from "@/components/ui"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { loadCampaigns, requireCampaigns } from "@/lib/campaigns/server"
+import { workspaceTabRedirectUrl } from "@/lib/workspace-tabs"
 
 export const dynamic = "force-dynamic"
 
 const statusTone = { live: "green", paused: "yellow", draft: "grey" } as const
 
-/** With one campaign there is nothing to choose: it opens straight away. */
+/** With one campaign there is nothing to choose: it opens straight away, in the same tab. */
 export default async function CampaignsPage({ params }: { params: Promise<{ workspaceSlug: string }> }) {
     const { workspaceSlug } = await params
     const { workspace, user } = await requireCampaigns(workspaceSlug)
     const campaigns = await loadCampaigns(workspace.id)
-    if (campaigns.length === 1) redirect(`/${workspace.slug}/campaigns/${campaigns[0].id}`)
+    // Inside a workspace tab the redirect must keep the tab's identity; without it the frame loads a second app shell,
+    // which opens this page again, without end.
+    if (campaigns.length === 1) redirect(workspaceTabRedirectUrl(`/${workspace.slug}/campaigns/${campaigns[0].id}`, (await headers()).get("x-betelgeze-current-path")))
 
     return <main className="min-h-screen bg-neutral-950 px-4 pb-8 text-white sm:px-6">
         <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />

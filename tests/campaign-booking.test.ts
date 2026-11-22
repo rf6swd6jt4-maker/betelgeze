@@ -1,8 +1,10 @@
 import assert from "node:assert/strict"
+import { readFileSync } from "node:fs"
 import test from "node:test"
 import { bookingDays, zonedTime, type BookingRules } from "../lib/campaigns/slots.ts"
 import { campaignsPilotEnabled } from "../lib/campaigns/pilot.ts"
 import { bookingSlugFrom, formatAppointment, formatMoney, originOf } from "../lib/campaigns/model.ts"
+import { WORKSPACE_TAB_FRAME_PARAM, workspaceTabRedirectUrl } from "../lib/workspace-tabs.ts"
 
 const rules: BookingRules = { time_zone: "America/Chicago", booking_days: [1, 2, 3, 4, 5], day_start_minute: 540, day_end_minute: 1020, meeting_minutes: 60, notice_hours: 12, horizon_days: 7 }
 
@@ -49,4 +51,14 @@ test("display helpers", () => {
     assert.equal(bookingSlugFrom("A"), "a-call")
     assert.equal(originOf("https://Scaylup.com/teardown/"), "https://scaylup.com")
     assert.equal(originOf("http://scaylup.com"), null)
+})
+
+test("opening Campaigns in a workspace tab keeps the tab when it goes straight to the one campaign", () => {
+    // A redirect without the tab's identity made the frame load a second app shell, which opened Campaigns again.
+    const page = readFileSync("app/[workspaceSlug]/campaigns/page.tsx", "utf8")
+    assert.match(page, /redirect\(workspaceTabRedirectUrl\(`\/\$\{workspace\.slug\}\/campaigns\/\$\{campaigns\[0\]\.id\}`, \(await headers\(\)\)\.get\("x-betelgeze-current-path"\)\)\)/)
+    assert.doesNotMatch(page, /redirect\(`/)
+    const target = new URL(workspaceTabRedirectUrl("/scaylup/campaigns/c1", `/scaylup/campaigns?${WORKSPACE_TAB_FRAME_PARAM}=tab-1`), "http://localhost")
+    assert.equal(target.pathname, "/scaylup/campaigns/c1")
+    assert.equal(target.searchParams.get(WORKSPACE_TAB_FRAME_PARAM), "tab-1")
 })

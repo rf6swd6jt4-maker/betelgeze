@@ -1,6 +1,9 @@
 import { headers } from "next/headers"
 import { notFound } from "next/navigation"
-import { DetailPageHeader } from "@/components/detail"
+import { DetailPageHeader, SectionHeading } from "@/components/detail"
+import { TextingNumberField } from "@/components/campaigns/TextingNumberField"
+import { loadUsableSmsNumbers } from "@/lib/signalhouse/server"
+import { smsNumberName } from "@/lib/signalhouse/model"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { SourceSettings } from "@/components/campaigns/SourceSettings"
 import { SourceStatusBar } from "@/components/campaigns/SourceStatusBar"
@@ -13,8 +16,8 @@ export const dynamic = "force-dynamic"
 export default async function CampaignSourcePage({ params }: { params: Promise<{ workspaceSlug: string; campaignId: string; sourceId: string }> }) {
     const { workspaceSlug, campaignId, sourceId } = await params
     const { workspace, user } = await requireCampaigns(workspaceSlug)
-    const [loaded, source, stats, requestHeaders] = await Promise.all([
-        loadCampaign(workspace.id, campaignId), loadCampaignSource(workspace.id, sourceId), loadSourceStats(workspace.id, sourceId), headers(),
+    const [loaded, source, stats, requestHeaders, numbers] = await Promise.all([
+        loadCampaign(workspace.id, campaignId), loadCampaignSource(workspace.id, sourceId), loadSourceStats(workspace.id, sourceId), headers(), loadUsableSmsNumbers(workspace.id),
     ])
     if (!loaded || !source || source.campaign_id !== loaded.campaign.id) notFound()
     const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "app.betelgeze.com"
@@ -29,6 +32,19 @@ export default async function CampaignSourcePage({ params }: { params: Promise<{
                 updated={formatRelativeTime(source.updated_at)} />
             <SourceStatusBar workspaceSlug={workspace.slug} campaignId={loaded.campaign.id} sourceId={source.id} status={source.status} pageUrl={source.page_url} books={source.books} hasLead={Boolean(stats.lastAt)} appOrigin={appOrigin} />
             <SourceSettings key={source.id} workspaceSlug={workspace.slug} source={source} appOrigin={appOrigin} />
+            {/* Texting: the campaign's number, or this source's own (docs/signalhouse.md). */}
+            <section aria-label="Texting" className="mt-8">
+                <SectionHeading>Texting</SectionHeading>
+                <div className="grid grid-cols-1 items-start gap-1.5 py-2 sm:grid-cols-[11rem_minmax(0,1fr)] sm:gap-4">
+                    <div className="pt-2 text-sm text-neutral-500">Texts from</div>
+                    <div className="min-w-0 max-w-xl">
+                        <TextingNumberField workspaceSlug={workspace.slug} kind="source" targetId={source.id} value={source.sms_number_id} label="Number this source texts from"
+                            inheritLabel={`Campaign's number · ${smsNumberName(numbers.find(number => number.id === loaded.campaign.sms_number_id))}`}
+                            options={numbers.map(number => ({ id: number.id, name: smsNumberName(number), canSend: number.canSend }))} />
+                        <p className="mt-1.5 text-xs leading-5 text-neutral-500">{source.sms_number_id ? "Its own number, instead of the campaign's." : "Uses the campaign's number. Pick another to give this source its own, for example a local area code."} Replies come back to the same conversation.</p>
+                    </div>
+                </div>
+            </section>
         </div>
     </main>
 }

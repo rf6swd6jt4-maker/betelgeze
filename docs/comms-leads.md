@@ -6,7 +6,7 @@ Status: built (pilot); the migration must be applied in production before releas
 
 A lead's text conversation is a **native conversation of a new kind, `lead`** (`workspace_native_conversations.kind = 'lead'`, `lead_id`). Its messages are ordinary `workspace_native_messages`, so the existing machinery applies unchanged:
 
-- **Encryption:** bodies are encrypted at rest by the same per-conversation Vault keys and insert path.
+- **Encryption:** bodies are encrypted at rest by the same per-conversation Vault keys and insert path. The two decoders every reader goes through (`communication_native_message`, `communication_native_messages`) let a lead conversation's participants decode it (`20261124030000`).
 - **Reading:** the shared reader (`useConversationRead`, kind `native`), the read queue, `advance_communication_read` / the device RPC and the newest-visible, focused-window rule are reused as they are.
 - **Unread:** the account and device summaries keep kind `native` (device cursors are keyed by kind) and mark a lead conversation's row **`lead: true`**, so it counts in the Leads tab badge and the Comms total, not in Team. Like a client chat, only the lead's inbound texts count; a text sent by any staff member is never unread.
 - **Push:** the existing enqueue, claim, prepare and delivery pipeline. A lead's inbound text has no staff sender (`sender_user_id` is null, `sms_direction = 'inbound'`); enqueue treats it as a message from outside, like a client's inbound message.

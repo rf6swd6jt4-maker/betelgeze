@@ -294,6 +294,49 @@ export async function createStripeMixedCheckout({
     }
 }
 
+/**
+ * A one-time payment that confirms a held campaign booking (docs/campaign-booking.md). The webhook finds the booking
+ * by `metadata[campaign_booking_id]`; the idempotency key makes a repeated request return the same Checkout page.
+ */
+export async function createStripeBookingCheckout(input: {
+    bookingId: string
+    workspaceId: string
+    name: string
+    description: string
+    amount: number
+    email?: string | null
+    successUrl: string
+    cancelUrl: string
+    expiresAt: number
+    secretKey: string
+}): Promise<{ checkoutSessionId: string; checkoutUrl: string }> {
+    if (!Number.isInteger(input.amount) || input.amount < 50) throw new Error("Stripe Checkout requires an amount of at least $0.50")
+    const checkout = await stripeRequest("/checkout/sessions", {
+        idempotencyKey: `${input.bookingId}:campaign-booking-checkout`,
+        params: {
+            mode: "payment",
+            client_reference_id: input.bookingId,
+            success_url: input.successUrl,
+            cancel_url: input.cancelUrl,
+            expires_at: input.expiresAt,
+            customer_email: input.email || undefined,
+            submit_type: "pay",
+            "line_items[0][quantity]": 1,
+            "line_items[0][price_data][currency]": "usd",
+            "line_items[0][price_data][unit_amount]": input.amount,
+            "line_items[0][price_data][product_data][name]": input.name,
+            "line_items[0][price_data][product_data][description]": input.description,
+            "metadata[campaign_booking_id]": input.bookingId,
+            "metadata[workspace_id]": input.workspaceId,
+            "payment_intent_data[metadata][campaign_booking_id]": input.bookingId,
+            "payment_intent_data[metadata][workspace_id]": input.workspaceId,
+        },
+    }, input.secretKey)
+    const fields = getCheckoutFields(checkout)
+    if (!fields.checkoutSessionId || !fields.checkoutUrl) throw new Error("Stripe did not return a usable Checkout page")
+    return { checkoutSessionId: fields.checkoutSessionId, checkoutUrl: fields.checkoutUrl }
+}
+
 export async function retrieveStripeCheckoutSession(input: { checkoutSessionId: string; secretKey?: string }) {
     return stripeRequest(`/checkout/sessions/${encodeURIComponent(input.checkoutSessionId)}`, { method: "GET" }, input.secretKey ?? getStripeSecretKey())
 }

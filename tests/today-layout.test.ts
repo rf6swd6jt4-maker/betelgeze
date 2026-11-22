@@ -12,7 +12,7 @@ test("the client rail opens everything through the shell's resident tab owner", 
     assert.match(shell, /onOpenClient=\{\(href\) => \{ void openWorkspaceTab\(href\); closeSidebarAfterNavigation\(\) \}\}/)
     assert.match(shell, /if \(current && inPanel\(current\.url\)\) \{ void navigateActiveTab\(href\); return \}/, "already there: go to its first page")
     assert.match(shell, /if \(open\) \{ void switchTab\(open\); return \}/, "open elsewhere: a memory switch back to it")
-    assert.match(shell, /const railKeys = canOpenClients \? \["relationships", "communications", "library", "staff", "settings"\]\n\s+: \["onboarding", "client-connections", "communications", "library", "staff", "settings"\]/, "one way into each thing: Onboarding and Client Connections are tabs on a client's page, unless the person cannot open Clients at all")
+    assert.match(shell, /const railKeys = canOpenClients \? \["relationships", "campaigns", "communications", "library", "staff", "settings"\]\n\s+: \["onboarding", "client-connections", "communications", "library", "staff", "settings"\]/, "one way into each thing: Onboarding and Client Connections are tabs on a client's page, unless the person cannot open Clients at all")
     assert.match(shell, /\.filter\(\(item\) => railKeys\.includes\(item\.key\) && \(item\.key !== "communications" \|\| !canDockChat\)\)/, "Today and the docked Comms panel are not repeated among the destinations")
     assert.match(shell, /label: item\.key === "relationships" \? "Clients" : item\.label/)
     assert.match(shell, /\(item\.key === "settings" \? \[\.\.\.item\.activeHrefs, \.\.\.settingsAreaHrefs\] : item\.activeHrefs\)/, "Admin is reached from Settings, so Settings stays marked there")

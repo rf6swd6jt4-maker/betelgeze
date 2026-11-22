@@ -8,6 +8,7 @@ import { handleCompletedStripeCheckout } from "@/lib/client-sales/automation"
 import { disconnectWorkspaceIntegration, getStripeWebhookCandidates, getWorkspaceIdForConnectedAccount, recordWorkspaceConnectionWebhook } from "@/lib/workspace-integrations"
 import { platformFailureFingerprint, reportPlatformFailure } from "@/lib/admin/maintenance"
 import { recordAdminActivity } from "@/lib/admin/activity"
+import { applyCampaignCheckout } from "@/lib/campaigns/booking"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -171,6 +172,17 @@ export async function POST(request: NextRequest) {
             metadata: { sale_id: saleId, event_type: event.type },
         })
         return Response.json({ ok: true, ignored: true, reason: "retired_billing_model" })
+    }
+
+    // A campaign booking's Checkout (docs/campaign-booking.md). Applying it is idempotent, so a resent event is safe.
+    const campaignCheckout = event.type.startsWith("checkout.session.") ? await applyCampaignCheckout(event, event.data?.object, workspaceId) : null
+    if (campaignCheckout) {
+        if (!campaignCheckout.ok) {
+            await reportStripeAutomationFailure(workspaceId, event.id, "campaign_booking_payment", campaignCheckout.error)
+            return Response.json({ error: campaignCheckout.error }, { status: 500 })
+        }
+        if ("bookingId" in campaignCheckout && !campaignCheckout.duplicate) await recordAdminActivity({ workspaceId, category: "billing", eventKey: "stripe.campaign_booking.paid", summary: campaignCheckout.status === "booked" ? "Campaign booking paid and booked" : "Campaign booking paid; the time was taken", entityType: "campaign_booking", entityId: campaignCheckout.bookingId, actorKind: "automation", correlationId: event.id, idempotencyKey: `stripe.campaign_booking.paid:${event.id}`, outcome: "succeeded", metadata: { status: campaignCheckout.status } })
+        return Response.json({ ok: true, duplicate: duplicateEvent })
     }
 
     if (event.type === "account.application.deauthorized") {

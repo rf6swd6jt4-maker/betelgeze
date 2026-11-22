@@ -9,8 +9,7 @@ function panelLoadingForUrl(value: string, workspaceSlug: string): { variant: Pa
     const [panel, nested] = segments
 
     if (panel === "sops" && nested) return { variant: "detail", title: "SOP" }
-    if (panel === "campaigns" && segments.length >= 4) return { variant: "detail", title: segments[2] === "sources" ? "source" : "lead" }
-    if (panel === "campaigns") return { variant: "campaigns" }
+    if (panel === "campaigns") return { variant: nested === "new" ? "campaign-new" : segments[2] === "sources" && segments[3] ? "campaign-source" : segments[2] === "leads" && segments[3] ? "campaign-lead" : "campaigns" }
     if (workspaceRouteIsRecordDetail(value, workspaceSlug, "http://localhost")) {
         const titles: Record<string, string> = {
             relationships: "relationship", assets: "asset", notes: "note",

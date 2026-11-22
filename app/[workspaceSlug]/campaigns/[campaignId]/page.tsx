@@ -17,12 +17,6 @@ export const dynamic = "force-dynamic"
 
 const TABS = ["pipeline", "leads", "sources", "flows"] as const
 type Tab = (typeof TABS)[number]
-const intro: Record<Tab, string> = {
-    pipeline: "Every qualified form lands in Not booked with its source's tag. Booking moves it to Booked.",
-    leads: "This campaign's leads, newest first. Open one for their answers, appointment and activity.",
-    sources: "The landing pages that send leads here. Each has its tag, its booking page and any payment.",
-    flows: "Automatic texts for this campaign's leads.",
-}
 const sourceTone = { live: "green", testing: "yellow", off: "grey" } as const
 
 function cardLine(lead: CampaignLeadRow, booking: CampaignBookingRow | undefined, source: CampaignSourceRow | undefined) {
@@ -66,7 +60,6 @@ export default async function CampaignPage({ params, searchParams }: { params: P
                     <CampaignStatusButton workspaceSlug={workspace.slug} campaignId={campaign.id} status={campaign.status} />
                     {tab === "sources" ? <AddSourceButton workspaceSlug={workspace.slug} campaignId={campaign.id} /> : null}
                 </>} />
-            <p className="mt-5 max-w-3xl text-sm text-neutral-400">{intro[tab]}</p>
 
             {tab === "pipeline" ? <>
                 {sources.length ? filterRail : null}

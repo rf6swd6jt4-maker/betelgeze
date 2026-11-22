@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import { getWorkspaceProviderConfig } from "@/lib/workspace-integrations"
 import { createStripeBookingCheckout } from "@/lib/stripe/api"
 import { formatAppointment } from "@/lib/campaigns/model"
+import { clientBrandLogoUrl, loadWorkspaceClientBrandAssets } from "@/lib/client-branding/assets"
 import type { BookingRules } from "@/lib/campaigns/slots"
 
 export type BookingPage = BookingRules & {
@@ -34,6 +35,17 @@ export async function loadBookingPage(slug: string, submission: string | null, r
     const { data, error } = await supabaseAdmin.rpc("campaign_booking_page", { p_slug: slug, p_submission: submission, p_reference: reference })
     if (error) throw new Error("Could not open the booking page. Please retry.")
     return (data ?? null) as BookingPage | null
+}
+
+/** The agency logo for a booking page, served by the same public route as the SMS opt-in page. Null when none is set. */
+export async function loadBookingLogo(sourceId: string) {
+    const { data } = await supabaseAdmin.from("campaign_sources").select("workspace_id").eq("id", sourceId).maybeSingle()
+    if (!data?.workspace_id) return null
+    const [{ data: workspace }, assets] = await Promise.all([
+        supabaseAdmin.from("workspaces").select("slug").eq("id", data.workspace_id).maybeSingle(),
+        loadWorkspaceClientBrandAssets(data.workspace_id),
+    ])
+    return workspace?.slug ? clientBrandLogoUrl("sms-opt-in", workspace.slug, assets.logoPath) : null
 }
 
 const FAILURES: Record<string, { status: number; error: string }> = {

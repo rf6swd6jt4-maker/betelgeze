@@ -2,6 +2,7 @@ import { DocumentCatalogue } from "@/components/ui/DocumentCatalogue"
 import { PanelTabHeader } from "@/components/panel/PanelTabHeader"
 import { ActivityTrendsLoading, LoadingPulse, OnboardingPanelLoading, PanelLoadingFilters, PanelLoadingFrame, PanelLoadingGallery, PanelLoadingList, PanelLoadingStats, PanelLoadingTabs } from "@/components/panel/PanelLoading"
 import { DetailRouteLoading } from "@/components/workspace/DetailRouteLoading"
+import { CampaignLeadLoading, CampaignPageLoading, CampaignSourceLoading, NewCampaignLoading } from "@/components/campaigns/CampaignLoading"
 
 export type PanelLoadingVariant =
     | "admin"
@@ -9,6 +10,9 @@ export type PanelLoadingVariant =
     | "admin-maintenance"
     | "admin-okrs"
     | "campaigns"
+    | "campaign-new"
+    | "campaign-source"
+    | "campaign-lead"
     | "client-connections"
     | "assets"
     | "communications"
@@ -39,14 +43,6 @@ function QueueAttentionLoading() {
     return <PanelLoadingFrame title="Needs attention">
         <PanelTabHeader title="Needs attention" description="Team-wide items nobody may be acting on, oldest first. Up to five of each kind." tabs={<PanelLoadingTabs active={1} />} />
         <PanelLoadingStats labels={["Open items", "Waiting on a reply", "Overdue"]} />
-        <PanelLoadingList rows={5} />
-    </PanelLoadingFrame>
-}
-
-function CampaignsLoading() {
-    return <PanelLoadingFrame title="Campaign">
-        <PanelTabHeader title="Campaign" description="Every qualified form lands in Not booked with its source's tag. Booking moves it to Booked." tabs={<PanelLoadingTabs count={4} active={0} />} />
-        <PanelLoadingFilters widths={[44, 82, 82, 108]} />
         <PanelLoadingList rows={5} />
     </PanelLoadingFrame>
 }
@@ -228,6 +224,9 @@ export function PanelRouteLoading({ variant, title }: { variant: PanelLoadingVar
     if (variant === "admin-okrs") return <AdminLoading section="okrs" />
     if (variant === "admin") return <AdminLoading />
     if (variant === "staff") return <StaffLoading />
-    if (variant === "campaigns") return <CampaignsLoading />
+    if (variant === "campaigns") return <CampaignPageLoading />
+    if (variant === "campaign-new") return <NewCampaignLoading />
+    if (variant === "campaign-source") return <CampaignSourceLoading />
+    if (variant === "campaign-lead") return <CampaignLeadLoading />
     return <DetailRouteLoading title={title ?? "record"} />
 }

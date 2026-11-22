@@ -40,10 +40,18 @@ async function recoveryPush(job: Delivery): Promise<ChatPush> {
     const workspace = await supabaseAdmin.from("workspaces").select("slug").eq("id", job.workspace_id).single()
     if (workspace.error) throw new Error("workspace_unavailable")
     let title = "New chat message"
+    let leadConversation = false
     if (job.conversation_kind === "native") {
-        const conversation = await supabaseAdmin.from("workspace_native_conversations").select("kind,team_id").eq("workspace_id", job.workspace_id).eq("id", job.conversation_id).single()
+        const conversation = await supabaseAdmin.from("workspace_native_conversations").select("kind,team_id,lead_id").eq("workspace_id", job.workspace_id).eq("id", job.conversation_id).single()
         if (conversation.error) throw new Error("conversation_unavailable")
-        if (conversation.data.kind === "team") {
+        if (conversation.data.kind === "lead") {
+            // A lead's text (docs/comms-leads.md): titled with the lead; there is no staff sender.
+            const lead = await supabaseAdmin.from("campaign_leads").select("first_name,last_name,company").eq("workspace_id", job.workspace_id).eq("id", conversation.data.lead_id).single()
+            if (lead.error) throw new Error("lead_unavailable")
+            const name = [lead.data.first_name, lead.data.last_name].filter(Boolean).join(" ")
+            title = lead.data.company ? `${name} – ${lead.data.company}` : name || title
+            leadConversation = true
+        } else if (conversation.data.kind === "team") {
             const team = await supabaseAdmin.from("workspace_teams").select("name").eq("workspace_id", job.workspace_id).eq("id", conversation.data.team_id).single()
             if (team.error) throw new Error("team_unavailable")
             title = team.data.name
@@ -62,7 +70,7 @@ async function recoveryPush(job: Delivery): Promise<ChatPush> {
     return {
         workspaceId: job.workspace_id, conversationKind: job.conversation_kind, conversationId: job.conversation_id,
         messageId: job.message_id, messageCreatedAt: job.message_created_at, title: title.slice(0, 80), body: "New message",
-        url: `/${encodeURIComponent(workspace.data.slug)}/communications?${job.conversation_kind === "native" ? "mode=team&nativeConversation" : "conversation"}=${encodeURIComponent(job.conversation_id)}`,
+        url: `/${encodeURIComponent(workspace.data.slug)}/communications?${job.conversation_kind === "native" ? `mode=${leadConversation ? "leads" : "team"}&nativeConversation` : "conversation"}=${encodeURIComponent(job.conversation_id)}`,
     }
 }
 

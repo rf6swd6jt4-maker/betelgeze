@@ -15,6 +15,7 @@ const sources = [
     "components/workspace/NativeCommunicationsTab.tsx",
     "components/workspace/WorkspaceNavigation.tsx",
     "components/communications/CommunicationsPanel.tsx",
+    "components/communications/CommunicationsModeTabs.tsx",
     "components/communications/CommunicationsReadProtocol.tsx",
     "components/communications/useSharedUnreadSummary.ts",
     "lib/communications/read-protocol.ts",
@@ -32,7 +33,8 @@ aliases.set("./CommunicationsReadProtocol", "./CommunicationsReadProtocol.js")
 aliases.set("./useSharedUnreadSummary", "./useSharedUnreadSummary.js")
 aliases.set("./WorkspaceNavigation", "./WorkspaceNavigation.js")
 aliases.set("../record-version.js", "./record-version.js")
-for (const from of ["./WorkspaceTabOpeningState", "@/components/workspace/PanelRouteLoading", "./useCommunicationsUnread", "@/components/ui", "@/components/communications/ResizableConversationColumns", "@/components/communications/useReliableCommunicationsRealtime"]) aliases.set(from, "./stubs.js")
+aliases.set("./mode-resource.ts", "./mode-resource.js")
+for (const from of ["./WorkspaceTabOpeningState", "@/components/workspace/PanelRouteLoading", "./useCommunicationsUnread", "@/components/ui", "@/components/communications/ResizableConversationColumns", "@/components/communications/useReliableCommunicationsRealtime", "@/components/communications/UnreadMessageCount"]) aliases.set(from, "./stubs.js")
 aliases.set("@supabase/supabase-js", "./supabase-fixture.js")
 aliases.set("@/lib/supabase/browser", "./supabase-fixture.js")
 aliases.set("@/components/communications/CommunicationsWorkspace", "./workspaces.js")
@@ -50,6 +52,7 @@ export const COMMUNICATIONS_RECOVERY_EVENT="fixture:recover";
 export const WorkspaceTabOpeningState=()=>React.createElement("p",{"data-opening":true},"Opening synthetic chat");
 export const PanelRouteLoading=WorkspaceTabOpeningState;
 export const Status=({label})=>React.createElement("span",null,label);
+export const UnreadMessageCount=()=>null;
 export function useCommunicationsUnread(){return {invalidate(){}}}
 export const useRouter=()=>({}); export const usePathname=()=>location.pathname;
 export const useSearchParams=()=>new URLSearchParams(location.search);`)

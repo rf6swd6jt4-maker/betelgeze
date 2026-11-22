@@ -22,7 +22,7 @@ import { ChatMessageText } from "@/components/communications/ChatMessageText"
 import Link from "next/link"
 import Image from "next/image"
 import { ComposerFooter } from "@/components/communications/ComposerFooter"
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react"
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from "react"
 
 import { CommunicationsConnectionStatus } from "@/components/communications/CommunicationsConnectionStatus"
 import { ComposerMessagePreview } from "@/components/communications/ComposerMessagePreview"
@@ -243,7 +243,7 @@ function mergeCursor(current: CommunicationReadCursor[], incoming: Communication
     return mergeChatReadCursor(current, incoming, cursor => cursor.relationshipId)
 }
 
-export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateChange, onOpenTeam, onSelectedConversationChange, onUnreadCountChange, onUnreadInvalidated, teamUnreadCount, conversationListWidth, onConversationListWidthChange }: {
+export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateChange, onOpenTeam, onSelectedConversationChange, onUnreadCountChange, onUnreadInvalidated, teamUnreadCount, conversationListWidth, onConversationListWidthChange, modeTabs }: {
     active: boolean
     bootstrap: CommunicationsBootstrap
     onConnectionStateChange?: (state: CommunicationsConnectionState) => void
@@ -254,6 +254,8 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
     teamUnreadCount?: number
     conversationListWidth: number
     onConversationListWidthChange: (width: number) => void
+    /** The Comms tabs (Clients, Team, Leads). Without it the Clients and Team pair is drawn as before. */
+    modeTabs?: ReactNode
 }) {
     const unreadSummary = useSharedUnreadSummary(bootstrap.workspaceId, bootstrap.currentUser.id)
     const readProtocol = useCommunicationsReadProtocol(bootstrap.workspaceId, bootstrap.currentUser.id, bootstrap.readProtocol)
@@ -1077,11 +1079,11 @@ export function CommunicationsWorkspace({ active, bootstrap, onConnectionStateCh
         <ResizableConversationColumns listWidth={conversationListWidth} onListWidthChange={onConversationListWidthChange}>
             <aside data-conversation-list className="flex min-h-0 flex-col border-r border-neutral-800 bg-neutral-950">
                 <div className="shrink-0 border-b border-neutral-800 p-3">
-                    <div role="tablist" aria-label="Communication conversations" className="flex items-center gap-1">
+                    {modeTabs ? <div className="flex items-center gap-1">{modeTabs}<span className="ml-auto"><CommunicationsConnectionStatus state={reading.error ? "error" : connection.state} error={reading.error ?? connection.error} /></span></div> : <div role="tablist" aria-label="Communication conversations" className="flex items-center gap-1">
                         <button type="button" role="tab" aria-selected="true" className="inline-flex h-8 items-center rounded-lg bg-neutral-800 px-3 text-xs font-semibold text-white">Clients</button>
                         <button type="button" role="tab" aria-selected="false" onClick={onOpenTeam} className="inline-flex h-8 items-center gap-2 rounded-lg px-3 text-xs font-medium text-neutral-400 hover:bg-neutral-900 hover:text-white">Team<UnreadMessageCount count={teamUnreadCount} loading={deviceMode && teamUnreadCount === undefined} label="unread Team messages" /></button>
                         <span className="ml-auto"><CommunicationsConnectionStatus state={reading.error ? "error" : connection.state} error={reading.error ?? connection.error} /></span>
-                    </div>
+                    </div>}
                     <label className="relative mt-3 block"><span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-neutral-600"><SearchIcon /></span><input ref={searchRef} type="search" value={search} onChange={(event) => setSearch(event.target.value)} aria-label="Search conversations" placeholder="Search conversations" className="h-10 w-full rounded-lg border border-neutral-800 bg-black pl-9 pr-3 text-sm outline-none placeholder:text-neutral-600 focus:border-neutral-600" /></label>{previewSearch.pending ? <p role="status" className="mt-2 text-[11px] text-neutral-500">Searching messages…</p> : previewSearch.error ? <button type="button" onClick={previewSearch.retry} className="mt-2 text-[11px] text-neutral-400">Could not search messages · Retry</button> : null}
                 </div>
                 <div ref={previewListRef} className="min-h-0 flex-1 overflow-y-auto overscroll-contain">{visibleConversations.length ? visibleConversations.map(({ conversation, reaction, activityAt }) => {

@@ -1,6 +1,6 @@
 # SignalHouse texting for Campaigns
 
-Status: pilot, behind `CAMPAIGNS_PILOT_USERS` like the rest of Campaigns (owners and admins only). This step connects SignalHouse, brings in its numbers and decides which number each campaign, source and lead texts from. **Nothing is texted automatically yet**: Text flows and the Comms Leads tab are later steps. The Comms Leads tab changes message reading and alerts, so it needs explicit permission under `app-alerts.md` first.
+Status: pilot, behind `CAMPAIGNS_PILOT_USERS` like the rest of Campaigns (owners and admins only). This step connects SignalHouse, brings in its numbers and decides which number each campaign, source and lead texts from. **Nothing is texted automatically yet**: Text flows are a later step. Texting a lead by hand, and their replies, live in Comms → Leads ([Leads in Comms](comms-leads.md)), authorized under `app-alerts.md` on 22 November 2026.
 
 ## What SignalHouse provides
 
@@ -19,7 +19,7 @@ Read from SignalHouse's API reference (https://app2.signalhouse.io/docs) and its
 - **A number's page**: label, registration, what uses it, its last 7 days from SignalHouse, a test text to your own phone, and removing it from Betelgeze (refused while a campaign, source or lead uses it; it stays in SignalHouse).
 - **Campaign → Text flows**: *Texts from* picks the campaign's number. **Source page → Texting**: the campaign's number, or the source's own. Only a number that can send is offered.
 - **Lead page → Texts from**: the number that first texted them, else their source's, else the campaign's. A lead keeps the number that first texted them (`campaign_leads.sms_number_id`), so their replies stay in one conversation. Changing a campaign's or source's number while leads are texting with the current one asks whether they keep it (recommended) or move.
-- **Webhook** (`app/api/signalhouse/webhook/[accountId]`): verifies the signature with that account's secret (refusing unsigned or stale deliveries with 401), stores the delivery once by its delivery id, answers 200, then re-reads the account after number or registration events (at most once a minute). Message events are stored for the Comms Leads tab; nothing changes message reads, unread counts or alerts.
+- **Webhook** (`app/api/signalhouse/webhook/[accountId]`): verifies the signature with that account's secret (refusing unsigned or stale deliveries with 401), stores the delivery once by its delivery id, answers 200, then re-reads the account after number or registration events (at most once a minute). A `MESSAGE_RECEIVED` from a lead becomes an inbound message in their Comms → Leads conversation, and delivery events update the texts Betelgeze sent (`docs/comms-leads.md`); a text from a phone that is no lead stays stored, unprocessed.
 
 ## Data
 
@@ -42,4 +42,4 @@ Rollback: revert the application. The migration only adds tables and nullable co
 
 ## Not in this step
 
-Text flows (sending, quiet hours, waits), the Comms Leads tab and inbound reply routing (alerts permission needed), MMS, reconciling missed webhooks from `GET /notification`, connecting a second account from the page, and buying or registering numbers (done in SignalHouse).
+Text flows (automated sending, quiet hours, waits), unknown-sender conversations, MMS, reconciling missed webhooks from `GET /notification`, connecting a second account from the page, and buying or registering numbers (done in SignalHouse).

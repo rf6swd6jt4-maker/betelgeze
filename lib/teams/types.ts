@@ -58,7 +58,9 @@ export type NativeConversation = {
     cursorKnown?: true
     deviceCursor?: { lastReadAt: string; lastReadMessageId: string | null } | null
     id: string
-    kind: "direct" | "team"
+    kind: "direct" | "team" | "lead"
+    /** A lead's text conversation (docs/comms-leads.md): who they are and whether they can be texted. */
+    lead?: { id: string; href: string; firstName: string; tag: string | null; tagTone: string | null; stageLabel: string; canText: boolean }
     system?: boolean
     teamId: string | null
     title: string

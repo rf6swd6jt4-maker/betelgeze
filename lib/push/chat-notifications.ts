@@ -87,6 +87,26 @@ export async function notifyNativeChatMessage(input: {
     )
 }
 
+/** A lead's inbound text (docs/comms-leads.md): titled with the lead, opened in Comms, Leads. Recipients come from SQL. */
+export async function notifyLeadText(input: { workspaceId: string; conversationId: string; messageId: string; leadName: string; previewBody: string }) {
+    const [{ data: workspace }, { data: message }] = await Promise.all([
+        supabaseAdmin.from("workspaces").select("slug").eq("id", input.workspaceId).maybeSingle(),
+        supabaseAdmin.from("workspace_native_messages").select("created_at").eq("workspace_id", input.workspaceId).eq("id", input.messageId).maybeSingle(),
+    ])
+    if (!workspace?.slug || !message?.created_at) { console.warn("Could not prepare lead text push"); return }
+    const notification = chatNotificationText(input.leadName, input.previewBody)
+    await deliverChatPush([], {
+        workspaceId: input.workspaceId,
+        conversationKind: "native",
+        messageId: input.messageId,
+        messageCreatedAt: message.created_at,
+        conversationId: input.conversationId,
+        title: notification.title,
+        body: notification.body,
+        url: `/${encodeURIComponent(workspace.slug)}/communications?mode=leads&nativeConversation=${encodeURIComponent(input.conversationId)}`,
+    })
+}
+
 export async function notifyClientChatMessage(input: {
     workspaceId: string
     relationshipId: string

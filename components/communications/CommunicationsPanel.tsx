@@ -9,6 +9,7 @@ import { useSharedUnreadSummary } from "./useSharedUnreadSummary"
 import { invalidateUnreadSummary } from "@/lib/communications/unread-broadcast"
 import { Status } from "@/components/ui"
 import { createCommunicationsModeResource, type CommunicationsMode } from "@/lib/communications/mode-resource"
+import { CommunicationsModeTabs } from "@/components/communications/CommunicationsModeTabs"
 import { DEFAULT_CONVERSATION_LIST_WIDTH } from "@/components/communications/ResizableConversationColumns"
 import type { CommunicationsBootstrap } from "@/lib/communications/types"
 import type { NativeCommunicationsBootstrap } from "@/lib/teams/types"
@@ -37,11 +38,14 @@ function ContentReady({ active, onMounted, onReady }: { active: boolean; onMount
     return null
 }
 
-export function CommunicationsPanel({ readProtocol: requestedReadProtocol, deferredScope, clientBootstrap: initialClientBootstrap, nativeBootstrap: initialNativeBootstrap, initialMode, initialConversationId, initialNativeConversationId, initialDmUserId, onMounted, onReady }: {
+export function CommunicationsPanel({ readProtocol: requestedReadProtocol, deferredScope, clientBootstrap: initialClientBootstrap, nativeBootstrap: initialNativeBootstrap, leadsBootstrap: initialLeadsBootstrap = null, leadsEnabled = false, initialMode, initialConversationId, initialNativeConversationId, initialDmUserId, onMounted, onReady }: {
     readProtocol?: CommunicationReadProtocol
     deferredScope?: { workspaceId: string; workspaceSlug: string; userId: string }
     clientBootstrap: CommunicationsBootstrap | null
     nativeBootstrap: NativeCommunicationsBootstrap | null
+    /** The Leads tab (docs/comms-leads.md): its first bootstrap, and whether this person has it (Campaigns). */
+    leadsBootstrap?: NativeCommunicationsBootstrap | null
+    leadsEnabled?: boolean
     initialMode: CommunicationsMode
     initialConversationId?: string
     initialNativeConversationId?: string
@@ -51,7 +55,7 @@ export function CommunicationsPanel({ readProtocol: requestedReadProtocol, defer
 }) {
     const navigation = useWorkspaceNavigation()
     const panelActive = navigation?.active ?? true
-    const initialBootstrap = initialClientBootstrap ?? initialNativeBootstrap
+    const initialBootstrap = initialClientBootstrap ?? initialNativeBootstrap ?? initialLeadsBootstrap
     const hasInitialBootstrap = Boolean(initialBootstrap)
     const initialReadProtocol = initialBootstrap?.readProtocol ?? "account-v1"
     const { workspaceId, workspaceSlug } = initialBootstrap ?? deferredScope!
@@ -65,6 +69,7 @@ export function CommunicationsPanel({ readProtocol: requestedReadProtocol, defer
     const invalidateUnread = useCallback((eventKey?: string) => invalidateUnreadSummary(workspaceId, userId, eventKey), [workspaceId, userId])
     const [clientBootstrap, setClientBootstrap] = useState(compatible(initialClientBootstrap) ? initialClientBootstrap : null)
     const [nativeBootstrap, setNativeBootstrap] = useState(compatible(initialNativeBootstrap) ? initialNativeBootstrap : null)
+    const [leadsBootstrap, setLeadsBootstrap] = useState(leadsEnabled && compatible(initialLeadsBootstrap) ? initialLeadsBootstrap : null)
     const [loadErrors, setLoadErrors] = useState<Partial<Record<CommunicationsMode, string>>>({})
     const requestedObservation = useRef(false)
     const bindingModes = useRef(new Set<CommunicationsMode>())
@@ -72,7 +77,8 @@ export function CommunicationsPanel({ readProtocol: requestedReadProtocol, defer
     const resources = useRef<ReturnType<typeof createCommunicationsModeResource<CommunicationsBootstrap | NativeCommunicationsBootstrap>> | null>(null)
     const [mode, setModeState] = useState(initialMode)
     const [clientSelectedId, setClientSelectedId] = useState(initialClientBootstrap?.selectedConversationId ?? initialConversationId ?? null)
-    const [nativeSelectedId, setNativeSelectedId] = useState(initialNativeBootstrap?.requestedConversationId ?? initialNativeConversationId ?? null)
+    const [nativeSelectedId, setNativeSelectedId] = useState(initialNativeBootstrap?.requestedConversationId ?? (initialMode === "leads" ? null : initialNativeConversationId) ?? null)
+    const [leadsSelectedId, setLeadsSelectedId] = useState(initialLeadsBootstrap?.requestedConversationId ?? (initialMode === "leads" ? initialNativeConversationId : null) ?? null)
 
     const loadMode = useCallback(async (nextMode: CommunicationsMode) => {
         const resource = resources.current
@@ -86,6 +92,7 @@ export function CommunicationsPanel({ readProtocol: requestedReadProtocol, defer
             if (!bindingModes.current.size) requestedObservation.current = false
             if (resources.current !== resource) return
             if (nextMode === "clients") setClientBootstrap(bootstrap as CommunicationsBootstrap)
+            else if (nextMode === "leads") setLeadsBootstrap(bootstrap as NativeCommunicationsBootstrap)
             else setNativeBootstrap(bootstrap as NativeCommunicationsBootstrap)
         } catch (error) {
             if (resources.current === resource) setLoadErrors((errors) => ({ ...errors, [nextMode]: error instanceof Error ? error.message : "Could not load conversations." }))
@@ -97,9 +104,10 @@ export function CommunicationsPanel({ readProtocol: requestedReadProtocol, defer
             workspaceId, userId,
             load: async (nextMode, signal) => {
                 const query = new URLSearchParams({ readProtocol })
-                const conversation = nextMode === "clients" ? initialConversationId : initialNativeConversationId
+                const conversation = nextMode === "clients" ? initialConversationId : (nextMode === "leads") === (initialMode === "leads") ? initialNativeConversationId : undefined
                 if (conversation) query.set("conversation", conversation)
                 if (nextMode === "team" && initialDmUserId) query.set("dm", initialDmUserId)
+                if (nextMode === "leads") query.set("scope", "leads")
                 const path = nextMode === "clients" ? "sync" : "native/conversations"
                 const requestSignal = AbortSignal.any([signal, AbortSignal.timeout(30_000)])
                 const response = await fetch(`/api/workspaces/${workspaceSlug}/communications/${path}?${query}`, { cache: "no-store", signal: requestSignal })
@@ -136,7 +144,9 @@ export function CommunicationsPanel({ readProtocol: requestedReadProtocol, defer
         // Two animation frames allow the visible view to paint first.
         let secondFrame = 0
         const firstFrame = requestAnimationFrame(() => {
-            secondFrame = requestAnimationFrame(() => { void loadMode(initialMode === "clients" ? "team" : "clients") })
+            secondFrame = requestAnimationFrame(() => {
+                for (const other of (["clients", "team", ...(leadsEnabled ? ["leads" as const] : [])] as CommunicationsMode[]).filter(item => item !== initialMode)) void loadMode(other)
+            })
         })
         return () => {
             host.removeEventListener("betelgeze:device-observed", observed)
@@ -145,18 +155,21 @@ export function CommunicationsPanel({ readProtocol: requestedReadProtocol, defer
             if (resources.current === resource) resources.current = null
             resource.dispose()
         }
-    }, [initialConversationId, initialDmUserId, initialMode, initialNativeConversationId, hasInitialBootstrap, initialReadProtocol, loadMode, readProtocol, userId, workspaceId, workspaceSlug])
+    }, [initialConversationId, initialDmUserId, initialMode, initialNativeConversationId, hasInitialBootstrap, initialReadProtocol, leadsEnabled, loadMode, readProtocol, userId, workspaceId, workspaceSlug])
     const [accountClientUnreadCount, setClientUnreadCount] = useState(0)
     const [accountNativeUnreadCount, setNativeUnreadCount] = useState(0)
+    const [accountLeadsUnreadCount, setLeadsUnreadCount] = useState(0)
     const sharedSummary = useSharedUnreadSummary(workspaceId, userId, readProtocol)
+    // A lead's conversation is a native conversation marked "lead": it counts in Leads, not Team.
     const deviceCounts = sharedSummary?.loaded ? sharedSummary.rows.reduce((counts, row) => {
-        counts[row.kind] += row.count
+        counts[row.kind === "native" && row.lead ? "lead" : row.kind] += row.count
         return counts
-    }, { client: 0, native: 0 }) : null
+    }, { client: 0, native: 0, lead: 0 }) : null
     const clientUnreadCount = readProtocol === "device-v1" ? deviceCounts?.client : accountClientUnreadCount
     const nativeUnreadCount = readProtocol === "device-v1" ? deviceCounts?.native : accountNativeUnreadCount
+    const leadsUnreadCount = !leadsEnabled ? 0 : readProtocol === "device-v1" ? deviceCounts?.lead : accountLeadsUnreadCount
     const [conversationListWidth, setConversationListWidth] = useState(DEFAULT_CONVERSATION_LIST_WIDTH)
-    const unreadCount = clientUnreadCount === undefined || nativeUnreadCount === undefined ? undefined : clientUnreadCount + nativeUnreadCount
+    const unreadCount = clientUnreadCount === undefined || nativeUnreadCount === undefined || leadsUnreadCount === undefined ? undefined : clientUnreadCount + nativeUnreadCount + leadsUnreadCount
 
     useEffect(() => {
         const stored = Number(localStorage.getItem(`betelgeze:communications:list-width:${workspaceId}`))
@@ -185,8 +198,9 @@ export function CommunicationsPanel({ readProtocol: requestedReadProtocol, defer
         url.searchParams.set("mode", mode)
         if (clientSelectedId) url.searchParams.set("conversation", clientSelectedId)
         else url.searchParams.delete("conversation")
-        if (nativeSelectedId) {
-            url.searchParams.set("nativeConversation", nativeSelectedId)
+        const nativeConversation = mode === "leads" ? leadsSelectedId : nativeSelectedId
+        if (nativeConversation) {
+            url.searchParams.set("nativeConversation", nativeConversation)
             url.searchParams.delete("dm")
         } else url.searchParams.delete("nativeConversation")
 
@@ -214,12 +228,15 @@ export function CommunicationsPanel({ readProtocol: requestedReadProtocol, defer
             url: `${shellUrl.pathname}${shellUrl.search}${shellUrl.hash}`,
         }
         window.parent.postMessage(message, window.location.origin)
-    }, [clientSelectedId, mode, nativeSelectedId, navigation])
+    }, [clientSelectedId, leadsSelectedId, mode, nativeSelectedId, navigation])
 
-    const setMode = useCallback((next: "clients" | "team") => {
+    const setMode = useCallback((next: CommunicationsMode) => {
         setModeState(next)
-        if (next === "clients" ? !clientBootstrap : !nativeBootstrap) void loadMode(next)
-    }, [clientBootstrap, loadMode, nativeBootstrap])
+        if (next === "clients" ? !clientBootstrap : next === "leads" ? !leadsBootstrap : !nativeBootstrap) void loadMode(next)
+    }, [clientBootstrap, leadsBootstrap, loadMode, nativeBootstrap])
+    const modeBootstrap = mode === "clients" ? clientBootstrap : mode === "leads" ? leadsBootstrap : nativeBootstrap
+    // People with Campaigns get the three tabs; everyone else keeps the Clients and Team pair as it was.
+    const modeTabs = leadsEnabled ? <CommunicationsModeTabs mode={mode} onSelect={setMode} counts={{ clients: clientUnreadCount, team: nativeUnreadCount, leads: leadsUnreadCount }} leads deviceMode={readProtocol === "device-v1"} /> : undefined
 
     const setSharedConversationListWidth = useCallback((width: number) => {
         setConversationListWidth(width)
@@ -237,6 +254,7 @@ export function CommunicationsPanel({ readProtocol: requestedReadProtocol, defer
                 teamUnreadCount={nativeUnreadCount}
                 conversationListWidth={conversationListWidth}
                 onConversationListWidthChange={setSharedConversationListWidth}
+                modeTabs={modeTabs}
             />
             <ContentReady active={panelActive && mode === "clients"} onMounted={onMounted} onReady={onReady} />
         </Suspense></div> : null}
@@ -251,10 +269,27 @@ export function CommunicationsPanel({ readProtocol: requestedReadProtocol, defer
                 clientUnreadCount={clientUnreadCount}
                 conversationListWidth={conversationListWidth}
                 onConversationListWidthChange={setSharedConversationListWidth}
+                modeTabs={modeTabs}
             />
             <ContentReady active={panelActive && mode === "team"} onMounted={onMounted} onReady={onReady} />
         </Suspense></div> : null}
-        {!(mode === "clients" ? clientBootstrap : nativeBootstrap) ? <>
+        {leadsEnabled && leadsBootstrap ? <div className={mode === "leads" ? "absolute inset-0" : "hidden"} aria-hidden={mode !== "leads"}><Suspense fallback={<PanelRouteLoading variant="communications-team" />}>
+            <TeamCommunicationsWorkspace
+                variant="leads"
+                active={panelActive && mode === "leads"}
+                bootstrap={leadsBootstrap}
+                onOpenClients={() => setMode("clients")}
+                onSelectedConversationChange={setLeadsSelectedId}
+                onUnreadCountChange={setLeadsUnreadCount}
+                onUnreadInvalidated={invalidateUnread}
+                clientUnreadCount={clientUnreadCount}
+                conversationListWidth={conversationListWidth}
+                onConversationListWidthChange={setSharedConversationListWidth}
+                modeTabs={modeTabs}
+            />
+            <ContentReady active={panelActive && mode === "leads"} onMounted={onMounted} onReady={onReady} />
+        </Suspense></div> : null}
+        {!modeBootstrap ? <>
             <PanelRouteLoading variant={mode === "clients" ? "communications" : "communications-team"} />
             <div className="absolute inset-x-0 bottom-8 z-10 flex items-center justify-center gap-3 bg-black px-4 py-3 text-xs">
                 <Status tone={loadErrors[mode] ? "red" : "grey"} label={loadErrors[mode] ?? "Loading conversations…"} />

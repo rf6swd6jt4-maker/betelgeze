@@ -8,6 +8,7 @@ import { StageLabel } from "@/components/ui/RelationshipStage"
 import { runWorkspaceMutation } from "@/lib/workspace-mutations"
 import { campaignStageMarks, type CampaignStage, type CampaignTagTone } from "@/lib/campaigns/model"
 import { campaignCommand } from "@/app/[workspaceSlug]/campaigns/actions"
+import { LeadChatButton } from "@/components/campaigns/LeadChatButton"
 
 export type PipelineCard = { id: string; name: string; company: string | null; href: string; tag: { tag: string; tone: CampaignTagTone } | null; line: string; test: boolean }
 
@@ -46,7 +47,10 @@ export function PipelineBoard({ workspaceSlug, columns }: { workspaceSlug: strin
         onDragStart={draggable ? event => { event.dataTransfer.effectAllowed = "move"; setDragging({ id: item.id, from: column.stage }) } : undefined}
         onDragEnd={draggable ? () => { setDragging(null); setOver(null) } : undefined}
         className={`border-t border-card-border px-2 py-2.5 first-of-type:border-t-0 hover:bg-[var(--color-surface-hover)] ${draggable ? "cursor-grab" : ""} ${pending === item.id ? "opacity-50" : ""} ${dragging?.id === item.id ? "opacity-40" : ""}`}>
-        <Link href={item.href} className="block truncate text-sm font-medium text-neutral-100 hover:underline">{item.name}</Link>
+        <div className="flex min-w-0 items-center gap-2">
+            <Link href={item.href} className="min-w-0 flex-1 truncate text-sm font-medium text-neutral-100 hover:underline">{item.name}</Link>
+            <LeadChatButton workspaceSlug={workspaceSlug} leadId={item.id} variant="ghost" className="-my-1 sm:min-h-6! px-2!" />
+        </div>
         {item.company ? <p className="truncate text-xs text-neutral-500">{item.company}</p> : null}
         <div className="mt-1.5 flex min-w-0 items-center gap-1.5 text-xs text-neutral-500">
             {item.tag ? <RoundPill tone={item.tag.tone}>{item.tag.tag}</RoundPill> : null}

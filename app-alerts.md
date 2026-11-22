@@ -6,6 +6,17 @@ Established 17 September 2026. This is the protected behavioral contract for sta
 
 Read this document before changing anything that can affect message reading, unread counts, read receipts, foreground/active-chat detection, notification recipients, push subscriptions, delivery/retry/suppression, notification display/click handling, or their database functions and schedulers. **Do not edit this document or change those behaviors without the user's explicit permission for that scope.** An unrelated UI, performance, shell, authentication or cleanup task does not authorize changing these rules. Trace indirect effects before editing shared dependencies. Record the authorized scope, evidence, rollout and rollback here with any authorized change. Do not use a historical repair document to supersede this contract.
 
+### Lead texts in Comms → Leads (22 November 2026)
+
+The user asked to "add 'leads' to Comms, add a chat button for each lead". Asked how lead texts should be read, counted and alerted, they answered **"Just make it follow the same rules as the rest of Comms right now and make it a third tab in Comms."** This authorizes a new native conversation kind, `lead`, that follows the existing rules unchanged. Design and validation: [Leads in Comms](docs/comms-leads.md).
+
+- **Reading:** the same shared reader, read queue, newest-visible and focused-window rule, account and device cursors (kind `native`). A docked lead chat follows the existing docked-chat rule: it reads only while on screen.
+- **Unread:** the account and device summaries mark a lead conversation's row `lead: true`; it counts in the Leads tab and the Comms total, not in Team. Like a client chat, only the lead's inbound texts count; texts sent by any staff member do not.
+- **Alerts:** a lead's inbound text (`sms_direction = 'inbound'`, no staff sender) is enqueued through the existing push pipeline to the conversation's participants (owners and admins with Campaigns when it is made). Outbound texts never alert. Push copy names the lead and opens `?mode=leads&nativeConversation=…`.
+- **Unchanged:** every rule, recipient, count and alert for client, Team and direct chats; subscriptions, delivery, suppression and recovery other than the lead branch's title and link. `communication_native_inbox` excludes lead conversations.
+- **Evidence:** `scripts/validate-comms-leads-sql.mjs` (full-schema replay, run in CI) and the existing Communications validators. Rollout: apply `20261124020000_comms_lead_conversations.sql` before the application. Rollback: the application first; the additive columns and the `lead` kind may stay, since no other kind's behavior depends on them.
+- **Not authorized by this entry:** assigning lead alerts to particular setters, conversations for unknown senders, automated sends (Text flows) alerting anyone, or changing any rule for other chats.
+
 ### Phone bottom bar in the Today layout (16 November 2026)
 
 Told that the mockup's phone bottom bar "changes the space the phone chat lives in" and therefore needed explicit permission, and asked "Build the phone bottom bar next?", the user answered **"build the phone bottom bar"**. This authorizes one layout addition below `md` in the Today layout (`WORKSPACE_TODAY_LAYOUT`). **It changes no reading, unread, receipt, activity or alert rule, and edits no Communications component, reader, queue, geometry owner or library.**

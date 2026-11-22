@@ -35,9 +35,11 @@ export type WorkspaceTabFrameMessage = {
     source: typeof WORKSPACE_TAB_MESSAGE_SOURCE
     target: "host"
     tabId: string
-    type: "navigation-intent" | "navigation-intent-end" | "meaningful-ready" | "navigation-failed" | "history-step" | "record-title" | "location" | "location-replace" | "mutation" | "action-start" | "action-end" | "mutation-start" | "mutation-end" | "refresh-start" | "refresh-end" | "context-status" | "context-obstruction" | "navigation-start" | "open-tab" | "client-chat" | "reopen-closed-tab" | "communications-unread" | "departure-ready"
+    type: "navigation-intent" | "navigation-intent-end" | "meaningful-ready" | "navigation-failed" | "history-step" | "record-title" | "location" | "location-replace" | "mutation" | "action-start" | "action-end" | "mutation-start" | "mutation-end" | "refresh-start" | "refresh-end" | "context-status" | "context-obstruction" | "navigation-start" | "open-tab" | "client-chat" | "lead-chat" | "reopen-closed-tab" | "communications-unread" | "departure-ready"
     url?: string
     relationshipId?: string | null
+    /** "lead-chat": the lead's conversation in Comms → Leads (docs/comms-leads.md). */
+    conversationId?: string
     contextSupported?: boolean
     context?: WorkspaceTabRelationshipContext | null
     contextObstructed?: boolean

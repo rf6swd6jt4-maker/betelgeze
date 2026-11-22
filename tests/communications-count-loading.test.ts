@@ -45,6 +45,8 @@ function renderModes(readProtocol: "device-v1" | "account-v1", snapshot: Snapsho
         "@/components/ui": { Status: () => null },
         "@/lib/communications/mode-resource": { createCommunicationsModeResource: () => { throw Error("SSR cannot create another summary owner") } },
         "@/components/communications/ResizableConversationColumns": { DEFAULT_CONVERSATION_LIST_WIDTH: 320 },
+        // Leads is off here (no leadsEnabled), so the two-tab rendering stays the workspaces' own.
+        "@/components/communications/CommunicationsModeTabs": { CommunicationsModeTabs: () => { throw Error("Leads tabs rendered without Leads") } },
         "@/lib/workspace-tabs": {},
         "@/components/workspace/WorkspaceNavigation": { useWorkspaceNavigation: () => ({ active: true }) },
         "@/lib/workspace-navigation-lifecycle": {},

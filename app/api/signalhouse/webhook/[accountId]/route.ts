@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import { decryptWorkspaceIntegration } from "@/lib/workspace-integrations"
 import { verifySignalHouseSignature } from "@/lib/signalhouse/signature"
 import { syncSignalHouseAccount } from "@/lib/signalhouse/server"
+import { applyLeadTextStatus, recordInboundLeadText } from "@/lib/campaigns/lead-texts"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -14,8 +15,9 @@ const json = (status: number, body: Record<string, unknown>) => Response.json(bo
 /**
  * SignalHouse's signed Global webhook for one connected account (docs/signalhouse.md). SignalHouse allows 3 seconds per
  * attempt and retries 5xx/429 only, so this verifies, stores the delivery once (by X-SignalHouse-Delivery-Id) and answers;
- * number and registration changes trigger a re-read of the account after the answer. Message events are stored for the
- * Comms Leads tab, a later step; nothing here changes message reads, unread counts or alerts.
+ * number and registration changes trigger a re-read of the account after the answer. A lead's text becomes a message in
+ * their Comms conversation (docs/comms-leads.md), which follows Comms' read, unread and alert rules; receipts update the
+ * texts Betelgeze sent. A text from a phone that is no lead stays stored, unprocessed.
  */
 export async function POST(request: Request, context: { params: Promise<{ accountId: string }> }) {
     const { accountId } = await context.params
@@ -54,10 +56,19 @@ export async function POST(request: Request, context: { params: Promise<{ accoun
     await supabaseAdmin.from("signalhouse_accounts").update({ last_webhook_at: new Date().toISOString() }).eq("id", account.id)
 
     if (!duplicate) after(async () => {
-        const changesNumbers = event.startsWith("NUMBER_") || event.startsWith("CAMPAIGN_")
-        const stale = !account.last_synced_at || Date.now() - Date.parse(account.last_synced_at) > RESYNC_AFTER_MS
-        if (changesNumbers && stale) await syncSignalHouseAccount(account.workspace_id, account.id)
-        await supabaseAdmin.from("signalhouse_webhook_events").update({ processed_at: new Date().toISOString() }).eq("delivery_id", deliveryId)
+        let handled = true
+        try {
+            if (event === "MESSAGE_RECEIVED") handled = await recordInboundLeadText(account.workspace_id, account.id, envelope)
+            else if (["MESSAGE_DELIVERED", "MESSAGE_FAILED", "SMS_FAILED", "MMS_FAILED"].includes(event)) await applyLeadTextStatus(account.workspace_id, envelope)
+            else if (event.startsWith("NUMBER_") || event.startsWith("CAMPAIGN_")) {
+                const stale = !account.last_synced_at || Date.now() - Date.parse(account.last_synced_at) > RESYNC_AFTER_MS
+                if (stale) await syncSignalHouseAccount(account.workspace_id, account.id)
+            }
+        } catch (error) {
+            handled = false
+            console.warn("SignalHouse event not processed", event, error instanceof Error ? error.message : "unknown")
+        }
+        if (handled) await supabaseAdmin.from("signalhouse_webhook_events").update({ processed_at: new Date().toISOString() }).eq("delivery_id", deliveryId)
     })
     return json(200, { ok: true, duplicate })
 }

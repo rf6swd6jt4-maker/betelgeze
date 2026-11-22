@@ -1,4 +1,12 @@
-export type CommunicationsMode = "clients" | "team"
+/** "leads": the Comms Leads tab, for people with Campaigns (docs/comms-leads.md). */
+export type CommunicationsMode = "clients" | "team" | "leads"
+
+/** The mode a Comms address opens: an explicit mode, else Team for a native conversation or DM, else Clients. */
+export function communicationsModeFromQuery(query: { get(name: string): string | null | undefined }): CommunicationsMode {
+    const mode = query.get("mode")
+    if (mode === "leads") return "leads"
+    return mode === "team" || (mode !== "clients" && Boolean(query.get("nativeConversation") || query.get("dm"))) ? "team" : "clients"
+}
 
 type ScopedBootstrap = { workspaceId: string; currentUser: { id: string }; conversations: unknown[] }
 

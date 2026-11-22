@@ -93,6 +93,8 @@ function fixture(options: { access?: boolean; original?: boolean; originalBody?:
         "@/lib/workspace-native": workspaceNative,
         "@/lib/communications/workspace-access": { requireCommunicationsWorkspace: async () => ({ workspace: { id: "workspace", slug: "test" }, user: { id: "user" } }) },
         "next/server": { after: () => undefined },
+        "@/lib/campaigns/pilot": { campaignsPilotEnabled: () => false },
+        "@/lib/campaigns/lead-texts": { sendLeadText: async () => { throw new Error("Unexpected lead text during a native send") } },
         "@/lib/push/chat-notifications": {}, "@/lib/onboarding/uploads": {
             verifyNativeMessageUpload: async ({ storagePath }: { storagePath: string }) => {
                 verified.push(storagePath)

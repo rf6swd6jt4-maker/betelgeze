@@ -10,6 +10,7 @@ import { CampaignPageHeader } from "@/components/campaigns/CampaignPageHeader"
 import { PipelineBoard, type PipelineCard } from "@/components/campaigns/PipelineBoard"
 import { CampaignStageLabel, TestLabel } from "@/components/campaigns/CampaignParts"
 import { CampaignLeadsPlaceholder } from "@/components/campaigns/CampaignLoading"
+import { LeadChatButton } from "@/components/campaigns/LeadChatButton"
 import { CAMPAIGN_STAGES, campaignStageLabels, type CampaignStage, type CampaignTagTone } from "@/lib/campaigns/model"
 
 export const CAMPAIGN_TABS = ["pipeline", "leads", "sources", "flows"] as const
@@ -115,7 +116,7 @@ export function CampaignSections({ workspaceSlug, base, header, actions, sourceA
         {tab === "leads" && leads ? <>
             {filterRail}
             <Table ariaLabel="Leads" className="max-sm:[&_thead]:hidden max-sm:[&_tbody]:border-t max-sm:[&_tbody]:border-card-border">
-                <TableHead><TableHeading>Lead</TableHeading><TableHeading className="max-sm:hidden">Source</TableHeading><TableHeading>Stage</TableHeading><TableHeading className="max-md:hidden">Appointment</TableHeading><TableHeading numeric className="max-sm:hidden">Came in</TableHeading></TableHead>
+                <TableHead><TableHeading>Lead</TableHeading><TableHeading className="max-sm:hidden">Source</TableHeading><TableHeading>Stage</TableHeading><TableHeading className="max-md:hidden">Appointment</TableHeading><TableHeading numeric className="max-sm:hidden">Came in</TableHeading><TableHeading className="max-sm:hidden"><span className="sr-only">Chat</span></TableHeading></TableHead>
                 <TableBody>
                     {shown.length ? shown.map(lead => {
                         const tag = lead.tag ? <RoundPill tone={lead.tag.tone}>{lead.tag.tag}</RoundPill> : null
@@ -132,8 +133,9 @@ export function CampaignSections({ workspaceSlug, base, header, actions, sourceA
                             <TableCell><CampaignStageLabel stage={lead.stage} className="text-[13px]!" /></TableCell>
                             <TableCell className="max-md:hidden">{lead.appointment ?? <span className="text-neutral-600">–</span>}</TableCell>
                             <TableCell numeric className="max-sm:hidden">{lead.cameIn}</TableCell>
+                            <TableCell className="w-px max-sm:hidden"><LeadChatButton workspaceSlug={workspaceSlug} leadId={lead.id} variant="ghost" /></TableCell>
                         </TableRow>
-                    }) : <TableEmpty columns={5}>{all.length ? "No leads from this source yet." : "No leads yet. They appear here as soon as a source sends one."}</TableEmpty>}
+                    }) : <TableEmpty columns={6}>{all.length ? "No leads from this source yet." : "No leads yet. They appear here as soon as a source sends one."}</TableEmpty>}
                 </TableBody>
             </Table>
             {limited}

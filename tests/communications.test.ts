@@ -61,10 +61,12 @@ test("Communications preserves its section and both selected chats across shell 
 
     assert.match(panel, /url\.searchParams\.set\("mode", mode\)/)
     assert.match(panel, /url\.searchParams\.set\("conversation", clientSelectedId\)/)
-    assert.match(panel, /url\.searchParams\.set\("nativeConversation", nativeSelectedId\)/)
+    assert.match(panel, /const nativeConversation = mode === "leads" \? leadsSelectedId : nativeSelectedId/)
+    assert.match(panel, /url\.searchParams\.set\("nativeConversation", nativeConversation\)/)
     assert.match(panel, /type: "location-replace"/)
     assert.match(panel, /window\.parent\.postMessage\(message, window\.location\.origin\)/)
-    assert.match(page, /query\.mode !== "clients"/)
+    // An explicit Clients mode wins over a native conversation id (lib/communications/mode-resource.ts, tests/comms-leads.test.ts).
+    assert.match(page, /communicationsModeFromQuery\(/)
     assert.match(clients, /onSelectedConversationChange\?\.\(selectedId\)/)
     assert.match(team, /onSelectedConversationChange\?\.\(selectedId\)/)
     assert.match(panel, /conversationListWidth=\{conversationListWidth\}/)
@@ -116,7 +118,7 @@ test("unread counts move from the workspace tab to the opposite Communications s
 
     assert.match(clients, /onUnreadCountChange\?\.\(unreadCount\)/)
     assert.match(team, /onUnreadCountChange\?\.\(unreadCount\)/)
-    assert.match(panel, /const unreadCount = clientUnreadCount === undefined \|\| nativeUnreadCount === undefined \? undefined : clientUnreadCount \+ nativeUnreadCount/)
+    assert.match(panel, /const unreadCount = clientUnreadCount === undefined \|\| nativeUnreadCount === undefined \|\| leadsUnreadCount === undefined \? undefined : clientUnreadCount \+ nativeUnreadCount \+ leadsUnreadCount/)
     assert.match(panel, /teamUnreadCount=\{nativeUnreadCount\}/)
     assert.match(panel, /clientUnreadCount=\{clientUnreadCount\}/)
     assert.match(panel, /type: "communications-unread"/)

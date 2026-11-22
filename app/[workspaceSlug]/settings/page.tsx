@@ -89,8 +89,8 @@ function SettingsSectionFallback({ id, title, description, height = "min-h-40" }
 
 function IdentityFallback({ workspace }: { workspace: WorkspaceRecord }) {
     return <div aria-label="Loading workspace identity" aria-busy="true">
-        <div className="relative mb-16 h-48 motion-safe:animate-pulse rounded-xl border border-card-border sm:h-[var(--workspace-cover-height)] sm:rounded-2xl" style={{ "--workspace-cover-height": `${workspace.banner_height}px` } as CSSProperties}>
-            {workspace.logo_path ? <div className="absolute bottom-0 left-4 h-[112px] w-[112px] translate-y-1/2 rounded-full border-4 border-neutral-950 bg-neutral-900 sm:left-7 sm:h-[108px] sm:w-[108px]" /> : null}
+        <div className="relative mb-12 h-48 motion-safe:animate-pulse rounded-xl border border-card-border sm:h-[var(--workspace-cover-height)] sm:rounded-2xl" style={{ "--workspace-cover-height": `${workspace.banner_height}px` } as CSSProperties}>
+            {workspace.logo_path ? <div className="absolute bottom-0 left-4 h-[72px] w-[72px] translate-y-1/2 rounded-full border-4 border-neutral-950 bg-neutral-900 sm:left-7" /> : null}
         </div>
         <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
     </div>

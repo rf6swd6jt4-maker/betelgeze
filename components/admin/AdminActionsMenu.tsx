@@ -65,7 +65,7 @@ export function AdminActionsMenu({ workspaceSlug }: { workspaceSlug?: string }) 
 
             {open && (
                 <div
-                    className="betelgeze-popup-enter absolute right-0 z-[9999] mt-2 w-[calc(100vw-2rem)] max-w-60 overflow-hidden rounded-lg border border-card-border shadow-popup"
+                    className="betelgeze-popup-enter absolute right-0 z-[9999] mt-2 w-[calc(100vw-2rem)] max-w-60 overflow-hidden rounded-lg border border-card-border bg-surface-popup shadow-popup"
                     role="menu"
                 >
                     <Link

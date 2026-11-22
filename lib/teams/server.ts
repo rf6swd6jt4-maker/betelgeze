@@ -1,4 +1,5 @@
 import { markChatBoundary } from "@/lib/communications/performance-server"
+import { loadLeadConversationFacts } from "@/lib/campaigns/lead-texts"
 import { loadDeviceCommunicationHistory, loadDeviceCommunicationRoster } from "@/lib/communications/progressive-server"
 import type { CommunicationReadProtocol } from "@/lib/communications/read-protocol"
 import { nativeAttachmentBatchFromValue } from "@/lib/communications/attachment-batch"
@@ -110,8 +111,11 @@ export async function loadNativeCommunications(input: {
     role: string
     requestedConversationId?: string | null
     requestedDmUserId?: string | null
+    /** "leads": the Comms Leads tab (docs/comms-leads.md), the person's lead conversations only. Default: Team. */
+    scope?: "team" | "leads"
 }): Promise<NativeCommunicationsBootstrap> {
     const readProtocol = input.readProtocol ?? "account-v1"
+    const leadsScope = input.scope === "leads"
     const progressive = readProtocol === "device-v1"
     const [{ teams, services, schemaReady }, peopleResult, stickerResult] = await Promise.all([
         loadWorkspaceTeams(input.workspaceId),
@@ -145,7 +149,7 @@ export async function loadNativeCommunications(input: {
     const compactEnabled = workspacePerformanceEnabled(input.workspaceId, input.currentUserId, process.env.WORKSPACE_COMMUNICATIONS_BOUNDED_READS, process.env.WORKSPACE_PERFORMANCE_USERS)
     const inboxPromise = (async () => {
         if (progressive) return { data: [], error: null, unread: [] as unknown[], compact: false }
-        if (compactEnabled) {
+        if (compactEnabled && !leadsScope) {
             const result = await supabase.rpc("communication_native_inbox", { p_workspace_id: input.workspaceId })
             if (!communicationHistoryRpcMissing(result.error)) {
                 if (result.error) throw new Error(result.error.message)
@@ -162,7 +166,7 @@ export async function loadNativeCommunications(input: {
     })()
 
     const [conversationResult, participantResult, messageResult, reactionResult, cursorResult, membershipResult, selectedWindow, deviceRoster] = await Promise.all([
-        supabaseAdmin.from("workspace_native_conversations").select("id, kind, is_system, team_id, direct_user_one, direct_user_two, archived_at, pinned_message_id, updated_at").eq("workspace_id", input.workspaceId).order("updated_at", { ascending: false }),
+        supabaseAdmin.from("workspace_native_conversations").select("id, kind, is_system, team_id, direct_user_one, direct_user_two, lead_id, archived_at, pinned_message_id, updated_at").eq("workspace_id", input.workspaceId).order("updated_at", { ascending: false }),
         supabaseAdmin.from("workspace_native_conversation_participants").select("conversation_id, user_id").eq("workspace_id", input.workspaceId),
         inboxPromise,
         supabaseAdmin.from("workspace_native_reactions").select("id, conversation_id, message_id, reactor_user_id, emoji, updated_at").eq("workspace_id", input.workspaceId),
@@ -216,7 +220,17 @@ export async function loadNativeCommunications(input: {
         const row = record(value)
         return [text(row.conversation_id), Array.isArray(row.messages) ? row.messages as NonNullable<NativeConversation["unreadMessages"]> : []] as const
     }))
+    const leadById = leadsScope ? await loadLeadConversationFacts(input.workspaceId, input.workspaceSlug, (conversationResult.data ?? []).flatMap((conversation) => conversation.kind === "lead" && conversation.lead_id ? [conversation.lead_id as string] : [])) : new Map<string, { name: string; lead: NonNullable<NativeConversation["lead"]> }>()
     const conversations = (conversationResult.data ?? []).flatMap<NativeConversation>((conversation) => {
+        // Team shows direct and team chats; Leads shows the person's lead conversations (docs/comms-leads.md).
+        if ((conversation.kind === "lead") !== leadsScope) return []
+        if (conversation.kind === "lead") {
+            const memberIds = participants.get(conversation.id) ?? []
+            const facts = conversation.lead_id ? leadById.get(conversation.lead_id as string) : undefined
+            if (!facts || !memberIds.includes(input.currentUserId)) return []
+            const lead = facts.lead
+            return [{ id: conversation.id, kind: "lead" as const, lead, teamId: null, title: facts.name, subtitle: ["SMS", lead.tag, lead.stageLabel].filter(Boolean).join(" · "), avatarSrc: null, memberIds, archived: false, canWrite: lead.canText, pinnedMessageId: null, updatedAt: conversation.updated_at, messages: conversationMessages(conversation.id), messageWindowStart: conversationWindowStart(conversation.id) }]
+        }
         if (conversation.kind === "direct") {
             const memberIds = (participants.get(conversation.id) ?? []).filter((id) => id === conversation.direct_user_one || id === conversation.direct_user_two)
             if (!memberIds.includes(input.currentUserId)) return []

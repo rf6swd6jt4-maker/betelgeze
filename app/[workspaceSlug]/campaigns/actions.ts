@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { ADMIN_ACTIONS, loadCampaign, loadCampaignSource, requireCampaigns, runCampaignAdmin, type CampaignAdminAction } from "@/lib/campaigns/server"
 import { testLeadInput } from "@/lib/campaigns/test-lead"
+import { ensureLeadConversation } from "@/lib/campaigns/lead-texts"
 
 /** One owner/admin command for the Campaigns screens; the database function checks access again. */
 export async function campaignCommand(workspaceSlug: string, action: CampaignAdminAction, input: Record<string, unknown>) {
@@ -52,4 +53,25 @@ export async function sendTestLead(workspaceSlug: string, sourceId: string) {
     if (error || !result?.accepted) return { ok: false as const, error: result?.failure === "rate_limited" ? "Too many test leads in 10 minutes. Try again shortly." : "The test lead was not accepted. Please retry." }
     revalidatePath(`/${workspace.slug}/campaigns`, "layout")
     return { ok: true as const, bookingPath: source.books && source.booking_slug ? `/book/${source.booking_slug}?submission=${input.submission_id}` : null }
+}
+
+/**
+ * Chat on a lead: their text conversation in Comms → Leads (docs/comms-leads.md), started the first time. Owners and
+ * admins with Campaigns are its participants; nothing is sent.
+ */
+export async function openLeadChat(workspaceSlug: string, leadId: string) {
+    const { workspace, user } = await requireCampaigns(workspaceSlug)
+    if (!/^[0-9a-f-]{36}$/i.test(leadId)) return { ok: false as const, error: "Lead not found." }
+    const { data: lead } = await supabaseAdmin.from("campaign_leads").select("id, first_name, last_name").eq("id", leadId).eq("workspace_id", workspace.id).maybeSingle()
+    if (!lead) return { ok: false as const, error: "Lead not found." }
+    try {
+        const conversationId = await ensureLeadConversation(workspace.id, lead.id, user.id)
+        return {
+            ok: true as const, conversationId,
+            title: [lead.first_name, lead.last_name].filter(Boolean).join(" "),
+            href: `/${workspace.slug}/communications?mode=leads&nativeConversation=${encodeURIComponent(conversationId)}`,
+        }
+    } catch {
+        return { ok: false as const, error: "The conversation could not open. Please retry." }
+    }
 }

@@ -1,7 +1,8 @@
 import type { CommunicationReadProtocol } from "./read-protocol"
 import type { CommunicationsBootstrap } from "./types"
 import type { NativeCommunicationsBootstrap } from "../teams/types"
-import type { CommunicationsMode } from "./mode-resource"
+// @ts-expect-error Node's built-in TypeScript test runner requires the source extension.
+import { communicationsModeFromQuery, type CommunicationsMode } from "./mode-resource.ts"
 
 export type CommunicationsLocation = {
     mode: CommunicationsMode
@@ -13,6 +14,7 @@ export type CommunicationsLocation = {
 export type NativeCommunicationsSnapshot = CommunicationsLocation & {
     clientBootstrap: CommunicationsBootstrap | null
     nativeBootstrap: NativeCommunicationsBootstrap | null
+    leadsBootstrap?: NativeCommunicationsBootstrap | null
 }
 
 export function communicationsLocation(value: string, workspaceSlug: string): CommunicationsLocation | null {
@@ -22,7 +24,7 @@ export function communicationsLocation(value: string, workspaceSlug: string): Co
     const conversationId = query.get("conversation") || undefined
     const nativeConversationId = query.get("nativeConversation") || undefined
     const dmUserId = query.get("dm") || undefined
-    const mode = query.get("mode") === "team" || (query.get("mode") !== "clients" && Boolean(nativeConversationId || dmUserId)) ? "team" : "clients"
+    const mode = communicationsModeFromQuery(query)
     return { mode, conversationId, nativeConversationId, dmUserId }
 }
 
@@ -39,6 +41,7 @@ export async function readNativeCommunications(input: {
     const selected = location.mode === "clients" ? location.conversationId : location.nativeConversationId
     if (selected) query.set("conversation", selected)
     if (location.mode === "team" && location.dmUserId) query.set("dm", location.dmUserId)
+    if (location.mode === "leads") query.set("scope", "leads")
     const path = location.mode === "clients" ? "sync" : "native/conversations"
     const response = await fetch(`/api/workspaces/${encodeURIComponent(input.workspaceSlug)}/communications/${path}?${query}`, {
         cache: "no-store", credentials: "same-origin", signal: input.signal,
@@ -57,5 +60,5 @@ export async function readNativeCommunications(input: {
         throw new CommunicationsHostAccessError("Your workspace session changed. Reload to continue.")
     }
     if ((bootstrap.readProtocol ?? "account-v1") !== (input.readProtocol ?? "account-v1") || (input.readProtocol === "device-v1" && !bootstrap.deviceId)) throw new Error("Conversation protocol changed. Reload the workspace to continue.")
-    return { ...location, clientBootstrap: location.mode === "clients" ? bootstrap as CommunicationsBootstrap : null, nativeBootstrap: location.mode === "team" ? bootstrap as NativeCommunicationsBootstrap : null }
+    return { ...location, clientBootstrap: location.mode === "clients" ? bootstrap as CommunicationsBootstrap : null, nativeBootstrap: location.mode === "team" ? bootstrap as NativeCommunicationsBootstrap : null, leadsBootstrap: location.mode === "leads" ? bootstrap as NativeCommunicationsBootstrap : null }
 }

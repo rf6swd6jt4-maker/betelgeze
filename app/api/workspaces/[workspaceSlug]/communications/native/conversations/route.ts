@@ -3,6 +3,7 @@ import { deviceCommunicationErrorResponse, validateCommunicationReadProtocol } f
 import { loadNativeCommunications } from "@/lib/teams/server"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { requireWorkspacePanel } from "@/lib/workspace-access"
+import { leadsCommsEnabled } from "@/lib/campaigns/pilot"
 
 export const dynamic = "force-dynamic"
 
@@ -15,8 +16,10 @@ export const GET = withChatPerformance("message.receive", async (request: Reques
     const readProtocol = validateCommunicationReadProtocol(request, workspace.id, user.id)
     if (readProtocol instanceof Response) return readProtocol
     const url = new URL(request.url)
+    const scope = url.searchParams.get("scope") === "leads" ? "leads" : "team"
+    if (scope === "leads" && !leadsCommsEnabled(user.id, role)) return Response.json({ error: "Leads are unavailable." }, { status: 403, headers: { "Cache-Control": "no-store" } })
     try {
-    return Response.json(await loadNativeCommunications({ readProtocol, workspaceId: workspace.id, workspaceSlug: workspace.slug, currentUserId: user.id, role, requestedConversationId: url.searchParams.get("conversation"), requestedDmUserId: url.searchParams.get("dm") }), { headers: { "Cache-Control": "no-store" } })
+    return Response.json(await loadNativeCommunications({ readProtocol, workspaceId: workspace.id, workspaceSlug: workspace.slug, currentUserId: user.id, role, scope, requestedConversationId: url.searchParams.get("conversation"), requestedDmUserId: scope === "leads" ? null : url.searchParams.get("dm") }), { headers: { "Cache-Control": "no-store" } })
     } catch (error) {
         const failure = deviceCommunicationErrorResponse(error)
         if (failure) return failure

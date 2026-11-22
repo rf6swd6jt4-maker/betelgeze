@@ -115,8 +115,9 @@ const WorkspaceMemberProfileModal = dynamic(() => import("@/components/workspace
 const WorkspaceCreateModal = dynamic(() => import("@/components/workspace/WorkspaceCreateModal").then((module) => module.WorkspaceCreateModal))
 const ShellRelationshipContextPanel = dynamic(() => import("@/components/workspace/ShellRelationshipContextPanel").then((module) => module.ShellRelationshipContextPanel))
 /** The one chat the Today layout docks beside the work: a client's conversation in the client column, or the Comms drawer. */
-// The docked Comms panel: one client's conversation ("column", opened from that client's page) or the conversation list ("drawer").
-type DockedChat = { place: "column"; relationshipId: string; title: string } | { place: "drawer" }
+// The docked Comms panel: one client's conversation ("column", opened from that client's page), the conversation list
+// ("drawer"), or one lead's text conversation ("lead", opened by Chat on a lead; shown wherever the person is, like the drawer).
+type DockedChat = { place: "column"; relationshipId: string; title: string } | { place: "drawer" } | { place: "lead"; conversationId: string; title: string }
 
 const sidebarStorageKey = "betelgeze:workspace-sidebar-open"
 // Today layout: the sidebar shows names unless the person folded it. Its own key, so the tabbed layout's choice is kept.
@@ -523,6 +524,7 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
     const dockHandleRef = useRef<DockedCommunicationsHandle>(null)
     // How the shell answers Chat from a client's framed page; set below, where docking is decided.
     const clientChatRef = useRef<(client: { id: string; title: string }) => void>(() => undefined)
+    const leadChatRef = useRef<(lead: { conversationId: string; title: string }) => void>(() => undefined)
     const dockChangeRef = useRef(0)
     /** Replace or close the docked chat. The current one must first confirm its work is saved; otherwise it stays. */
     const changeDock = useCallback(async (next: DockedChat | null) => {
@@ -1798,6 +1800,11 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
                 clientChatRef.current({ id: message.relationshipId, title: message.title.slice(0, 120) })
             }
 
+            // Chat pressed on a lead (Campaigns): their conversation in Comms → Leads.
+            if (message.type === "lead-chat" && message.conversationId && message.title && /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(message.conversationId)) {
+                leadChatRef.current({ conversationId: message.conversationId, title: message.title.slice(0, 120) })
+            }
+
             if (message.type === "reopen-closed-tab") {
                 reopenClosedTab()
             }
@@ -2760,7 +2767,7 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
     const canDockChat = layout === "today" && todayWide && canAccessWorkspacePanel(workspacePanelByKey("communications"), workspaceRole, workspaceCapabilities)
     // The conversation list shows wherever the person is. One client's chat shows only beside that client's own
     // pages; elsewhere it is hidden (it reads nothing and suppresses nothing) until they return or close it.
-    const dockShown = Boolean(dock && (dock.place === "drawer"
+    const dockShown = Boolean(dock && (dock.place === "drawer" || dock.place === "lead"
         || (!activeRouteLoading && activeRelationshipContext?.id === dock.relationshipId)))
     const openClientChat = useCallback((client: { id: string; title: string }) => {
         if (dock?.place === "column" && dock.relationshipId === client.id) return
@@ -2774,6 +2781,15 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
             else void openWorkspaceTab(`/${workspace.slug}/communications?mode=clients&conversation=${encodeURIComponent(client.id)}`)
         }
     }, [layout, canDockChat, openClientChat, openWorkspaceTab, workspace.slug])
+    useEffect(() => {
+        // Docked where the panel is offered; otherwise the lead's conversation in the full Communications destination.
+        leadChatRef.current = (lead) => {
+            if (canDockChat) {
+                if (dock?.place === "lead" && dock.conversationId === lead.conversationId) return
+                void changeDock({ place: "lead", conversationId: lead.conversationId, title: lead.title })
+            } else void openWorkspaceTab(`/${workspace.slug}/communications?mode=leads&nativeConversation=${encodeURIComponent(lead.conversationId)}`)
+        }
+    }, [canDockChat, changeDock, dock, openWorkspaceTab, workspace.slug])
     useEffect(() => {
         // The work area gives the docked panel its width only while the panel is on screen (globals.css).
         if (!dockShown) return
@@ -3351,7 +3367,7 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
         <div data-workspace-tab-panels className={`fixed bottom-0 top-[6.25rem] z-30 overflow-hidden bg-neutral-950 ${sidebarTransitionEnabled ? "transition-[left,width] duration-200 ease-out" : ""}`}>
             <TodayLayoutProvider value={todayShell}>{frameTabs.map((tab) => mobileCommunicationsHost === null && communicationsLocation(tab.url, workspace.slug) ? null : usesNativeCommunications(tab.url) ? (
                 <NativeCommunicationsTab key={`${currentUserId}:${workspace.id}:${tab.id}`} tab={tab} active={tab.id === activeTabId}
-                    workspaceId={workspace.id} workspaceSlug={workspace.slug} userId={currentUserId} readProtocol={readProtocol} cache={communicationsCache}
+                    workspaceId={workspace.id} workspaceSlug={workspace.slug} userId={currentUserId} readProtocol={readProtocol} leadsEnabled={campaignsPilot && canAccessWorkspacePanel(CAMPAIGNS_PANEL, workspaceRole, workspaceCapabilities)} cache={communicationsCache}
                     accountCleared={clearedNativeAccount === nativeAccountScope} assignRef={assignNativeTabRef} onMessage={receiveNativeMessage} prepareNavigation={prepareNativePanelNavigation} />
             ) : nativePanelsEnabled && nativeWorkspaceRoute(tab.url, workspace.slug) ? (
                 <NativeWorkspaceTab key={tab.id} tab={tab} active={tab.id === activeTabId}
@@ -3404,8 +3420,8 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
                 </div>
                 {dockNotice ? <p role="alert" className="mt-1 text-xs leading-5 text-red-200">{dockNotice}</p> : null}
             </header>
-            <DockedCommunications key={dock.place === "drawer" ? "drawer" : dock.relationshipId} handle={dockHandleRef} shown={dockShown}
-                url={dock.place === "drawer" ? `/${workspace.slug}/communications` : `/${workspace.slug}/communications?mode=clients&conversation=${encodeURIComponent(dock.relationshipId)}`}
+            <DockedCommunications key={dock.place === "drawer" ? "drawer" : dock.place === "lead" ? `lead:${dock.conversationId}` : dock.relationshipId} handle={dockHandleRef} shown={dockShown}
+                url={dock.place === "drawer" ? `/${workspace.slug}/communications` : dock.place === "lead" ? `/${workspace.slug}/communications?mode=leads&nativeConversation=${encodeURIComponent(dock.conversationId)}` : `/${workspace.slug}/communications?mode=clients&conversation=${encodeURIComponent(dock.relationshipId)}`}
                 label={dock.place === "drawer" ? "Comms" : `Chat with ${dock.title}`} workspaceSlug={workspace.slug} readProtocol={readProtocol}
                 onOpenDestination={(href) => { void openWorkspaceTab(href) }} />
         </aside> : null}

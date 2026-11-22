@@ -87,7 +87,9 @@ test("native messaging supports realtime messages, replies, reactions, reads, fi
     assert.doesNotMatch(actions, /EMOJI_CATALOGUE/)
     assert.match(workspace, /clientRequestId/)
     assert.match(workspace, /bg-gradient-to-l from-red-600\/45/)
-    assert.match(workspace, /onDelete=\{canDelete && selected\.canWrite/)
+    // richActions is canWrite outside lead conversations (texts cannot be deleted from the lead's phone).
+    assert.match(workspace, /const richActions = Boolean\(selected\?\.canWrite\) && selected\?\.kind !== "lead"/)
+    assert.match(workspace, /onDelete=\{canDelete && richActions/)
     assert.match(workspace, /MessageMediaLightbox/)
     assert.match(messages, /assertNativeConversationAccess\(conversationId, user\.id, "write"\)/)
     assert.match(messages, /reply_to_message_id/)

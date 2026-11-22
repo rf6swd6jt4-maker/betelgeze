@@ -205,7 +205,7 @@ test("only the dock owner names the docked chat, and only while it is displayed 
 
     const shell = source("components/workspace/WorkspaceTopBarClient.tsx")
     assert.match(shell, /const canDockChat = layout === "today" && todayWide && canAccessWorkspacePanel\(workspacePanelByKey\("communications"\)/, "Today layout, desktop width, Communications access")
-    assert.match(shell, /const dockShown = Boolean\(dock && \(dock\.place === "drawer"\s*\|\| \(!activeRouteLoading && activeRelationshipContext\?\.id === dock\.relationshipId\)\)\)/, "a client's chat is on screen only beside that client's own pages")
+    assert.match(shell, /const dockShown = Boolean\(dock && \(dock\.place === "drawer" \|\| dock\.place === "lead"\s*\|\| \(!activeRouteLoading && activeRelationshipContext\?\.id === dock\.relationshipId\)\)\)/, "a client's chat is on screen only beside that client's own pages; the drawer and a lead's chat wherever the person is")
     assert.match(source("components/workspace/TodayLayout.tsx"), /const WIDE_QUERY = "\(min-width: 1024px\)"/)
     assert.doesNotMatch(shell, /Open full view/, "the docked panel is the one way to Comms at desktop width")
     assert.match(shell, /\{dock \? <aside data-workspace-docked-chat=/, "nothing is mounted until a dock is asked for")

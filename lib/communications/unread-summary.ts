@@ -1,7 +1,8 @@
 // @ts-expect-error Node's built-in TypeScript test runner requires the source extension.
 import { compareReadPositions, normalizeChatReadUpdate, readCursorCoversMessage, type ChatReadUpdate } from "./read-state.ts"
 
-export type UnreadSummary = { kind: "client" | "native"; conversationId: string; count: number; latestMessageId: string; latestMessageAt: string }
+/** `lead` marks a lead's conversation (a native conversation counted in the Leads tab; docs/comms-leads.md). */
+export type UnreadSummary = { kind: "client" | "native"; conversationId: string; count: number; latestMessageId: string; latestMessageAt: string; lead?: boolean }
 
 const readKey = (read: Pick<ChatReadUpdate, "kind" | "conversationId">) => `${read.kind}:${read.conversationId}`
 // Historical null IDs include all timestamp ties, matching the SQL fallback.

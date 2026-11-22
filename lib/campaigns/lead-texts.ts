@@ -5,6 +5,7 @@ import { decryptWorkspaceIntegration } from "@/lib/workspace-integrations"
 import { signalHouseObject, signalHouseRequest } from "@/lib/signalhouse/api"
 import { e164ToSignalHouse, signalHousePhoneToE164, smsNumberCanSend } from "@/lib/signalhouse/model"
 import { notifyLeadText } from "@/lib/push/chat-notifications"
+import { campaignStageLabels, isCampaignStage } from "@/lib/campaigns/model"
 
 /**
  * Lead texts in Comms (docs/comms-leads.md). A lead's conversation is a native conversation of kind "lead" whose
@@ -66,8 +67,9 @@ async function leadNumber(workspaceId: string, lead: LeadForText) {
 
 /**
  * Sends a staff member's text to a lead and stores it in their conversation. The message is stored first (as
- * "sending"), then handed to SignalHouse, then marked queued or failed, so nothing sent is ever missing from Comms.
- * `clientRequestId` makes a repeated press send once.
+ * "sending"), then handed to SignalHouse: accepted, it is marked queued, so nothing sent is ever missing from Comms;
+ * refused, the copy is removed and the error returned, so a retry sends again. `clientRequestId` makes a repeated press
+ * send once.
  */
 export async function sendLeadText(input: { workspaceId: string; userId: string; leadId: string; body: string; clientRequestId: string }) {
     const body = input.body.replace(/\r\n/g, "\n").trim()
@@ -87,7 +89,10 @@ export async function sendLeadText(input: { workspaceId: string; userId: string;
         workspace_id: input.workspaceId, conversation_id: conversationId, sender_user_id: input.userId, client_request_id: input.clientRequestId,
         body, sms_direction: "outbound", sms_status: "sending", sms_number_id: number.id,
     }).select("id, created_at").single()
-    if (insertError?.code === "23505") return { ok: true as const, conversationId, duplicate: true }
+    if (insertError?.code === "23505") {
+        const { data: earlier } = await supabaseAdmin.from("workspace_native_messages").select("id").eq("workspace_id", input.workspaceId).eq("client_request_id", input.clientRequestId).maybeSingle()
+        return { ok: true as const, conversationId, messageId: earlier?.id as string | undefined, duplicate: true }
+    }
     fail(insertError, "save the text")
     if (!lead.sms_number_id) await supabaseAdmin.from("campaign_leads").update({ sms_number_id: number.id }).eq("id", lead.id).eq("workspace_id", input.workspaceId).is("sms_number_id", null)
 
@@ -107,8 +112,13 @@ export async function sendLeadText(input: { workspaceId: string; userId: string;
         status = "failed"
         problem = sendError instanceof Error ? sendError.message : "SignalHouse did not answer."
     }
-    await supabaseAdmin.from("workspace_native_messages").update({ sms_status: status, sms_error: problem?.slice(0, 300) ?? null, sms_provider_message_id: providerId }).eq("id", stored!.id)
-    return status === "failed" ? { ok: false as const, error: `Not sent. ${problem ?? ""}`.trim(), conversationId } : { ok: true as const, conversationId, messageId: stored!.id as string }
+    if (status === "failed") {
+        // Nothing reached the lead: remove the stored copy so the composer can retry the same request.
+        await supabaseAdmin.from("workspace_native_messages").delete().eq("id", stored!.id).eq("sms_status", "sending")
+        return { ok: false as const, error: `Not sent. ${problem ?? ""}`.trim(), conversationId }
+    }
+    await supabaseAdmin.from("workspace_native_messages").update({ sms_status: status, sms_provider_message_id: providerId }).eq("id", stored!.id)
+    return { ok: true as const, conversationId, messageId: stored!.id as string }
 }
 
 /**
@@ -155,4 +165,31 @@ export async function applyLeadTextStatus(workspaceId: string, envelope: Record<
     // SignalHouse message ids are unique; the workspace and direction keep the update to this workspace's sent texts.
     await supabaseAdmin.from("workspace_native_messages").update({ sms_status: delivered ? "delivered" : "failed", sms_error: delivered ? null : reason?.slice(0, 300) ?? "Not delivered." })
         .eq("workspace_id", workspaceId).eq("sms_direction", "outbound").in("sms_provider_message_id", ids)
+}
+
+/** What the Comms Leads tab shows for each lead conversation: name, source tag, stage, a link and whether they can be texted. */
+export async function loadLeadConversationFacts(workspaceId: string, workspaceSlug: string, leadIds: string[]) {
+    const facts = new Map<string, { name: string; lead: { id: string; href: string; firstName: string; tag: string | null; tagTone: string | null; stageLabel: string; canText: boolean } }>()
+    const ids = [...new Set(leadIds)].slice(0, 1000)
+    if (!ids.length) return facts
+    const { data: leads, error } = await supabaseAdmin.from("campaign_leads").select("id, first_name, last_name, company, stage, sms_consent, latest_campaign_id, latest_source_id").eq("workspace_id", workspaceId).in("id", ids)
+    fail(error, "load the leads")
+    const sourceIds = [...new Set((leads ?? []).flatMap(lead => lead.latest_source_id ? [lead.latest_source_id as string] : []))]
+    const { data: sources } = sourceIds.length ? await supabaseAdmin.from("campaign_sources").select("id, tag, tag_tone").eq("workspace_id", workspaceId).in("id", sourceIds) : { data: [] }
+    const sourceById = new Map((sources ?? []).map(source => [source.id as string, source]))
+    for (const lead of leads ?? []) {
+        const source = lead.latest_source_id ? sourceById.get(lead.latest_source_id as string) : undefined
+        const name = [lead.first_name, lead.last_name].filter(Boolean).join(" ")
+        facts.set(lead.id as string, {
+            name: lead.company ? `${name} – ${lead.company}` : name,
+            lead: {
+                id: lead.id as string, firstName: lead.first_name as string,
+                href: `/${workspaceSlug}/campaigns/${lead.latest_campaign_id}/leads/${lead.id}`,
+                tag: (source?.tag as string | undefined) ?? null, tagTone: (source?.tag_tone as string | undefined) ?? null,
+                stageLabel: isCampaignStage(lead.stage) ? campaignStageLabels[lead.stage] : String(lead.stage),
+                canText: lead.sms_consent === "opted_in",
+            },
+        })
+    }
+    return facts
 }

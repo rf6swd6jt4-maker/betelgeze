@@ -6,6 +6,7 @@ import { Status } from "@/components/ui"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { SourceTag, TestLabel, eventText, leadName } from "@/components/campaigns/CampaignParts"
 import { BookingActions, BookingLinkActions, LeadStageField, MarkSoldButton } from "@/components/campaigns/LeadControls"
+import { LeadChatButton } from "@/components/campaigns/LeadChatButton"
 import { formatAppointment, formatMoney, meetingPlaceLabels } from "@/lib/campaigns/model"
 import { loadCampaign, loadCampaignLead, requireCampaigns } from "@/lib/campaigns/server"
 import { clientInitials } from "@/lib/client-rail"
@@ -58,6 +59,7 @@ export default async function CampaignLeadPage({ params }: { params: Promise<{ w
                 <div className="flex shrink-0 items-center gap-2">
                     <div className="min-w-0 flex-1 sm:flex-none"><LeadStageField workspaceSlug={workspace.slug} leadId={lead.id} stage={lead.stage} /></div>
                     <MarkSoldButton workspaceSlug={workspace.slug} leadId={lead.id} stage={lead.stage} />
+                    <LeadChatButton workspaceSlug={workspace.slug} leadId={lead.id} />
                 </div>
             </header>
 

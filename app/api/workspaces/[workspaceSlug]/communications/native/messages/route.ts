@@ -17,6 +17,8 @@ import { messageQuoteFromValue, messageQuoteMatches } from "@/lib/communications
 
 import { chatRecordReferences } from "@/lib/communications/references"
 import { CommunicationReferenceError, validateCommunicationReferences } from "@/lib/communications/references-server"
+import { campaignsPilotEnabled } from "@/lib/campaigns/pilot"
+import { sendLeadText } from "@/lib/campaigns/lead-texts"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -68,6 +70,18 @@ async function handlePOST(request: Request, context: { params: Promise<{ workspa
     const quote = messageQuoteFromValue(input?.quote)
     if (input?.quote != null && (!quote || !replyToMessageId)) return Response.json({ error: "A quote must contain selected text and an original message." }, { status: 400 })
     if (!UUID_PATTERN.test(conversationId) || !UUID_PATTERN.test(clientRequestId) || (replyToMessageId && !UUID_PATTERN.test(replyToMessageId)) || (!body && !attachment) || body.length > 8000 || (input?.attachment && !attachment)) return Response.json({ error: "A valid message or attachment is required." }, { status: 400 })
+    // A lead's conversation (docs/comms-leads.md): the message goes out as a SignalHouse text, stored by the server.
+    const leadConversation = await supabaseAdmin.from("workspace_native_conversations").select("lead_id").eq("workspace_id", workspace.id).eq("id", conversationId).eq("kind", "lead").maybeSingle()
+    if (leadConversation.error) return Response.json({ error: "Could not load the conversation." }, { status: 503 })
+    if (leadConversation.data?.lead_id) {
+        if (!campaignsPilotEnabled(user.id) || !await assertNativeConversationAccess(conversationId, user.id, "read")) return Response.json({ error: "Conversation is unavailable or read-only." }, { status: 403 })
+        if (attachment || replyToMessageId) return Response.json({ error: "Texts to leads are words only, without replies or attachments." }, { status: 400 })
+        const sent = await sendLeadText({ workspaceId: workspace.id, userId: user.id, leadId: leadConversation.data.lead_id, body, clientRequestId }).catch((error: unknown) => ({ ok: false as const, error: error instanceof Error ? error.message : "Could not send the text." }))
+        if (!sent.ok) return Response.json({ error: sent.error }, { status: 422 })
+        const message = "messageId" in sent && sent.messageId ? await loadNativeMessageForCurrentUser({ workspaceId: workspace.id, messageId: sent.messageId }).catch(() => null) : null
+        if (!message) return Response.json({ error: "Text sent, but it could not be shown yet. Refresh the conversation." }, { status: 503 })
+        return Response.json({ message, ...("duplicate" in sent && sent.duplicate ? { reused: true } : {}) })
+    }
     if (!await assertNativeConversationAccess(conversationId, user.id, "write")) return Response.json({ error: "Conversation is unavailable or read-only." }, { status: 403 })
     const existingRow = await supabaseAdmin
         .from("workspace_native_messages")

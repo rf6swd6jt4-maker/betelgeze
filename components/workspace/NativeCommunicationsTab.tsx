@@ -23,8 +23,10 @@ class Boundary extends Component<{ children: ReactNode; retry: () => void; faile
 }
 
 /** A resident chat shares the shell document, but retains its own identity and state. */
-export function NativeCommunicationsTab({ tab, active, workspaceId, workspaceSlug, userId, readProtocol = "account-v1", cache, accountCleared, assignRef, onMessage, prepareNavigation }: {
+export function NativeCommunicationsTab({ tab, active, workspaceId, workspaceSlug, userId, readProtocol = "account-v1", leadsEnabled = false, cache, accountCleared, assignRef, onMessage, prepareNavigation }: {
     tab: { id: string; url: string }
+    /** The Leads tab: owners and admins with Campaigns (docs/comms-leads.md). */
+    leadsEnabled?: boolean
     active: boolean
     workspaceId: string
     workspaceSlug: string
@@ -179,7 +181,7 @@ export function NativeCommunicationsTab({ tab, active, workspaceId, workspaceSlu
             navigation.push(`${destination.pathname}${destination.search}${destination.hash}`)
         }}>
         {blocked ? <div role="alert" className="p-4 text-sm text-red-200">{accessError ?? "Your workspace session changed. Reload to continue."} <button className="underline" onClick={() => window.location.reload()}>Reload workspace</button></div> : snapshot.error ? <div role="alert" className="p-4 text-sm text-red-200">{snapshot.error} <button type="button" className="underline" onClick={refresh}>Retry</button></div> : snapshot.data ? <Boundary key={`${key}:${session.revision}`} retry={refresh} failed={reportFailure}><Suspense fallback={<WorkspaceTabOpeningState url={tab.url} workspaceSlug={workspaceSlug} />}>
-            <CommunicationsRuntime><CommunicationsPanel readProtocol={readProtocol} clientBootstrap={snapshot.data.clientBootstrap} nativeBootstrap={snapshot.data.nativeBootstrap} initialMode={snapshot.data.mode} initialConversationId={snapshot.data.conversationId} initialNativeConversationId={snapshot.data.nativeConversationId} initialDmUserId={snapshot.data.dmUserId} onMounted={reportMounted} onReady={reportReady} /></CommunicationsRuntime>
+            <CommunicationsRuntime><CommunicationsPanel readProtocol={readProtocol} clientBootstrap={snapshot.data.clientBootstrap} nativeBootstrap={snapshot.data.nativeBootstrap} leadsBootstrap={snapshot.data.leadsBootstrap ?? null} leadsEnabled={leadsEnabled} initialMode={snapshot.data.mode} initialConversationId={snapshot.data.conversationId} initialNativeConversationId={snapshot.data.nativeConversationId} initialDmUserId={snapshot.data.dmUserId} onMounted={reportMounted} onReady={reportReady} /></CommunicationsRuntime>
         </Suspense></Boundary> : <WorkspaceTabOpeningState url={tab.url} workspaceSlug={workspaceSlug} />}
     </div></WorkspaceNavigationProvider>
 }

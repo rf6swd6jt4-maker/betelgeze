@@ -1,4 +1,5 @@
 import "server-only"
+import { assetDownloadHref } from "@/lib/assets/download"
 import { assetPreviewUrl } from "@/lib/assets/preview"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { decodePrivateAttachmentCursor, encodePrivateAttachmentCursor } from "@/lib/assets/attachment-cursor"
@@ -6,8 +7,9 @@ import { createSupabaseServerClient } from "@/lib/supabase/server"
 import { ATTACHMENT_PAGE_SIZE, attachmentCursorFilter, attachmentPageRows, attachmentSearch, decodeAttachmentCursor, encodeAttachmentCursor, type AttachmentPosition } from "@/lib/attachment-pages"
 
 export type AttachmentOwner = "relationship" | "work-item" | "note"
-export type AttachmentItem = { id: string; kind: "asset" | "note"; title: string; detail: string; previewUrl: string | null }
-export type AttachmentChoice = Omit<AttachmentItem, "previewUrl">
+/** `downloadHref` is set only for a stored asset file that this person may download; `fileSize` is its size in bytes. */
+export type AttachmentItem = { id: string; kind: "asset" | "note"; title: string; detail: string; previewUrl: string | null; downloadHref?: string | null; fileSize?: number | null }
+export type AttachmentChoice = Omit<AttachmentItem, "previewUrl" | "downloadHref" | "fileSize">
 export type AttachmentPage<T> = { items: T[]; nextCursor: string | null }
 const linkSource = {
     relationship: { assetTable: "asset_relationships", assetColumn: "relationship_id", noteTable: "note_relationships", noteColumn: "relationship_id" },
@@ -15,7 +17,7 @@ const linkSource = {
     note: { assetTable: "note_assets", assetColumn: "note_id", noteTable: "note_notes", noteColumn: "parent_note_id" },
 } as const
 
-export async function listRecordAttachments(workspaceId: string, owner: AttachmentOwner, ownerId: string, options: { cursor?: string | null; workspaceSlug?: string } = {}): Promise<AttachmentPage<AttachmentItem>> {
+export async function listRecordAttachments(workspaceId: string, owner: AttachmentOwner, ownerId: string, options: { cursor?: string | null; workspaceSlug?: string; downloads?: boolean } = {}): Promise<AttachmentPage<AttachmentItem>> {
     const reader = await createSupabaseServerClient()
     const scope = `${workspaceId}:${owner}:${ownerId}`
     const cursor = decodePrivateAttachmentCursor(options.cursor, scope)
@@ -34,7 +36,7 @@ export async function listRecordAttachments(workspaceId: string, owner: Attachme
     const [assetLinks, noteLinks] = await Promise.all([links(source.assetTable, source.assetColumn, "asset_id", cursor?.asset), links(source.noteTable, source.noteColumn, noteTarget, cursor?.note)])
     const assetIds = assetLinks.items.map(row => row.id), noteIds = noteLinks.items.map(row => row.id)
     const [assets, notes] = await Promise.all([
-        assetIds.length ? reader.from(source.assetTable).select("assets!inner(id,workspace_id,title,content_type,asset_kind,source_kind,native_kind,storage_path,updated_at)").eq("workspace_id", workspaceId).eq(source.assetColumn, ownerId).in("asset_id", assetIds) : Promise.resolve({ data: [], error: null }),
+        assetIds.length ? reader.from(source.assetTable).select("assets!inner(id,workspace_id,title,content_type,file_size,asset_kind,source_kind,native_kind,storage_path,updated_at)").eq("workspace_id", workspaceId).eq(source.assetColumn, ownerId).in("asset_id", assetIds) : Promise.resolve({ data: [], error: null }),
         noteIds.length ? reader.from("notes").select("id,name,description,updated_at").eq("workspace_id", workspaceId).in("id", noteIds) : Promise.resolve({ data: [], error: null }),
     ])
     if (assets.error || notes.error) throw new Error("Attachments could not load")
@@ -48,6 +50,9 @@ export async function listRecordAttachments(workspaceId: string, owner: Attachme
         previewUrl: asset.content_type?.startsWith("image/") && asset.storage_path
             ? await assetPreviewUrl(workspaceId, options.workspaceSlug ?? "", asset, true)
             : null,
+        // The link only; the download routes authorize each request again.
+        downloadHref: options.downloads && options.workspaceSlug ? assetDownloadHref(options.workspaceSlug, asset) : null,
+        fileSize: typeof asset.file_size === "number" ? asset.file_size : null,
     })))
     const noteItems = noteIds.flatMap(id => noteById.has(id) ? [noteById.get(id)!] : []).map(note => ({ id: note.id, kind: "note" as const, title: note.name, detail: note.description.slice(0, 85), previewUrl: null }))
     return { items: [...assetItems, ...noteItems], nextCursor: encodePrivateAttachmentCursor({ asset: assetLinks.next, note: noteLinks.next }, scope) }

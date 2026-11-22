@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase/admin"
+import { WORKSPACE_ASSET_PAGE_SIZE, workspaceAssetPage } from "@/lib/assets/library-pages"
 import { RELATIONSHIP_PHASES, type RelationshipPhase } from "@/lib/relationship-phases"
 
 export { RELATIONSHIP_PHASES, phaseLabel, type RelationshipPhase } from "@/lib/relationship-phases"
@@ -845,10 +846,14 @@ export async function listWorkspaceWorkItems(workspaceId: string): Promise<Relat
     return ((result.data ?? []) as Array<Record<string, unknown>>).map((row) => mapWorkItem(row))
 }
 
+export { firstWorkspaceAssetPage } from "@/lib/assets/library-pages"
+
+const WORKSPACE_ASSET_SELECT = "id, workspace_id, title, description, asset_kind, source_kind, storage_path, external_url, content_type, file_size, native_kind, native_id, metadata, created_by, created_at, updated_at"
+
 export async function listWorkspaceAssets(workspaceId: string, reader = supabaseAdmin): Promise<RelationshipAsset[]> {
     const result = await reader
         .from("assets")
-        .select("id, workspace_id, title, description, asset_kind, source_kind, storage_path, external_url, content_type, file_size, native_kind, native_id, metadata, created_by, created_at, updated_at")
+        .select(WORKSPACE_ASSET_SELECT)
         .eq("workspace_id", workspaceId)
         .is("metadata->>archived_at", null)
         .order("updated_at", { ascending: false })
@@ -857,6 +862,21 @@ export async function listWorkspaceAssets(workspaceId: string, reader = supabase
     if (reader !== supabaseAdmin && result.error) throw new Error("Could not load asset access. Please retry.")
     if (isMissingPrimitiveSchema(result.error)) return []
     return ((result.data ?? []) as Array<Record<string, unknown>>).map((row) => mapAsset(row))
+}
+
+/** One page of active assets older than `position`, read as the current session. Served by `assets_attachment_choices_idx`. */
+export async function listWorkspaceAssetsAfter(workspaceId: string, position: { at: string; id: string }, reader: typeof supabaseAdmin) {
+    const result = await reader
+        .from("assets")
+        .select(WORKSPACE_ASSET_SELECT)
+        .eq("workspace_id", workspaceId)
+        .is("metadata->>archived_at", null)
+        .or(`updated_at.lt.${position.at},and(updated_at.eq.${position.at},id.lt.${position.id})`)
+        .order("updated_at", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(WORKSPACE_ASSET_PAGE_SIZE + 1)
+    if (result.error) throw new Error("Could not load assets. Please retry.")
+    return workspaceAssetPage(((result.data ?? []) as Array<Record<string, unknown>>).map((row) => mapAsset(row)))
 }
 
 export function nativeItemHref(workspaceSlug: string, item: RelationshipWorkItem) {

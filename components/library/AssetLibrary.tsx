@@ -1,34 +1,24 @@
 "use client"
 
-import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent, type MouseEvent } from "react"
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react"
 import { useWorkspaceNavigation } from "@/components/workspace/WorkspaceNavigation"
 import { AssetGallery, AssetGalleryCard } from "@/components/ui/AssetGallery"
 import { AnchoredPopup } from "@/components/ui/AnchoredPopup"
 import { Button } from "@/components/ui/Button"
 import { LibraryTabs } from "@/components/library/LibraryTabs"
 import { PanelTabHeader } from "@/components/panel/PanelTabHeader"
-import { Status } from "@/components/ui/Status"
-import type { ArchiveFileHandle } from "@/lib/assets/save-archive"
 import { QuickStats } from "@/components/panel/QuickStats"
-import { assetArchiveHref, MAX_ASSET_ARCHIVE_BYTES, MAX_ASSET_DOWNLOADS } from "@/lib/assets/download"
+import { AssetDownloadAction, AssetSelectionStatus, AssetSelectToggle, formatFileSize, useAssetDownloads } from "@/components/library/useAssetDownloads"
 import { formatRelativeTime, shortId } from "@/lib/ui/relative-time"
 import { serializeWorkspaceDetailPreview } from "@/lib/workspace-detail-preview"
 
-type AssetEntry = {
+export type AssetEntry = {
     asset: { id: string; title: string; content_type: string | null; file_size: number | null; updated_at: string }
     previewUrl: string | null
     downloadHref: string | null
 }
+type AssetPage = { entries: AssetEntry[]; nextCursor: string | null }
 type AssetMenu = { entry: AssetEntry; anchor: HTMLElement; point: { x: number; y: number } }
-
-const primaryActionClass = "inline-flex min-h-11 items-center justify-center rounded-lg bg-[var(--color-accent)] px-4 py-2 text-center text-sm font-medium leading-none text-[var(--color-accent-contrast)] disabled:cursor-not-allowed disabled:opacity-40 sm:min-h-10 sm:px-3"
-
-function formatFileSize(size: number | null) {
-    if (size === null || !Number.isFinite(size) || size < 0) return "Unknown size"
-    if (size < 1024) return `${size} B`
-    if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`
-    return `${(size / 1024 / 1024).toFixed(1)} MB`
-}
 
 function AssetContextMenu({ menu, selected, busy, onSelect, onDownload, onDismiss }: {
     menu: AssetMenu; selected: boolean; busy: boolean; onSelect: () => void; onDownload: (event: MouseEvent<HTMLAnchorElement>) => void; onDismiss: () => void
@@ -63,131 +53,68 @@ function AssetContextMenu({ menu, selected, busy, onSelect, onDownload, onDismis
     </AnchoredPopup>
 }
 
-type Feedback = { kind: "requested" | "choosing" | "saving" | "saved" | "error" | "cancelled"; message: string; ids: string[] }
-type SavePicker = (options: { suggestedName: string; types: { description: string; accept: Record<string, string[]> }[] }) => Promise<ArchiveFileHandle>
-
-export function AssetLibrary({ workspaceSlug, previewEntries, counts }: {
+export function AssetLibrary({ workspaceSlug, userId, previewEntries, nextCursor, counts }: {
     workspaceSlug: string
+    userId: string
     previewEntries: AssetEntry[]
+    /** Where the assets after `previewEntries` start; null when there are none. */
+    nextCursor: string | null
     counts: { total: number; images: number; documents: number; uploads: number }
 }) {
     const active = useWorkspaceNavigation()?.active !== false
     const [previousActive, setPreviousActive] = useState(active)
-    const [selecting, setSelecting] = useState(false)
-    const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set())
-    const [previousEntries, setPreviousEntries] = useState(previewEntries)
-    if (previewEntries !== previousEntries) {
-        setPreviousEntries(previewEntries)
-        const readable = new Set(previewEntries.filter(entry => entry.downloadHref).map(entry => entry.asset.id))
-        setSelectedIds(current => new Set([...current].filter(id => readable.has(id))))
-    }
+    // Older assets are read one page at a time, only when asked for. A refreshed first page keeps them in place.
+    const [older, setOlder] = useState<AssetPage | null>(null)
+    const [loadingOlder, setLoadingOlder] = useState(false)
+    const [olderError, setOlderError] = useState<string | null>(null)
+    const olderRequest = useRef<AbortController | null>(null)
+    useEffect(() => () => { olderRequest.current?.abort(); olderRequest.current = null }, [])
+    const entries = useMemo(() => {
+        if (!older) return previewEntries
+        const first = new Set(previewEntries.map(entry => entry.asset.id))
+        return [...previewEntries, ...older.entries.filter(entry => !first.has(entry.asset.id))]
+    }, [previewEntries, older])
+    const cursor = older ? older.nextCursor : nextCursor
+    const downloadEntries = useMemo(() => entries.map(entry => ({ id: entry.asset.id, fileSize: entry.asset.file_size, downloadHref: entry.downloadHref })), [entries])
+    const downloads = useAssetDownloads(workspaceSlug, downloadEntries)
+    const { selecting, selectedIds, busy } = downloads
     const [menu, setMenu] = useState<AssetMenu | null>(null)
-    const [feedback, setFeedback] = useState<Feedback | null>(null)
-    const [canSaveZip, setCanSaveZip] = useState(false)
-    const selectRef = useRef<HTMLButtonElement>(null)
-    const nativeRequested = useRef<string | null>(null)
-    const saveAttempt = useRef<AbortController | null>(null)
-    const currentEntries = useRef(previewEntries)
-    useLayoutEffect(() => { currentEntries.current = previewEntries }, [previewEntries])
-    useEffect(() => () => { saveAttempt.current?.abort(); saveAttempt.current = null }, [])
     if (active !== previousActive) {
         setPreviousActive(active)
         if (!active) setMenu(null)
     }
-    // Selection and recovery use the current authorized cards, never a stored URL.
-    const available = previewEntries.filter(entry => entry.downloadHref)
-    const selected = available.filter(entry => selectedIds.has(entry.asset.id))
-    const knownBytes = selected.reduce((bytes, entry) => bytes + Math.max(0, entry.asset.file_size ?? 0), 0)
-    const unknownSizes = selected.filter(entry => entry.asset.file_size === null).length
-    const archiveTooLarge = selected.length > 1 && knownBytes > MAX_ASSET_ARCHIVE_BYTES
-    const tooMany = selected.length > MAX_ASSET_DOWNLOADS
-    const busy = feedback?.kind === "choosing" || feedback?.kind === "saving"
-    const downloadHref = archiveTooLarge || tooMany ? null : selected.length === 1 ? selected[0].downloadHref : selected.length > 1 ? assetArchiveHref(workspaceSlug, selected.map(entry => entry.asset.id)) : null
-    function enterSelection() {
-        nativeRequested.current = null
-        setSelecting(true)
-        setCanSaveZip(typeof (window as Window & { showSaveFilePicker?: SavePicker }).showSaveFilePicker === "function")
-    }
-    function toggle(id: string) {
-        nativeRequested.current = null
-        setSelectedIds(current => {
-            const next = new Set(current)
-            if (next.has(id)) next.delete(id)
-            else next.add(id)
-            return next
-        })
-    }
-    function nativeDownload(event: MouseEvent<HTMLAnchorElement>, entries: AssetEntry[]) {
-        const requestKey = entries.map(entry => entry.asset.id).join(",")
-        if (nativeRequested.current === requestKey || saveAttempt.current || !entries.length) { event.preventDefault(); return }
-        nativeRequested.current = requestKey
-        setMenu(null)
-        setFeedback({ kind: "requested", message: "Download requested. Check your browser’s downloads or Files app.", ids: entries.map(entry => entry.asset.id) })
-        const requestedIds = new Set(entries.map(entry => entry.asset.id))
-        const remaining = selected.filter(entry => !requestedIds.has(entry.asset.id))
-        setSelectedIds(new Set(remaining.map(entry => entry.asset.id)))
-        setSelecting(selecting && remaining.length > 0)
-        // Keep the native anchor request; no preflight, fetch, blob or extra request.
-        requestAnimationFrame(() => { if (selectRef.current?.isConnected) selectRef.current.focus({ preventScroll: true }) })
-    }
-    function selectAgain(ids: string[]) {
-        const readable = new Set(available.map(entry => entry.asset.id))
-        if (ids.some(id => !readable.has(id))) {
-            setFeedback({ kind: "error", message: "Some files are no longer available. Select files again.", ids: [] })
-            return
-        }
-        enterSelection()
-        setSelectedIds(new Set(ids))
-        setFeedback(null)
-    }
-    function saveZip() {
-        if (saveAttempt.current || !downloadHref || selected.length < 2) return
-        const picker = (window as Window & { showSaveFilePicker?: SavePicker }).showSaveFilePicker
-        if (!picker) { setCanSaveZip(false); return }
+    async function loadOlder() {
+        if (olderRequest.current || !cursor) return
         const controller = new AbortController()
-        saveAttempt.current = controller
-        const ids = selected.map(entry => entry.asset.id)
-        const href = downloadHref
-        setFeedback({ kind: "choosing", message: "Choose where to save the ZIP…", ids })
-        // The picker must run in this gesture, before any asynchronous module load.
-        let picked: Promise<ArchiveFileHandle>
-        try { picked = picker.call(window, { suggestedName: "Assets.zip", types: [{ description: "ZIP archive", accept: { "application/zip": [".zip"] } }] }) }
-        catch (error) { picked = Promise.reject(error) }
-        void (async () => {
-            try {
-                const file = await picked
-                controller.signal.throwIfAborted()
-                const { saveAssetArchive } = await import("@/lib/assets/save-archive")
-                controller.signal.throwIfAborted()
-                const readable = new Set(currentEntries.current.filter(entry => entry.downloadHref).map(entry => entry.asset.id))
-                if (ids.some(id => !readable.has(id))) throw new Error("Some files are no longer available. Select files again.")
-                await saveAssetArchive({ href, file, signal: controller.signal, onSaving: () => {
-                    if (saveAttempt.current === controller) setFeedback({ kind: "saving", message: "Saving ZIP…", ids })
-                } })
-                if (saveAttempt.current !== controller) return
-                setFeedback({ kind: "saved", message: "ZIP saved.", ids })
-                // Selection controls remain usable during transfer. Preserve new choices.
-                setSelectedIds(current => new Set([...current].filter(id => !ids.includes(id))))
-            } catch (error) {
-                if (saveAttempt.current !== controller) return
-                const cancelled = controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")
-                const messages = ["Some files are no longer available. Select files again.", "Download up to 500 MB at once, or download large assets individually."]
-                const message = cancelled ? "Save cancelled." : error instanceof Error && messages.includes(error.message) ? error.message : "The ZIP could not be saved. Try again, or use Download."
-                setFeedback({ kind: cancelled ? "cancelled" : "error", message, ids })
-            } finally {
-                if (saveAttempt.current === controller) saveAttempt.current = null
-            }
-        })()
+        olderRequest.current = controller
+        // One bounded read per press; a failure waits for the person to retry.
+        const timeout = setTimeout(() => controller.abort(), 30_000)
+        setLoadingOlder(true); setOlderError(null)
+        try {
+            const response = await fetch(`/api/workspaces/${encodeURIComponent(workspaceSlug)}/assets?cursor=${encodeURIComponent(cursor)}`, { signal: controller.signal, cache: "no-store", redirect: "error", headers: { "x-workspace-user": userId } })
+            if (!response.ok) throw new Error()
+            const page = await response.json() as AssetPage
+            if (olderRequest.current !== controller) return
+            setOlder(current => {
+                const known = new Set(current?.entries.map(entry => entry.asset.id))
+                return { entries: [...(current?.entries ?? []), ...page.entries.filter(entry => !known.has(entry.asset.id))], nextCursor: page.nextCursor }
+            })
+        } catch {
+            if (olderRequest.current === controller) setOlderError("Older assets could not load.")
+        } finally {
+            clearTimeout(timeout)
+            if (olderRequest.current === controller) { olderRequest.current = null; setLoadingOlder(false) }
+        }
     }
-    const currentMenu = menu && previewEntries.some(entry => entry.asset.id === menu.entry.asset.id && entry.downloadHref === menu.entry.downloadHref) ? menu : null
+    const currentMenu = menu && entries.some(entry => entry.asset.id === menu.entry.asset.id && entry.downloadHref === menu.entry.downloadHref) ? menu : null
 
     return <>
         <PanelTabHeader
             title="Assets"
             description="Workspace files and media available for relationship and work-item use."
             actions={<div className="flex w-full flex-wrap items-center justify-end gap-3">
-                <Button ref={selectRef} variant="ghost" size="sm" aria-pressed={selecting} onClick={() => { if (selecting) { setSelecting(false); setSelectedIds(new Set()) } else enterSelection(); setMenu(null) }}>{selecting ? "Cancel" : "Select"}</Button>
-                {selecting ? downloadHref && !busy ? <a href={downloadHref} download target="_blank" rel="noreferrer" className={primaryActionClass} onClick={event => nativeDownload(event, selected)}>Download {selected.length} asset{selected.length === 1 ? "" : "s"}</a> : <Button disabled>Download {selected.length} asset{selected.length === 1 ? "" : "s"}</Button> : <Button href={`/${workspaceSlug}/assets?create=asset`}>New asset</Button>}
+                <AssetSelectToggle downloads={downloads} onToggle={() => setMenu(null)} />
+                {selecting ? <AssetDownloadAction downloads={downloads} onRequested={() => setMenu(null)} /> : <Button href={`/${workspaceSlug}/assets?create=asset`}>New asset</Button>}
             </div>}
             tabs={<LibraryTabs workspaceSlug={workspaceSlug} active="assets" />}
         />
@@ -197,38 +124,24 @@ export function AssetLibrary({ workspaceSlug, previewEntries, counts }: {
             { label: "Documents", value: counts.documents },
             { label: "Uploads", value: counts.uploads },
         ]} />
-        {selecting ? <div role="group" aria-label="Asset selection" className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-            <span aria-live="polite" className="text-neutral-400">{selected.length} selected · {formatFileSize(knownBytes)}{unknownSizes ? ` + ${unknownSizes} unknown size${unknownSizes === 1 ? "" : "s"}` : ""}</span>
-            <Button variant="ghost" size="sm" disabled={!available.length || selected.length === available.length} onClick={() => { nativeRequested.current = null; setSelectedIds(new Set(available.map(entry => entry.asset.id))) }}>Select all visible</Button>
-            <Button variant="ghost" size="sm" disabled={!selected.length} onClick={() => setSelectedIds(new Set())}>Clear selection</Button>
-            {canSaveZip && selected.length > 1 ? <Button variant="ghost" size="sm" disabled={!downloadHref || busy} onClick={saveZip}>Save ZIP as…</Button> : null}
-            {previewEntries.length > available.length ? <span className="basis-full text-xs text-neutral-500">Assets without a stored file cannot be downloaded.</span> : null}
-        </div> : null}
-        {archiveTooLarge || tooMany ? <p role="alert" className="mt-5 text-sm text-amber-200">{tooMany ? "Select up to 24 assets at once." : "Download up to 500 MB at once, or download large assets individually."}</p> : null}
-        {feedback ? <div className="mt-5 flex flex-wrap items-center gap-x-3 gap-y-1">
-            <div role={feedback.kind === "error" ? "alert" : "status"}><Status label={feedback.message} wrap tone={feedback.kind === "error" ? "red" : feedback.kind === "saved" ? "green" : busy ? "yellow" : "grey"} /></div>
-            {busy ? <Button variant="ghost" size="sm" onClick={() => saveAttempt.current?.abort()}>Cancel save</Button> : <>
-                {feedback.ids.length > 0 ? <Button variant="ghost" size="sm" onClick={() => selectAgain(feedback.ids)}>Select again</Button> : null}
-                <Button variant="ghost" size="sm" onClick={() => setFeedback(null)}>Dismiss</Button>
-            </>}
-        </div> : null}
+        <AssetSelectionStatus downloads={downloads} />
         <section className="mt-5">
-            {previewEntries.length ? <AssetGallery label="Assets">{previewEntries.map(entry => {
+            {entries.length ? <AssetGallery label="Assets">{entries.map(entry => {
                 const { asset, previewUrl } = entry
                 return <AssetGalleryCard key={asset.id} href={`/${workspaceSlug}/assets/${asset.id}`} title={asset.title} subtitle={shortId(asset.id)} previewUrl={previewUrl} format={asset.title.split(".").at(-1)}
                     detail={<span className="flex justify-between gap-2"><span>{formatRelativeTime(asset.updated_at)}</span><span>{formatFileSize(asset.file_size)}</span></span>}
                     navigationPreview={serializeWorkspaceDetailPreview({ category: "Asset", reference: shortId(asset.id), title: asset.title, updated: formatRelativeTime(asset.updated_at) })}
-                    selection={selecting ? { checked: Boolean(entry.downloadHref && selectedIds.has(asset.id)), disabled: !entry.downloadHref, onChange: () => toggle(asset.id) } : undefined}
+                    selection={selecting ? { checked: Boolean(entry.downloadHref && selectedIds.has(asset.id)), disabled: !entry.downloadHref, onChange: () => downloads.toggle(asset.id) } : undefined}
                     onContextMenu={event => {
                         event.preventDefault()
-                        nativeRequested.current = null
+                        downloads.resetRequest()
                         const rect = event.currentTarget.getBoundingClientRect()
                         setMenu({ entry, anchor: event.currentTarget, point: { x: event.clientX - rect.left, y: event.clientY - rect.top } })
                     }}
                     onKeyDown={event => {
                         if (event.key !== "ContextMenu" && !(event.shiftKey && event.key === "F10")) return
                         event.preventDefault()
-                        nativeRequested.current = null
+                        downloads.resetRequest()
                         setMenu({ entry, anchor: event.currentTarget, point: { x: event.currentTarget.clientWidth / 2, y: 0 } })
                     }}
                 />
@@ -236,11 +149,15 @@ export function AssetLibrary({ workspaceSlug, previewEntries, counts }: {
                 <p className="text-lg font-semibold">No assets yet.</p>
                 <p className="mt-2 max-w-2xl text-sm leading-6 text-neutral-400">Upload files from here or attach assets from relationship and work item pages.</p>
             </div>}
+            {cursor || olderError ? <div className="mt-6 flex flex-wrap items-center justify-center gap-x-3 gap-y-1">
+                {olderError ? <p role="alert" className="text-sm text-red-200">{olderError}</p> : null}
+                {cursor ? <Button variant="secondary" disabled={loadingOlder} onClick={() => void loadOlder()}>{loadingOlder ? "Loading…" : olderError ? "Retry" : "Load more"}</Button> : null}
+            </div> : null}
         </section>
-        {currentMenu ? <AssetContextMenu menu={currentMenu} selected={selectedIds.has(currentMenu.entry.asset.id)} busy={busy} onDownload={event => nativeDownload(event, [currentMenu.entry])} onDismiss={() => setMenu(null)} onSelect={() => {
+        {currentMenu ? <AssetContextMenu menu={currentMenu} selected={selectedIds.has(currentMenu.entry.asset.id)} busy={busy} onDownload={event => { if (downloads.nativeDownload(event, [currentMenu.entry.asset.id])) setMenu(null) }} onDismiss={() => setMenu(null)} onSelect={() => {
             const anchor = currentMenu.anchor
-            enterSelection()
-            toggle(currentMenu.entry.asset.id)
+            downloads.enterSelection()
+            downloads.toggle(currentMenu.entry.asset.id)
             setMenu(null)
             requestAnimationFrame(() => {
                 if (anchor.isConnected) anchor.querySelector<HTMLInputElement>('input[type="checkbox"]')?.focus({ preventScroll: true })

@@ -1,13 +1,14 @@
 "use client"
 
 import Link from "@/components/workspace/WorkspaceLink"
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { attachExistingRecord } from "@/app/[workspaceSlug]/attachment-actions"
 import { SelectorOption } from "@/components/ui/Selector"
 import { AnchoredPopup } from "@/components/ui/AnchoredPopup"
 import { AddDocumentCard, DocumentCard, DocumentCatalogue } from "@/components/ui/DocumentCatalogue"
 import type { AttachmentChoice, AttachmentItem, AttachmentOwner, AttachmentPage } from "@/lib/record-attachments"
 import { createAttachmentPageCache, createAttachmentReadOwner } from "@/lib/attachment-reads"
+import { AssetDownloadAction, AssetSelectionStatus, AssetSelectToggle, useAssetDownloads } from "@/components/library/useAssetDownloads"
 import { runWorkspaceMutation } from "@/lib/workspace-mutations"
 import { useWorkspaceNavigation } from "@/components/workspace/WorkspaceNavigation"
 
@@ -102,15 +103,24 @@ function ScopedAttachments(props: Props) {
         } catch { if (mounted.current) setChoiceError("The attachment could not be confirmed. Retry this selection; an existing link will not be duplicated.") }
         finally { busyRef.current = false; if (mounted.current) setBusy(false) }
     }
+    // Assets on the shown page can be selected and downloaded together; notes have no file.
+    const downloadEntries = useMemo(() => (page?.items ?? []).filter(item => item.kind === "asset").map(item => ({ id: item.id, fileSize: item.fileSize ?? null, downloadHref: item.downloadHref ?? null })), [page])
+    const downloads = useAssetDownloads(workspaceSlug, downloadEntries)
+    const canSelect = downloads.selecting || downloads.available.length > 0
     const creationQuery = `attachTo=${encodeURIComponent(owner)}&attachId=${encodeURIComponent(ownerId)}`
     const choices = choicePage?.items.filter(choice => !page?.items.some(item => item.id === choice.id && item.kind === choice.kind)) ?? []
     return <section ref={section} className="mt-6 border-t border-neutral-900 pt-5" aria-label="Attachments">
-        <h2 className="text-sm font-semibold text-white">Attachments</h2><p className="mt-1 text-xs text-neutral-500">Assets and notes linked to this record.</p>
+        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-2">
+            <div><h2 className="text-sm font-semibold text-white">Attachments</h2><p className="mt-1 text-xs text-neutral-500">Assets and notes linked to this record.</p></div>
+            {canSelect ? <div className="flex flex-wrap items-center justify-end gap-3"><AssetSelectToggle downloads={downloads} />{downloads.selecting ? <AssetDownloadAction downloads={downloads} /> : null}</div> : null}
+        </div>
+        <AssetSelectionStatus downloads={downloads} className="mt-3" />
         {notice ? <p role="status" className="mt-2 text-xs text-neutral-300">{notice}</p> : null}
         {error ? <p role="alert" className="mt-2 text-xs text-red-300">{error} <button type="button" onClick={() => void load(itemCursor).catch(cause => setError(cause.message))} className="underline">Retry loading</button></p> : null}
         <div className="mt-4"><DocumentCatalogue label="Attached assets and notes">
-            {(page?.items ?? []).map(item => <DocumentCard key={`${item.kind}:${item.id}`} href={`/${workspaceSlug}/${item.kind === "asset" ? "assets" : "notes"}/${item.id}`} title={item.title} format={item.kind === "asset" ? "Asset" : "Note"} detail={item.detail} previewUrl={item.previewUrl} />)}
-            {canEdit ? <AddDocumentCard label="Add attachment" onClick={event => { setAnchor(event.currentTarget); setStep("actions"); setChoiceError(null) }} /> : null}
+            {(page?.items ?? []).map(item => <DocumentCard key={`${item.kind}:${item.id}`} href={`/${workspaceSlug}/${item.kind === "asset" ? "assets" : "notes"}/${item.id}`} title={item.title} format={item.kind === "asset" ? "Asset" : "Note"} detail={item.detail} previewUrl={item.previewUrl}
+                selection={downloads.selecting ? { checked: Boolean(item.downloadHref && downloads.selectedIds.has(item.id)), disabled: item.kind !== "asset" || !item.downloadHref, disabledReason: item.kind === "note" ? "Notes cannot be downloaded" : undefined, onChange: () => downloads.toggle(item.id) } : undefined} />)}
+            {canEdit && !downloads.selecting ? <AddDocumentCard label="Add attachment" onClick={event => { setAnchor(event.currentTarget); setStep("actions"); setChoiceError(null) }} /> : null}
         </DocumentCatalogue></div>
         {loading ? <p className="mt-3 text-xs text-neutral-500" role="status">Loading attachments…</p> : page?.items.length === 0 ? <p className="mt-3 text-xs text-neutral-500">No attachments on this page.</p> : null}
         {itemCursor || page?.nextCursor ? <nav className="mt-3 flex gap-4 text-xs text-neutral-300" aria-label="Attachment pages">{itemCursor ? <button type="button" disabled={loading} onClick={() => void load().catch(cause => setError(cause.message))}>Newest attachments</button> : null}{page?.nextCursor ? <button type="button" disabled={loading} onClick={() => void load(page.nextCursor).catch(cause => setError(cause.message))}>Older attachments</button> : null}</nav> : null}

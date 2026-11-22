@@ -42,7 +42,7 @@ function Assets({ data }: { data: Extract<NativeLibrarySnapshot, { kind: "assets
     return (
         <main className="min-h-full bg-neutral-950 px-4 pb-7 text-white sm:px-6">
             <div className="mx-auto max-w-7xl">
-                <AssetLibrary key={data.workspaceSlug} workspaceSlug={data.workspaceSlug} previewEntries={data.previewEntries} counts={data.counts} />
+                <AssetLibrary key={data.workspaceSlug} workspaceSlug={data.workspaceSlug} userId={data.userId} previewEntries={data.previewEntries} nextCursor={data.nextCursor} counts={data.counts} />
             </div>
         </main>
     )

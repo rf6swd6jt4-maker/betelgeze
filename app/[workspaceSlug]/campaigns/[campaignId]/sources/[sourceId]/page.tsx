@@ -3,6 +3,7 @@ import { notFound } from "next/navigation"
 import { DetailPageHeader } from "@/components/detail"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { SourceSettings } from "@/components/campaigns/SourceSettings"
+import { SourceStatusBar } from "@/components/campaigns/SourceStatusBar"
 import { SourceTag, shortId } from "@/components/campaigns/CampaignParts"
 import { loadCampaign, loadCampaignSource, loadSourceStats, requireCampaigns } from "@/lib/campaigns/server"
 import { formatRelativeTime } from "@/lib/ui/relative-time"
@@ -26,6 +27,7 @@ export default async function CampaignSourcePage({ params }: { params: Promise<{
                 labels={<SourceTag source={source} />}
                 facts={[{ label: "this week", value: stats.week }]}
                 updated={stats.lastAt ? `Last lead ${formatRelativeTime(stats.lastAt)} ago` : "No leads yet"} />
+            <SourceStatusBar workspaceSlug={workspace.slug} campaignId={loaded.campaign.id} sourceId={source.id} status={source.status} pageUrl={source.page_url} books={source.books} hasLead={Boolean(stats.lastAt)} appOrigin={appOrigin} />
             <SourceSettings key={source.id} workspaceSlug={workspace.slug} source={source} appOrigin={appOrigin} />
         </div>
     </main>

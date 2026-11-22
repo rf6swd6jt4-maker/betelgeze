@@ -62,3 +62,17 @@ test("opening Campaigns in a workspace tab keeps the tab when it goes straight t
     assert.equal(target.pathname, "/scaylup/campaigns/c1")
     assert.equal(target.searchParams.get(WORKSPACE_TAB_FRAME_PARAM), "tab-1")
 })
+
+test("a test lead is a valid intake submission with a fixed 555 phone per source", async () => {
+    const { testLeadInput, TEST_LEAD_CONSENT } = await import("../lib/campaigns/test-lead.ts")
+    const { createHash } = await import("node:crypto")
+    const a = testLeadInput("source-a", "user-1"), again = testLeadInput("source-a", "user-1"), b = testLeadInput("source-b", "user-1")
+    assert.match(a.phone_e164, /^\+1555\d{7}$/)
+    assert.equal(a.phone_e164, again.phone_e164)
+    assert.notEqual(a.phone_e164, b.phone_e164)
+    assert.notEqual(a.submission_id, again.submission_id)
+    assert.match(a.submission_id, /^[0-9a-f-]{36}$/)
+    assert.match(a.ip_hmac, /^[a-f0-9]{64}$/)
+    assert.equal(a.consent_sha256, createHash("sha256").update(TEST_LEAD_CONSENT).digest("hex"))
+    assert.ok(TEST_LEAD_CONSENT.length >= 20)
+})

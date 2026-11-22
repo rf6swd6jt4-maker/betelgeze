@@ -8,8 +8,8 @@ import { SectionHeading } from "@/components/detail"
 import { runWorkspaceMutation } from "@/lib/workspace-mutations"
 import { campaignCommand } from "@/app/[workspaceSlug]/campaigns/actions"
 import {
-    CAMPAIGN_TAG_TONES, CAMPAIGN_TIME_ZONES, WEEKDAY_LABELS, bookingSlugFrom, campaignSourceStatusLabels, formatMoney, meetingPlaceLabels, minuteLabel, originOf, timeZoneLabels,
-    type CampaignSourceStatus, type CampaignTagTone, type MeetingPlace,
+    CAMPAIGN_TAG_TONES, CAMPAIGN_TIME_ZONES, WEEKDAY_LABELS, bookingSlugFrom, formatMoney, meetingPlaceLabels, minuteLabel, originOf, timeZoneLabels,
+    type CampaignTagTone, type MeetingPlace,
 } from "@/lib/campaigns/model"
 import type { CampaignSourceRow } from "@/lib/campaigns/server"
 
@@ -67,13 +67,7 @@ export function SourceSettings({ workspaceSlug, source, appOrigin }: { workspace
             {state.kind === "saving" ? "Saving…" : state.kind === "saved" ? "Saved" : state.kind === "error" ? state.message : ""}
         </p>
 
-        <SectionHeading className="mt-2">Status</SectionHeading>
-        <Row label="Takes leads" hint={value.status === "testing" ? "Leads are accepted and marked Test, so you can try the whole flow." : value.status === "off" ? "The form's address answers that intake is closed, and the booking page is off." : "Leads arrive in Not booked, tagged with this source."}>
-            <Selector appearance="input" ariaLabel="Status" value={value.status} onChange={next => save({ status: next as CampaignSourceStatus })}
-                options={(Object.keys(campaignSourceStatusLabels) as CampaignSourceStatus[]).map(key => ({ value: key, label: campaignSourceStatusLabels[key] }))} />
-        </Row>
-
-        <SectionHeading className="mt-8">Name and tag</SectionHeading>
+        <SectionHeading className="mt-6">Name and tag</SectionHeading>
         <Row label="Name"><input className={inputClass} aria-label="Name" maxLength={120} {...text("name")} /></Row>
         <Row label="Tag" hint="The tag marks this source's leads in the pipeline and the leads list.">
             <div className="flex flex-wrap items-center gap-2">
@@ -118,7 +112,7 @@ export function SourceSettings({ workspaceSlug, source, appOrigin }: { workspace
 
         {value.books ? <>
             <SectionHeading className="mt-8">Booking page</SectionHeading>
-            {bookingUrl ? <Row label="Address" hint="The form sends visitors here with ?submission= and the submission ID, so they never type their details twice."><Copy value={bookingUrl} /></Row> : null}
+            {bookingUrl ? <Row label="Address" hint="The form sends visitors here with ?submission= and the submission ID, so they never type their details twice. To try it as a lead, send a test lead above."><Copy value={bookingUrl} /></Row> : null}
             <Row label="Address name"><input className={`${inputClass} max-w-xs font-mono`} aria-label="Booking address name" maxLength={60} {...text("booking_slug")} /></Row>
             <Row label="Meeting"><input className={inputClass} aria-label="Meeting name" maxLength={80} {...text("meeting_title")} /></Row>
             <Row label="Length">

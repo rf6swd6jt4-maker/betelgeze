@@ -14,7 +14,7 @@ export type CampaignSourceRow = {
     notice_hours: number; horizon_days: number; pay_amount_cents: number | null; hold_minutes: number; refund_rule: string | null; created_at: string
 }
 export type CampaignLeadRow = {
-    id: string; first_name: string; last_name: string | null; company: string | null; phone_e164: string; email: string | null; stage: CampaignStage
+    id: string; reference: string; first_name: string; last_name: string | null; company: string | null; phone_e164: string; email: string | null; stage: CampaignStage
     latest_source_id: string | null; is_test: boolean; answers: { id?: string; question?: string; answer?: string }[]; first_submitted_at: string
     last_submitted_at: string; submission_count: number; sms_consent: string; first_attribution: Record<string, unknown>; latest_campaign_id: string
 }
@@ -25,7 +25,7 @@ export type CampaignBookingRow = {
 export type CampaignEventRow = { id: string; kind: string; detail: Record<string, unknown>; created_at: string }
 
 const SOURCE_FIELDS = "id, campaign_id, name, tag, tag_tone, page_url, allowed_origins, status, intake_key, books, booking_slug, meeting_title, meeting_minutes, meeting_place, meeting_link, time_zone, booking_days, day_start_minute, day_end_minute, notice_hours, horizon_days, pay_amount_cents, hold_minutes, refund_rule, created_at"
-const LEAD_FIELDS = "id, first_name, last_name, company, phone_e164, email, stage, latest_source_id, is_test, answers, first_submitted_at, last_submitted_at, submission_count, sms_consent, first_attribution, latest_campaign_id"
+const LEAD_FIELDS = "id, reference, first_name, last_name, company, phone_e164, email, stage, latest_source_id, is_test, answers, first_submitted_at, last_submitted_at, submission_count, sms_consent, first_attribution, latest_campaign_id"
 const BOOKING_FIELDS = "id, lead_id, source_id, starts_at, ends_at, status, held_until, amount_cents, paid_at, booked_by, created_at"
 /** The pipeline shows the most recent leads; older ones stay reachable as the campaign grows (later: paging). */
 export const CAMPAIGN_LEAD_LIMIT = 500
@@ -76,6 +76,14 @@ export async function loadCampaignLeads(workspaceId: string, campaignId: string)
     return { leads, bookings }
 }
 
+/** How many of the campaign's leads are not booked yet (including paid ones), for its header. */
+export async function loadNotBookedCount(workspaceId: string, campaignId: string) {
+    const { count, error } = await supabaseAdmin.from("campaign_leads").select("id", { count: "exact", head: true })
+        .eq("workspace_id", workspaceId).eq("latest_campaign_id", campaignId).in("stage", ["not_booked", "paid_not_booked"])
+    fail(error, "lead counts")
+    return count ?? 0
+}
+
 export async function loadCampaignSource(workspaceId: string, sourceId: string) {
     if (!/^[0-9a-f-]{36}$/i.test(sourceId)) return null
     const { data, error } = await supabaseAdmin.from("campaign_sources").select(SOURCE_FIELDS).eq("workspace_id", workspaceId).eq("id", sourceId).maybeSingle()
@@ -109,7 +117,7 @@ export async function loadCampaignLead(workspaceId: string, leadId: string) {
     return { lead: lead.data as CampaignLeadRow, bookings: rows, current, events: (events.data ?? []) as CampaignEventRow[] }
 }
 
-export const ADMIN_ACTIONS = ["create_source", "update_source", "set_stage", "booking_status", "update_campaign"] as const
+export const ADMIN_ACTIONS = ["create", "create_source", "update_source", "set_stage", "booking_status", "update_campaign"] as const
 export type CampaignAdminAction = (typeof ADMIN_ACTIONS)[number]
 
 export async function runCampaignAdmin(workspaceId: string, actorId: string, action: CampaignAdminAction, input: Record<string, unknown>) {

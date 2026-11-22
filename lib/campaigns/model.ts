@@ -61,6 +61,12 @@ export function formatAppointment(iso: string, timeZone: string) {
     return `${day}, ${time}${zone ? ` ${zone.replace(/^(C|E|M|P)[SD]T$/, "$1T")}` : ""}`
 }
 
+/** "Tue 10:00 AM" for pipeline cards; the full date is on the lead's page. */
+export function formatShortAppointment(iso: string, timeZone: string) {
+    const date = new Date(iso)
+    return `${new Intl.DateTimeFormat("en-US", { timeZone, weekday: "short" }).format(date)} ${new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", minute: "2-digit" }).format(date)}`
+}
+
 export function minuteLabel(minute: number) {
     const hours = Math.floor(minute / 60) % 24
     const minutes = minute % 60

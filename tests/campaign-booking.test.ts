@@ -76,3 +76,13 @@ test("a test lead is a valid intake submission with a fixed 555 phone per source
     assert.equal(a.consent_sha256, createHash("sha256").update(TEST_LEAD_CONSENT).digest("hex"))
     assert.ok(TEST_LEAD_CONSENT.length >= 20)
 })
+
+test("a campaign, its sources and its leads name themselves in the top bar; other campaign routes do not", async () => {
+    const { workspaceTabRecordTitleForUrl } = await import("../lib/workspace-tabs.ts")
+    const id = "d6709b95-f45b-4592-b1f0-a5cccb4ada26"
+    assert.equal(workspaceTabRecordTitleForUrl(`/scaylup/campaigns/${id}?tab=leads`, "scaylup", "Garage Door Clients"), "Garage Door Clients")
+    assert.equal(workspaceTabRecordTitleForUrl(`/scaylup/campaigns/${id}/sources/${id}`, "scaylup", "Funnel teardown"), "Funnel teardown")
+    assert.equal(workspaceTabRecordTitleForUrl(`/scaylup/campaigns/${id}/leads/${id}`, "scaylup", "Test Lead"), "Test Lead")
+    assert.equal(workspaceTabRecordTitleForUrl("/scaylup/campaigns/new", "scaylup", "New campaign"), "")
+    assert.equal(workspaceTabRecordTitleForUrl(`/other/campaigns/${id}`, "scaylup", "X"), "")
+})

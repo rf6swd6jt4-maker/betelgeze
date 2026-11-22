@@ -1,5 +1,5 @@
-import { DetailRouteLoading } from "@/components/workspace/DetailRouteLoading"
+import { PanelRouteLoading } from "@/components/workspace/PanelRouteLoading"
 
-export default function CampaignSourceLoading() {
-    return <DetailRouteLoading title="source" />
+export default function Loading() {
+    return <PanelRouteLoading variant="campaign-source" />
 }

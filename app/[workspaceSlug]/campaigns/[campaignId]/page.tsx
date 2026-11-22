@@ -9,7 +9,7 @@ import { PipelineBoard } from "@/components/campaigns/PipelineBoard"
 import { AddSourceButton } from "@/components/campaigns/AddSourceButton"
 import { CampaignPageHeader } from "@/components/campaigns/CampaignPageHeader"
 import { CampaignStatusButton } from "@/components/campaigns/CampaignStatusButton"
-import { CAMPAIGN_STAGES, campaignSourceStatusLabels, campaignStageLabels, formatAppointment, formatMoney } from "@/lib/campaigns/model"
+import { CAMPAIGN_STAGES, campaignSourceStatusLabels, campaignStageLabels, formatAppointment, formatMoney, formatShortAppointment } from "@/lib/campaigns/model"
 import { CAMPAIGN_LEAD_LIMIT, loadCampaign, loadCampaignLeads, loadNotBookedCount, requireCampaigns, type CampaignBookingRow, type CampaignLeadRow, type CampaignSourceRow } from "@/lib/campaigns/server"
 import { formatRelativeTime } from "@/lib/ui/relative-time"
 
@@ -17,18 +17,12 @@ export const dynamic = "force-dynamic"
 
 const TABS = ["pipeline", "leads", "sources", "flows"] as const
 type Tab = (typeof TABS)[number]
-const intro: Record<Tab, string> = {
-    pipeline: "Every qualified form lands in Not booked with its source's tag. Booking moves it to Booked.",
-    leads: "This campaign's leads, newest first. Open one for their answers, appointment and activity.",
-    sources: "The landing pages that send leads here. Each has its tag, its booking page and any payment.",
-    flows: "Automatic texts for this campaign's leads.",
-}
 const sourceTone = { live: "green", testing: "yellow", off: "grey" } as const
 
 function cardLine(lead: CampaignLeadRow, booking: CampaignBookingRow | undefined, source: CampaignSourceRow | undefined) {
     const zone = source?.time_zone ?? "America/Chicago"
-    if (booking?.status === "booked") return formatAppointment(booking.starts_at, zone)
-    if (booking?.status === "held") return `${formatAppointment(booking.starts_at, zone)} held`
+    if (booking?.status === "booked") return formatShortAppointment(booking.starts_at, zone)
+    if (booking?.status === "held") return `${formatShortAppointment(booking.starts_at, zone)} · held`
     return `${formatRelativeTime(lead.last_submitted_at)} ago`
 }
 
@@ -54,7 +48,8 @@ export default async function CampaignPage({ params, searchParams }: { params: P
         <FilterRailLink href={tab === "pipeline" ? base : `${base}?tab=${tab}`} selected={!sourceFilter}>All <FilterRailCount>{leads.length}</FilterRailCount></FilterRailLink>
         {sources.map(source => <FilterRailLink key={source.id} href={`${base}?tab=${tab}&source=${source.id}`} selected={sourceFilter === source.id}><RoundPill tone={source.tag_tone}>{source.tag}</RoundPill> <FilterRailCount>{leads.filter(lead => lead.latest_source_id === source.id).length}</FilterRailCount></FilterRailLink>)}
     </FilterRail>
-    const anyPayment = sources.some(source => source.pay_amount_cents !== null) || leads.some(lead => lead.stage === "paid_not_booked")
+    // Paid, not booked only happens when a payment arrives after the held time was taken, so its column shows only when used.
+    const anyPayment = leads.some(lead => lead.stage === "paid_not_booked")
     const limited = leads.length >= CAMPAIGN_LEAD_LIMIT ? <p className="mt-3 text-xs text-neutral-500">Showing the latest {CAMPAIGN_LEAD_LIMIT} leads.</p> : null
 
     return <main className="min-h-screen bg-neutral-950 px-4 pb-8 text-white sm:px-6">
@@ -66,7 +61,6 @@ export default async function CampaignPage({ params, searchParams }: { params: P
                     <CampaignStatusButton workspaceSlug={workspace.slug} campaignId={campaign.id} status={campaign.status} />
                     {tab === "sources" ? <AddSourceButton workspaceSlug={workspace.slug} campaignId={campaign.id} /> : null}
                 </>} />
-            <p className="mt-5 max-w-3xl text-sm text-neutral-400">{intro[tab]}</p>
 
             {tab === "pipeline" ? <>
                 {sources.length ? filterRail : null}
@@ -83,16 +77,23 @@ export default async function CampaignPage({ params, searchParams }: { params: P
 
             {tab === "leads" ? <>
                 {sources.length ? filterRail : null}
-                <Table ariaLabel="Leads">
-                    <TableHead><TableHeading>Lead</TableHeading><TableHeading>Source</TableHeading><TableHeading>Stage</TableHeading><TableHeading className="max-md:hidden">Appointment</TableHeading><TableHeading numeric className="max-sm:hidden">Came in</TableHeading></TableHead>
+                <Table ariaLabel="Leads" className="max-sm:[&_thead]:hidden max-sm:[&_tbody]:border-t max-sm:[&_tbody]:border-card-border">
+                    <TableHead><TableHeading>Lead</TableHeading><TableHeading className="max-sm:hidden">Source</TableHeading><TableHeading>Stage</TableHeading><TableHeading className="max-md:hidden">Appointment</TableHeading><TableHeading numeric className="max-sm:hidden">Came in</TableHeading></TableHead>
                     <TableBody>
                         {shown.length ? shown.map(lead => {
                             const source = lead.latest_source_id ? sourceById.get(lead.latest_source_id) : undefined
                             const booking = leadData?.bookings.get(lead.id)
                             return <TableRow key={lead.id}>
-                                <TableCell primary><span className="inline-flex items-center gap-2"><Link data-table-open href={`${base}/leads/${lead.id}`} className="hover:underline">{leadName(lead)}</Link>{lead.company ? <span className="font-normal text-neutral-500 max-sm:hidden">{lead.company}</span> : null}{lead.is_test ? <TestLabel /> : null}</span></TableCell>
-                                <TableCell><SourceTag source={source} /></TableCell>
-                                <TableCell><CampaignStageLabel stage={lead.stage} /></TableCell>
+                                <TableCell primary className="w-full max-w-0 max-sm:h-14 sm:w-[34%]">
+                                    <span className="flex min-w-0 flex-col sm:flex-row sm:items-center sm:gap-2.5">
+                                        <span className="flex min-w-0 items-center gap-2"><Link data-table-open href={`${base}/leads/${lead.id}`} prefetch={false} className="min-w-0 truncate text-sm hover:underline sm:text-[13px]">{leadName(lead)}</Link>{lead.is_test ? <TestLabel /> : null}</span>
+                                        {lead.company ? <span className="min-w-0 truncate font-normal text-neutral-500 max-sm:hidden">{lead.company}</span> : null}
+                                        {/* Phone: the second line carries the business and the source. */}
+                                        <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs font-normal text-neutral-500 sm:hidden">{source ? <SourceTag source={source} /> : null}<span className="min-w-0 truncate">{lead.company ?? ""}</span></span>
+                                    </span>
+                                </TableCell>
+                                <TableCell className="max-sm:hidden"><SourceTag source={source} /></TableCell>
+                                <TableCell><CampaignStageLabel stage={lead.stage} className="text-[13px]!" /></TableCell>
                                 <TableCell className="max-md:hidden">{booking && (booking.status === "booked" || booking.status === "held") ? `${formatAppointment(booking.starts_at, source?.time_zone ?? "America/Chicago")}${booking.status === "held" ? " (held)" : ""}` : <span className="text-neutral-600">–</span>}</TableCell>
                                 <TableCell numeric className="max-sm:hidden">{formatRelativeTime(lead.last_submitted_at)} ago</TableCell>
                             </TableRow>
@@ -102,12 +103,18 @@ export default async function CampaignPage({ params, searchParams }: { params: P
                 {limited}
             </> : null}
 
-            {tab === "sources" ? <Table ariaLabel="Sources">
-                <TableHead><TableHeading>Source</TableHeading><TableHeading>Tag</TableHeading><TableHeading className="max-md:hidden">After the form</TableHeading><TableHeading>Status</TableHeading></TableHead>
+            {tab === "sources" ? <Table ariaLabel="Sources" className="max-sm:[&_thead]:hidden max-sm:[&_tbody]:border-t max-sm:[&_tbody]:border-card-border">
+                <TableHead><TableHeading>Source</TableHeading><TableHeading className="max-sm:hidden">Tag</TableHeading><TableHeading className="max-md:hidden">After the form</TableHeading><TableHeading>Status</TableHeading></TableHead>
                 <TableBody>
                     {sources.length ? sources.map(source => <TableRow key={source.id}>
-                        <TableCell primary><span className="inline-flex items-center gap-2"><Link data-table-open href={`${base}/sources/${source.id}`} className="hover:underline">{source.name}</Link><span className="font-normal text-neutral-500 max-sm:hidden">{source.page_url ? source.page_url.replace(/^https:\/\//, "") : "No page address yet"}</span></span></TableCell>
-                        <TableCell><SourceTag source={source} /></TableCell>
+                        <TableCell primary className="w-full max-w-0 max-sm:h-14 sm:w-[40%]">
+                            <span className="flex min-w-0 flex-col sm:flex-row sm:items-center sm:gap-2.5">
+                                <Link data-table-open href={`${base}/sources/${source.id}`} prefetch={false} className="min-w-0 truncate text-sm hover:underline sm:text-[13px]">{source.name}</Link>
+                                <span className="min-w-0 truncate font-normal text-neutral-500 max-sm:hidden">{source.page_url ? source.page_url.replace(/^https:\/\//, "") : "No page address yet"}</span>
+                                <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs font-normal text-neutral-500 sm:hidden"><SourceTag source={source} /><span className="min-w-0 truncate">{source.page_url ? source.page_url.replace(/^https:\/\//, "") : "No page address yet"}</span></span>
+                            </span>
+                        </TableCell>
+                        <TableCell className="max-sm:hidden"><SourceTag source={source} /></TableCell>
                         <TableCell className="max-md:hidden">{!source.books ? "Collects leads" : source.pay_amount_cents !== null ? `Collects and books, ${formatMoney(source.pay_amount_cents)} to confirm` : "Collects and books"}</TableCell>
                         <TableCell><Status label={campaignSourceStatusLabels[source.status]} tone={sourceTone[source.status]} /></TableCell>
                     </TableRow>) : <TableEmpty columns={4}>No sources yet. Add the landing page your ads send people to.</TableEmpty>}

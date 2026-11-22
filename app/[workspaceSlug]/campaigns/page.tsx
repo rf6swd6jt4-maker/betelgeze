@@ -21,7 +21,7 @@ export default async function CampaignsPage({ params }: { params: Promise<{ work
     // which opens this page again, without end.
     if (campaigns.length === 1) redirect(workspaceTabRedirectUrl(`/${workspace.slug}/campaigns/${campaigns[0].id}`, (await headers()).get("x-betelgeze-current-path")))
 
-    return <main className="min-h-screen bg-neutral-950 px-4 pb-8 text-white sm:px-6">
+    return <main className="min-h-screen bg-neutral-950 px-4 pb-10 pt-5 text-white sm:px-6">
         <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
         <div className="mx-auto max-w-7xl">
             <PanelTabHeader title="Campaigns" description="Scaylup's own ad campaigns. Each has its sources, pipeline and booking pages." />

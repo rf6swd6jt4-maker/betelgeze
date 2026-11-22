@@ -47,16 +47,17 @@ export function SourceStatusBar({ workspaceSlug, campaignId, sourceId, status, p
     }
 
     return <section aria-label="Status" className="mt-5">
-        <div className="flex flex-wrap items-center gap-3">
+        {/* Status and its actions share the first line; the explanation runs full width beneath on a phone. */}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
             <Status label={status === "live" ? "Live" : status === "off" ? "Off" : "Testing"} tone={status === "live" ? "green" : status === "off" ? "grey" : "yellow"} />
-            <span className="min-w-0 flex-1 text-sm text-neutral-400">{status === "live" ? "Leads arrive in Not booked, tagged with this source." : status === "off" ? "Its address answers that intake is closed, and its booking page is off." : "Leads are accepted and marked Test, so you can try the whole flow."}</span>
-            {status === "testing" ? <>
+            <span className="order-last w-full text-sm text-neutral-400 sm:order-none sm:w-auto sm:min-w-0 sm:flex-1">{status === "live" ? "Leads arrive in Not booked, tagged with this source." : status === "off" ? "Its address answers that intake is closed, and its booking page is off." : "Leads are accepted and marked Test, so you can try the whole flow."}</span>
+            <span className="ml-auto flex flex-wrap items-center gap-2 sm:ml-0">{status === "testing" ? <>
                 <Button size="sm" variant="secondary" disabled={pending !== null} onClick={() => void test()}>{pending === "test" ? "Sending…" : "Send a test lead"}</Button>
                 <Button size="sm" disabled={pending !== null || !pageReady || !leadReady} title={!pageReady || !leadReady ? "Finish the steps below first" : undefined} onClick={() => void setStatus("live")}>Go live</Button>
             </> : status === "live" ? <>
                 <Button size="sm" variant="ghost" disabled={pending !== null} onClick={() => void setStatus("testing")}>Back to Testing</Button>
                 <Button size="sm" variant="secondary" disabled={pending !== null} onClick={() => void setStatus("off")}>Switch off</Button>
-            </> : <Button size="sm" variant="secondary" disabled={pending !== null} onClick={() => void setStatus("testing")}>Turn back on</Button>}
+            </> : <Button size="sm" variant="secondary" disabled={pending !== null} onClick={() => void setStatus("testing")}>Turn back on</Button>}</span>
         </div>
         {error ? <p role="alert" className="mt-2 text-sm text-red-300">{error}</p> : null}
         {status === "testing" ? <div className="mt-4">

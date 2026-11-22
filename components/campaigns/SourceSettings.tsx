@@ -13,13 +13,14 @@ import {
 } from "@/lib/campaigns/model"
 import type { CampaignSourceRow } from "@/lib/campaigns/server"
 
-const inputClass = "h-9 w-full min-w-0 rounded-md border border-[var(--color-border-default)] bg-transparent px-2.5 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 focus:border-[var(--color-border-strong)]"
+// The same face as the Selector's input appearance, so text fields and choices line up row after row.
+const inputClass = "h-10 w-full min-w-0 rounded-lg border border-neutral-700 bg-black px-3 text-sm text-neutral-100 outline-none placeholder:text-neutral-600 hover:border-neutral-500 focus:border-neutral-400"
 const rowClass = "grid min-h-9 grid-cols-1 items-start gap-1.5 py-2 sm:grid-cols-[11rem_minmax(0,1fr)] sm:gap-4"
 
 function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
     return <div className={rowClass}>
         <div className="pt-2 text-sm text-neutral-500">{label}</div>
-        <div className="min-w-0">{children}{hint ? <p className="mt-1.5 text-xs leading-5 text-neutral-500">{hint}</p> : null}</div>
+        <div className="min-w-0 max-w-xl">{children}{hint ? <p className="mt-1.5 text-xs leading-5 text-neutral-500">{hint}</p> : null}</div>
     </div>
 }
 
@@ -71,7 +72,7 @@ export function SourceSettings({ workspaceSlug, source, appOrigin }: { workspace
         <Row label="Name"><input className={inputClass} aria-label="Name" maxLength={120} {...text("name")} /></Row>
         <Row label="Tag" hint="The tag marks this source's leads in the pipeline and the leads list.">
             <div className="flex flex-wrap items-center gap-2">
-                <input className={`${inputClass} max-w-56`} aria-label="Tag" maxLength={40} {...text("tag")} />
+                <input className={`${inputClass} sm:max-w-56`} aria-label="Tag" maxLength={40} {...text("tag")} />
                 <div role="group" aria-label="Tag colour" className="flex flex-wrap items-center gap-1.5">
                     {CAMPAIGN_TAG_TONES.map(tone => <button key={tone} type="button" data-icon-button aria-pressed={value.tag_tone === tone} aria-label={tone} onClick={() => save({ tag_tone: tone as CampaignTagTone })}
                         className={`rounded-md p-0.5 outline-none ring-offset-1 ring-offset-neutral-950 focus-visible:ring-2 focus-visible:ring-[var(--color-accent)] ${value.tag_tone === tone ? "ring-2 ring-neutral-300" : ""}`}>
@@ -96,8 +97,8 @@ export function SourceSettings({ workspaceSlug, source, appOrigin }: { workspace
                 {value.allowed_origins.length ? value.allowed_origins.map(origin => <span key={origin} className="inline-flex items-center gap-1.5 rounded-md bg-[var(--color-surface-hover)] px-2 py-1 font-mono text-xs text-neutral-200">
                     {origin}<button type="button" data-icon-button aria-label={`Stop accepting ${origin}`} className="text-neutral-500 hover:text-white" onClick={() => save({ allowed_origins: value.allowed_origins.filter(entry => entry !== origin) })}>×</button>
                 </span>) : <span className="pt-2 text-sm text-neutral-500">No site yet</span>}
-                <span className="flex items-center gap-2">
-                    <input className={`${inputClass} w-56`} aria-label="Also accept another site" placeholder="https://preview.example.com" value={extraOrigin} onChange={event => setExtraOrigin(event.target.value)} />
+                <span className="flex w-full items-center gap-2">
+                    <input className={`${inputClass} min-w-0 flex-1`} aria-label="Also accept another site" placeholder="https://other-site.com" value={extraOrigin} onChange={event => setExtraOrigin(event.target.value)} />
                     <Button size="sm" variant="secondary" disabled={!originOf(extraOrigin)} onClick={() => { const origin = originOf(extraOrigin); if (origin && !value.allowed_origins.includes(origin)) save({ allowed_origins: [...value.allowed_origins, origin] }); setExtraOrigin("") }}>Add</Button>
                 </span>
             </div>
@@ -135,17 +136,17 @@ export function SourceSettings({ workspaceSlug, source, appOrigin }: { workspace
                 </div>
             </Row>
             <Row label="Hours">
-                <div className="flex flex-wrap items-center gap-2">
-                    <Selector appearance="input" className="w-36" ariaLabel="From" value={String(value.day_start_minute)} onChange={next => save({ day_start_minute: Number(next) })} options={TIMES.filter(minute => minute < value.day_end_minute).map(minute => ({ value: String(minute), label: minuteLabel(minute) }))} />
+                <div className="flex items-center gap-2">
+                    <div className="w-36"><Selector appearance="input" ariaLabel="From" value={String(value.day_start_minute)} onChange={next => save({ day_start_minute: Number(next) })} options={TIMES.filter(minute => minute < value.day_end_minute).map(minute => ({ value: String(minute), label: minuteLabel(minute) }))} /></div>
                     <span className="text-sm text-neutral-500">to</span>
-                    <Selector appearance="input" className="w-36" ariaLabel="To" value={String(value.day_end_minute)} onChange={next => save({ day_end_minute: Number(next) })} options={TIMES.filter(minute => minute > value.day_start_minute).map(minute => ({ value: String(minute), label: minute === 1440 ? "Midnight" : minuteLabel(minute) }))} />
+                    <div className="w-36"><Selector appearance="input" ariaLabel="To" value={String(value.day_end_minute)} onChange={next => save({ day_end_minute: Number(next) })} options={TIMES.filter(minute => minute > value.day_start_minute).map(minute => ({ value: String(minute), label: minute === 1440 ? "Midnight" : minuteLabel(minute) }))} /></div>
                 </div>
             </Row>
             <Row label="Notice" hint="How far ahead the first open time is.">
-                <Selector appearance="input" className="w-48" ariaLabel="Notice" value={String(value.notice_hours)} onChange={next => save({ notice_hours: Number(next) })} options={[0, 1, 2, 4, 12, 24, 48].map(hours => ({ value: String(hours), label: hours ? `${hours} hour${hours > 1 ? "s" : ""}` : "None" }))} />
+                <div className="w-48"><Selector appearance="input" ariaLabel="Notice" value={String(value.notice_hours)} onChange={next => save({ notice_hours: Number(next) })} options={[0, 1, 2, 4, 12, 24, 48].map(hours => ({ value: String(hours), label: hours ? `${hours} hour${hours > 1 ? "s" : ""}` : "None" }))} /></div>
             </Row>
             <Row label="Up to">
-                <Selector appearance="input" className="w-48" ariaLabel="Up to" value={String(value.horizon_days)} onChange={next => save({ horizon_days: Number(next) })} options={[7, 14, 21, 30, 60].map(days => ({ value: String(days), label: `${days} days ahead` }))} />
+                <div className="w-48"><Selector appearance="input" ariaLabel="Up to" value={String(value.horizon_days)} onChange={next => save({ horizon_days: Number(next) })} options={[7, 14, 21, 30, 60].map(days => ({ value: String(days), label: `${days} days ahead` }))} /></div>
             </Row>
 
             <SectionHeading className="mt-8">Payment to confirm the booking</SectionHeading>
@@ -159,7 +160,7 @@ export function SourceSettings({ workspaceSlug, source, appOrigin }: { workspace
                     <AmountInput cents={value.pay_amount_cents} onSave={cents => save({ pay_amount_cents: cents })} />
                 </Row>
                 <Row label="Hold the time for">
-                    <Selector appearance="input" className="w-48" ariaLabel="Hold the time for" value={String(value.hold_minutes)} onChange={next => save({ hold_minutes: Number(next) })} options={[10, 15, 20, 30].map(minutes => ({ value: String(minutes), label: `${minutes} minutes` }))} />
+                    <div className="w-48"><Selector appearance="input" ariaLabel="Hold the time for" value={String(value.hold_minutes)} onChange={next => save({ hold_minutes: Number(next) })} options={[10, 15, 20, 30].map(minutes => ({ value: String(minutes), label: `${minutes} minutes` }))} /></div>
                 </Row>
                 <Row label="Refund rule" hint="Shown on the booking page."><input className={inputClass} aria-label="Refund rule" maxLength={300} {...text("refund_rule")} /></Row>
             </> : null}

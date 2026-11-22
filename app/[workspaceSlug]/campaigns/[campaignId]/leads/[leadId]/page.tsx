@@ -38,7 +38,7 @@ export default async function CampaignLeadPage({ params }: { params: Promise<{ w
     return <main className="min-h-screen bg-neutral-950 px-4 pb-10 text-white sm:px-6">
         <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
         <div className="@container mx-auto max-w-6xl pt-5">
-            {/* The stage is shown once, as the selector. Phone: the selector and Mark sold take their own row. */}
+            {/* The stage is shown once, as the selector, sized to its label. Phone: the selector and Mark sold take their own row. */}
             <header data-workspace-record-title={name} className="flex flex-col gap-3 border-b border-card-border pb-4 sm:flex-row sm:items-center">
                 <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center">
                     <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/[0.08] text-[13px] font-semibold text-neutral-200">{clientInitials(name)}</span>
@@ -52,7 +52,7 @@ export default async function CampaignLeadPage({ params }: { params: Promise<{ w
                     </div>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
-                    <div className="min-w-0 flex-1 sm:w-44 sm:flex-none"><LeadStageField workspaceSlug={workspace.slug} leadId={lead.id} stage={lead.stage} /></div>
+                    <div className="min-w-0 flex-1 sm:flex-none"><LeadStageField workspaceSlug={workspace.slug} leadId={lead.id} stage={lead.stage} /></div>
                     <MarkSoldButton workspaceSlug={workspace.slug} leadId={lead.id} stage={lead.stage} />
                 </div>
             </header>

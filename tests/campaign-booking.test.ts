@@ -86,3 +86,22 @@ test("a campaign, its sources and its leads name themselves in the top bar; othe
     assert.equal(workspaceTabRecordTitleForUrl("/scaylup/campaigns/new", "scaylup", "New campaign"), "")
     assert.equal(workspaceTabRecordTitleForUrl(`/other/campaigns/${id}`, "scaylup", "X"), "")
 })
+
+test("a campaign's tabs and source filter switch in place, reading leads only for the tabs that show them", () => {
+    const page = readFileSync("app/[workspaceSlug]/campaigns/[campaignId]/page.tsx", "utf8")
+    const sections = readFileSync("components/campaigns/CampaignSections.tsx", "utf8")
+    const header = readFileSync("components/campaigns/CampaignPageHeader.tsx", "utf8")
+    // Leads are read only for the tabs that show them; opened elsewhere, Pipeline or Leads reads them in the background.
+    assert.match(page, /const withLeads = query\.tab !== "sources" && query\.tab !== "flows"/)
+    assert.match(page, /withLeads \? loadCampaignLeads\(workspace\.id, campaignId\) : Promise\.resolve\(null\)/)
+    assert.match(sections, /useLayoutEffect\(\(\) => \{ if \(needsLeads\) readLeads\(\) \}, \[needsLeads, readLeads\]\)/)
+    assert.match(sections, /startRead\(\(\) => router\.refresh\(\)\)/)
+    // The tabs skip the frame's navigation (and the loading screen) and push the address in place, keeping the frame's own parameters.
+    assert.match(header, /data-workspace-instant-filter=\{onSelect \? "" : undefined\}/)
+    assert.match(sections, /onSelect=\{select\}/)
+    assert.match(sections, /new URL\(window\.location\.href\)/)
+    assert.match(sections, /window\.history\.pushState\(null, "", /)
+    // The source filter uses the shared instant filter.
+    assert.match(sections, /instant=\{\{ param: "source", value: null \}\}/)
+    assert.match(sections, /instant=\{\{ param: "source", value: entry\.id \}\}/)
+})

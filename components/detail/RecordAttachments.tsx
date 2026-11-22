@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "@/components/workspace/WorkspaceLink"
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { attachExistingRecord } from "@/app/[workspaceSlug]/attachment-actions"
 import { SelectorOption } from "@/components/ui/Selector"
 import { AnchoredPopup } from "@/components/ui/AnchoredPopup"
@@ -44,14 +44,31 @@ function ScopedAttachments(props: Props) {
         if (q) params.set("q", q)
         return `/api/workspaces/${encodeURIComponent(workspaceSlug)}/attachments?${params}`
     }, [owner, ownerId, workspaceSlug])
+    // What is shown, for the next read to build on. `itemCursor` is the last older page added, null while only the newest page is shown.
+    const shown = useRef({ page, itemCursor }), lastRequested = useRef<string | null>(null)
+    useLayoutEffect(() => { shown.current = { page, itemCursor } }, [page, itemCursor])
+    /** With a cursor, adds that older page beneath what is shown. Without one, refreshes the newest page and keeps the older ones already added. */
     const load = useCallback(async (cursor: string | null = null) => {
         const request = ++itemRequest.current
+        lastRequested.current = cursor
         setLoading(true)
         try {
             const next = await readers.items.read(url("items", cursor))
             if (!next || !mounted.current) return
-            retained.set(key, next, cursor)
-            setPage(next); setItemCursor(cursor); setError(null)
+            const prior = shown.current, id = (item: AttachmentItem) => `${item.kind}:${item.id}`
+            let merged = next, added: string | null = null
+            if (cursor) {
+                const known = new Set(prior.page?.items.map(id))
+                merged = { items: [...(prior.page?.items ?? []), ...next.items.filter(item => !known.has(id(item)))], nextCursor: next.nextCursor }
+                added = cursor
+            } else if (prior.itemCursor && prior.page) {
+                const fresh = new Set(next.items.map(id))
+                merged = { items: [...next.items, ...prior.page.items.filter(item => !fresh.has(id(item)))], nextCursor: prior.page.nextCursor }
+                added = prior.itemCursor
+            }
+            shown.current = { page: merged, itemCursor: added }
+            retained.set(key, merged, added)
+            setPage(merged); setItemCursor(added); setError(null)
         } finally { if (mounted.current && request === itemRequest.current) setLoading(false) }
     }, [key, readers, url])
     const loadChoices = useCallback(async () => {
@@ -97,7 +114,7 @@ function ScopedAttachments(props: Props) {
             if (!result.ok) { setChoiceError(result.error); return }
             setNotice("Attachment linked."); setAnchor(null)
             // The write is authoritative even if its subsequent optional read fails.
-            setPage(prior => ({ items: [{ ...choice, previewUrl: null }, ...(prior?.items.filter(item => item.id !== choice.id || item.kind !== choice.kind) ?? [])].slice(0, 40), nextCursor: prior?.nextCursor ?? null }))
+            setPage(prior => ({ items: [{ ...choice, previewUrl: null }, ...(prior?.items.filter(item => item.id !== choice.id || item.kind !== choice.kind) ?? [])], nextCursor: prior?.nextCursor ?? null }))
             retained.delete(key)
             try { await load() } catch { if (mounted.current) setError("Attachment linked, but the list could not refresh. Retry loading the list.") }
         } catch { if (mounted.current) setChoiceError("The attachment could not be confirmed. Retry this selection; an existing link will not be duplicated.") }
@@ -116,14 +133,14 @@ function ScopedAttachments(props: Props) {
         </div>
         <AssetSelectionStatus downloads={downloads} className="mt-3" />
         {notice ? <p role="status" className="mt-2 text-xs text-neutral-300">{notice}</p> : null}
-        {error ? <p role="alert" className="mt-2 text-xs text-red-300">{error} <button type="button" onClick={() => void load(itemCursor).catch(cause => setError(cause.message))} className="underline">Retry loading</button></p> : null}
+        {error ? <p role="alert" className="mt-2 text-xs text-red-300">{error} <button type="button" onClick={() => void load(lastRequested.current).catch(cause => setError(cause.message))} className="underline">Retry loading</button></p> : null}
         <div className="mt-4"><DocumentCatalogue label="Attached assets and notes">
             {(page?.items ?? []).map(item => <DocumentCard key={`${item.kind}:${item.id}`} href={`/${workspaceSlug}/${item.kind === "asset" ? "assets" : "notes"}/${item.id}`} title={item.title} format={item.kind === "asset" ? "Asset" : "Note"} detail={item.detail} previewUrl={item.previewUrl}
                 selection={downloads.selecting ? { checked: Boolean(item.downloadHref && downloads.selectedIds.has(item.id)), disabled: item.kind !== "asset" || !item.downloadHref, disabledReason: item.kind === "note" ? "Notes cannot be downloaded" : undefined, onChange: () => downloads.toggle(item.id) } : undefined} />)}
             {canEdit && !downloads.selecting ? <AddDocumentCard label="Add attachment" onClick={event => { setAnchor(event.currentTarget); setStep("actions"); setChoiceError(null) }} /> : null}
         </DocumentCatalogue></div>
-        {loading ? <p className="mt-3 text-xs text-neutral-500" role="status">Loading attachments…</p> : page?.items.length === 0 ? <p className="mt-3 text-xs text-neutral-500">No attachments on this page.</p> : null}
-        {itemCursor || page?.nextCursor ? <nav className="mt-3 flex gap-4 text-xs text-neutral-300" aria-label="Attachment pages">{itemCursor ? <button type="button" disabled={loading} onClick={() => void load().catch(cause => setError(cause.message))}>Newest attachments</button> : null}{page?.nextCursor ? <button type="button" disabled={loading} onClick={() => void load(page.nextCursor).catch(cause => setError(cause.message))}>Older attachments</button> : null}</nav> : null}
+        {loading ? <p className="mt-3 text-xs text-neutral-500" role="status">Loading attachments…</p> : page?.items.length === 0 ? <p className="mt-3 text-xs text-neutral-500">No attachments yet.</p> : null}
+        {page?.nextCursor ? <p className="mt-3 text-xs text-neutral-300"><button type="button" disabled={loading} onClick={() => void load(page.nextCursor).catch(cause => setError(cause.message))} className="min-h-11 underline underline-offset-4 disabled:opacity-50 sm:min-h-0">Load older attachments</button></p> : null}
         {anchor ? <AnchoredPopup anchor={anchor} onDismiss={() => setAnchor(null)} role="dialog" className="w-[min(23rem,calc(100vw-2rem))] rounded-xl border border-neutral-700 bg-neutral-950 p-3 shadow-popup">
             <div className="flex items-center justify-between"><h3 className="text-sm font-semibold text-white">{step === "actions" ? "Add attachment" : "Choose an existing record"}</h3>{step === "pick" ? <button type="button" onClick={() => setStep("actions")} className="text-xs text-neutral-400 underline">Back</button> : null}</div>
             {step === "actions" ? <div className="mt-3 grid gap-1 text-sm"><Link href={`/${workspaceSlug}/assets?create=asset&${creationQuery}`} className="rounded-lg px-3 py-2 text-neutral-200 hover:bg-[var(--color-surface-hover)]">New asset</Link><Link href={`/${workspaceSlug}/notes?create=note&${creationQuery}`} className="rounded-lg px-3 py-2 text-neutral-200 hover:bg-[var(--color-surface-hover)]">New note</Link><button type="button" onClick={() => setStep("pick")} className="rounded-lg px-3 py-2 text-left text-neutral-200 hover:bg-[var(--color-surface-hover)]">Pick existing asset or note</button></div> : <div className="mt-3">

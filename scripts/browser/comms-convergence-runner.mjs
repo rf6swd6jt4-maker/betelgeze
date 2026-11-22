@@ -39,7 +39,7 @@ function App() {
     const invalidate = useMemo(() => panelInvalidator({ workspaceId: "w", userId: "me", invalidateUnreadSummary }, hosted.invalidate), [hosted.invalidate])
     useLayoutEffect(() => {
         const dependencies = {
-            readProtocol: "account-v1", deviceMode: false, deviceId: null, progressivePreviews: false, invalidatePreviews() {}, confirmPreviews() {}, refreshPreviewSearch() {}, setLoadedHistoryIds() {}, setConversations() {},
+            readProtocol: "account-v1", leadsVariant: false, deviceMode: false, deviceId: null, progressivePreviews: false, invalidatePreviews() {}, confirmPreviews() {}, refreshPreviewSearch() {}, setLoadedHistoryIds() {}, setConversations() {},
             ...reads, unreadMessageEventKey: unreadBroadcast.unreadMessageEventKey, bootstrap: { workspaceId: "w", workspaceSlug: "fixture", currentUser: { id: "me" } }, onUnreadInvalidated: invalidate,
             updates: { beginRead: () => ({}), applySnapshot: () => true, getSnapshot: () => ({ conversations: [] }), removeMessage() {} },
             record: value => value ?? {}, text: value => typeof value === "string" ? value : null, stringValue: value => typeof value === "string" ? value : null, realtimeMessage: () => null,

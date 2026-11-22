@@ -66,6 +66,8 @@ test("the Leads list, its send path and Chat are gated and separate from Team", 
 test("the lead composer carries text only", () => {
     const workspace = source("components/communications/TeamCommunicationsWorkspace.tsx")
     assert.match(workspace, /const richActions = Boolean\(selected\?\.canWrite\) && selected\?\.kind !== "lead"/)
+    // The Leads list refreshes with its own scope; without it the server returns Team's list.
+    assert.match(workspace, /\.\.\.\(leadsVariant \? \{ scope: "leads" \} : \{\}\)/)
     const messages = source("app/api/workspaces/[workspaceSlug]/communications/native/messages/route.ts")
     const leadBranch = messages.slice(messages.indexOf("sendLeadText(") - 1200, messages.indexOf("sendLeadText(") + 400)
     assert.match(leadBranch, /attachment|upload/i)

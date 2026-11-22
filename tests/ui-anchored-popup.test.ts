@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs"
 import assert from "node:assert/strict"
 import { readFile } from "node:fs/promises"
 import test from "node:test"
@@ -118,4 +119,18 @@ test("all chat surfaces use cursor anchors and a measured emoji picker", async (
     assert.match(actions, /data-message-action-popup/)
     assert.match(actions, /flex-col-reverse/)
     assert.doesNotMatch(actions, /absolute bottom-12/)
+})
+
+test("a header selector with allowBelow opens beneath its whole trigger when the room above is too small", () => {
+    // The lead page's stage selector: 40px under the top of a 900px viewport, a 300px list.
+    const viewport = { left: 0, top: 0, width: 1440, height: 900 }
+    const trigger = { left: 1200, right: 1300, top: 40, bottom: 68 }
+    const squeezed = anchoredPopupPosition({ trigger: { left: 1200, right: 1300, top: 40 }, popupWidth: 288, popupHeight: 300, viewport, align: "start" })
+    assert.ok(squeezed.maxHeight < 40, "without allowBelow it is squeezed above")
+    const below = anchoredPopupPosition({ trigger, popupWidth: 288, popupHeight: 300, viewport, align: "start", allowBelow: true })
+    assert.equal(below.top, 68 + 6)
+    assert.ok(below.maxHeight >= 300)
+    const selector = readFileSync("components/ui/Selector.tsx", "utf8")
+    assert.match(selector, /allowBelow=\{allowBelow\} clearTrigger=\{allowBelow\}/)
+    assert.match(readFileSync("components/campaigns/LeadControls.tsx", "utf8"), /campaignStageLabels\[value\] \}\)\)\} allowBelow \/>/)
 })

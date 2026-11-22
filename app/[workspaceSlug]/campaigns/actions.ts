@@ -9,7 +9,12 @@ import { testLeadInput } from "@/lib/campaigns/test-lead"
 export async function campaignCommand(workspaceSlug: string, action: CampaignAdminAction, input: Record<string, unknown>) {
     if (!(ADMIN_ACTIONS as readonly string[]).includes(action)) return { ok: false as const, error: "Unknown action." }
     const { workspace, user } = await requireCampaigns(workspaceSlug)
-    const result = await runCampaignAdmin(workspace.id, user.id, action, input)
+    let result = await runCampaignAdmin(workspace.id, user.id, action, input)
+    // A repeated booking change (a second press before the page refreshed) already happened: report it as done.
+    if (!result.ok && action === "booking_status" && typeof input.booking_id === "string") {
+        const { data } = await supabaseAdmin.from("campaign_bookings").select("status").eq("id", input.booking_id).eq("workspace_id", workspace.id).maybeSingle()
+        if (data?.status && data.status === input.status) result = { ok: true as const, data: { id: input.booking_id, status: data.status, repeated: true } }
+    }
     if (result.ok) revalidatePath(`/${workspace.slug}/campaigns`, "layout")
     return result
 }

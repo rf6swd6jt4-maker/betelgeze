@@ -25,8 +25,8 @@ export default async function CampaignSourcePage({ params }: { params: Promise<{
         <div className="mx-auto max-w-4xl pt-5">
             <DetailPageHeader category="Source" reference={shortId(source.id)} title={source.name} subtitle={loaded.campaign.name}
                 labels={<SourceTag source={source} />}
-                facts={[{ label: "this week", value: stats.week }]}
-                updated={stats.lastAt ? `Last lead ${formatRelativeTime(stats.lastAt)} ago` : "No leads yet"} />
+                facts={[{ label: stats.week === 1 ? "lead this week" : "leads this week", value: stats.week }]}
+                updated={formatRelativeTime(source.updated_at)} />
             <SourceStatusBar workspaceSlug={workspace.slug} campaignId={loaded.campaign.id} sourceId={source.id} status={source.status} pageUrl={source.page_url} books={source.books} hasLead={Boolean(stats.lastAt)} appOrigin={appOrigin} />
             <SourceSettings key={source.id} workspaceSlug={workspace.slug} source={source} appOrigin={appOrigin} />
         </div>

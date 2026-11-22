@@ -4,7 +4,7 @@ import Link from "@/components/workspace/WorkspaceLink"
 import { SectionHeading } from "@/components/detail"
 import { Status } from "@/components/ui"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
-import { CampaignStageLabel, SourceTag, TestLabel, eventText, leadName } from "@/components/campaigns/CampaignParts"
+import { SourceTag, TestLabel, eventText, leadName } from "@/components/campaigns/CampaignParts"
 import { BookingActions, BookingLinkActions, LeadStageField, MarkSoldButton } from "@/components/campaigns/LeadControls"
 import { formatAppointment, formatMoney, meetingPlaceLabels } from "@/lib/campaigns/model"
 import { loadCampaign, loadCampaignLead, requireCampaigns } from "@/lib/campaigns/server"
@@ -38,19 +38,21 @@ export default async function CampaignLeadPage({ params }: { params: Promise<{ w
     return <main className="min-h-screen bg-neutral-950 px-4 pb-10 text-white sm:px-6">
         <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
         <div className="@container mx-auto max-w-6xl pt-5">
-            <header data-workspace-record-title={name} className="flex flex-wrap items-center gap-x-3 gap-y-3 border-b border-card-border pb-4">
-                <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/[0.08] text-[13px] font-semibold text-neutral-200">{clientInitials(name)}</span>
-                <div className="min-w-0 flex-1">
-                    <h1 className="truncate text-xl font-semibold tracking-tight text-white">{name}</h1>
-                    <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm text-neutral-400">
-                        <CampaignStageLabel stage={lead.stage} />
-                        <SourceTag source={source} />
-                        <span className="min-w-0 truncate">{lead.company ?? "No business name given"}</span>
-                        {lead.is_test ? <TestLabel /> : null}
+            {/* The stage is shown once, as the selector. Phone: the selector and Mark sold take their own row. */}
+            <header data-workspace-record-title={name} className="flex flex-col gap-3 border-b border-card-border pb-4 sm:flex-row sm:items-center">
+                <div className="flex min-w-0 flex-1 items-start gap-3 sm:items-center">
+                    <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/[0.08] text-[13px] font-semibold text-neutral-200">{clientInitials(name)}</span>
+                    <div className="min-w-0 flex-1">
+                        <h1 className="break-words text-xl font-semibold tracking-tight text-white sm:truncate">{name}</h1>
+                        <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 text-sm text-neutral-400">
+                            <SourceTag source={source} />
+                            {lead.is_test ? <TestLabel /> : null}
+                            <span className="min-w-0 truncate">{lead.company ?? "No business name given"}</span>
+                        </div>
                     </div>
                 </div>
-                <div className="flex shrink-0 flex-wrap items-center gap-2">
-                    <div className="w-44"><LeadStageField workspaceSlug={workspace.slug} leadId={lead.id} stage={lead.stage} /></div>
+                <div className="flex shrink-0 items-center gap-2">
+                    <div className="min-w-0 flex-1 sm:w-44 sm:flex-none"><LeadStageField workspaceSlug={workspace.slug} leadId={lead.id} stage={lead.stage} /></div>
                     <MarkSoldButton workspaceSlug={workspace.slug} leadId={lead.id} stage={lead.stage} />
                 </div>
             </header>

@@ -304,7 +304,12 @@ export function workspaceTabRecordTitleForUrl(value: string, workspaceSlug: stri
     const title = name.trim().replace(/\s+/g, " ").slice(0, 160)
     if (!title) return ""
     if (workspaceTabIsCommunications(value, workspaceSlug, "http://localhost")) return `Chat · ${title}`
-    if (!workspaceRouteIsRecordDetail(value, workspaceSlug, "http://localhost")) return ""
+    // A campaign, its sources and its leads name themselves in the top bar, without becoming record-detail routes
+    // (which would change how the shell opens their links).
+    const path = new URL(value, "http://localhost").pathname
+    const campaignRecord = path.toLowerCase().startsWith(`/${workspaceSlug.toLowerCase()}/campaigns/`)
+        && /^\/campaigns\/[0-9a-f-]{36}(\/(sources|leads)\/[0-9a-f-]{36})?\/?$/i.test(path.slice(workspaceSlug.length + 1))
+    if (!campaignRecord && !workspaceRouteIsRecordDetail(value, workspaceSlug, "http://localhost")) return ""
     const category = workspaceTabTitleForUrl(value, workspaceSlug)
     const context = category === "Onboarding Detail" ? "Onboarding"
         : category === "Fulfilment Detail" ? "Fulfilment"

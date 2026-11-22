@@ -1,4 +1,4 @@
-import { NextRequest } from "next/server"
+import { NextRequest, after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import {
     StripeWebhookEvent,
@@ -9,6 +9,7 @@ import { disconnectWorkspaceIntegration, getStripeWebhookCandidates, getWorkspac
 import { platformFailureFingerprint, reportPlatformFailure } from "@/lib/admin/maintenance"
 import { recordAdminActivity } from "@/lib/admin/activity"
 import { applyCampaignCheckout } from "@/lib/campaigns/booking"
+import { kickFlows } from "@/lib/campaigns/flows-server"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -181,6 +182,7 @@ export async function POST(request: NextRequest) {
             await reportStripeAutomationFailure(workspaceId, event.id, "campaign_booking_payment", campaignCheckout.error)
             return Response.json({ error: campaignCheckout.error }, { status: 500 })
         }
+        if ("bookingId" in campaignCheckout && !campaignCheckout.duplicate) after(() => kickFlows())
         if ("bookingId" in campaignCheckout && !campaignCheckout.duplicate) await recordAdminActivity({ workspaceId, category: "billing", eventKey: "stripe.campaign_booking.paid", summary: campaignCheckout.status === "booked" ? "Campaign booking paid and booked" : "Campaign booking paid; the time was taken", entityType: "campaign_booking", entityId: campaignCheckout.bookingId, actorKind: "automation", correlationId: event.id, idempotencyKey: `stripe.campaign_booking.paid:${event.id}`, outcome: "succeeded", metadata: { status: campaignCheckout.status } })
         return Response.json({ ok: true, duplicate: duplicateEvent })
     }

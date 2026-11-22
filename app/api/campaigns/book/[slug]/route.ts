@@ -1,4 +1,6 @@
+import { after } from "next/server"
 import { bookingParams, holdBookingTime, loadBookingEmbedReturn, loadBookingPage } from "@/lib/campaigns/booking"
+import { kickFlows } from "@/lib/campaigns/flows-server"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -27,5 +29,6 @@ export async function POST(request: Request, context: { params: Promise<{ slug: 
     if (!page) return json(404, { error: "This booking page is not taking bookings." })
     const returnTo = body.embed === true ? await loadBookingEmbedReturn(page.source_id).catch(() => null) : null
     const result = await holdBookingTime(slug, { submission, reference, startsAt, timeZone: page.time_zone, returnTo }, origin)
+    if (result.status < 300) after(() => kickFlows())
     return json(result.status, result.body)
 }

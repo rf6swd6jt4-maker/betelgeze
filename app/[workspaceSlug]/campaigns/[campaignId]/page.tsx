@@ -13,6 +13,8 @@ import { formatRelativeTime } from "@/lib/ui/relative-time"
 import { TextingNumberField } from "@/components/campaigns/TextingNumberField"
 import { loadUsableSmsNumbers } from "@/lib/signalhouse/server"
 import { smsNumberName } from "@/lib/signalhouse/model"
+import { FlowsTab } from "@/components/campaigns/FlowsTab"
+import { loadCampaignFlowList, loadSetters } from "@/lib/campaigns/flows-server"
 
 export const dynamic = "force-dynamic"
 
@@ -31,11 +33,13 @@ export default async function CampaignPage({ params, searchParams }: { params: P
     // The tabs and the source filter switch in place, without another read. Leads are read for the tabs that show
     // them: a page opened on Sources or Text flows reads them when Pipeline or Leads is first opened.
     const withLeads = query.tab !== "sources" && query.tab !== "flows"
-    const [loaded, leadData, notBooked, numbers] = await Promise.all([loadCampaign(workspace.id, campaignId), withLeads ? loadCampaignLeads(workspace.id, campaignId) : Promise.resolve(null), loadNotBookedCount(workspace.id, campaignId), loadUsableSmsNumbers(workspace.id)])
+    // Text flows switch in place like the other tabs, so their list (two small indexed reads) loads with the page.
+    const [loaded, leadData, notBooked, numbers, flowItems, setters] = await Promise.all([loadCampaign(workspace.id, campaignId), withLeads ? loadCampaignLeads(workspace.id, campaignId) : Promise.resolve(null), loadNotBookedCount(workspace.id, campaignId), loadUsableSmsNumbers(workspace.id), /^[0-9a-f-]{36}$/i.test(campaignId) ? loadCampaignFlowList(workspace.id, campaignId) : Promise.resolve([]), withLeads ? loadSetters(workspace.id) : Promise.resolve([])])
     if (!loaded) notFound()
     const { campaign, sources } = loaded
     const base = `/${workspace.slug}/campaigns/${campaign.id}`
     const sourceById = new Map(sources.map(source => [source.id, source]))
+    const setterFirst = new Map(setters.map(setter => [setter.id, setter.name.split(/\s+/)[0]]))
     const leads: CampaignLeadView[] | null = leadData ? leadData.leads.map(lead => {
         const source = lead.latest_source_id ? sourceById.get(lead.latest_source_id) : undefined
         const booking = leadData.bookings.get(lead.id)
@@ -43,7 +47,7 @@ export default async function CampaignPage({ params, searchParams }: { params: P
         return {
             id: lead.id, name: leadName(lead), company: lead.company, href: `${base}/leads/${lead.id}`, test: lead.is_test,
             tag: source ? { tag: source.tag, tone: source.tag_tone } : null, line: cardLine(lead, booking, source),
-            sourceId: source?.id ?? null, stage: lead.stage,
+            sourceId: source?.id ?? null, stage: lead.stage, call: Boolean(lead.call_due_at), setter: lead.assigned_to ? setterFirst.get(lead.assigned_to) ?? null : null,
             appointment: open ? `${formatAppointment(open.starts_at, source?.time_zone ?? "America/Chicago")}${open.status === "held" ? " (held)" : ""}` : null,
             cameIn: `${formatRelativeTime(lead.last_submitted_at)} ago`,
         }
@@ -75,17 +79,16 @@ export default async function CampaignPage({ params, searchParams }: { params: P
                 actions={<CampaignStatusButton workspaceSlug={workspace.slug} campaignId={campaign.id} status={campaign.status} />}
                 sourceActions={<AddSourceButton workspaceSlug={workspace.slug} campaignId={campaign.id} />}
                 sourcesTable={sourcesTable}
-                flows={<div className="mt-5 flex max-w-3xl flex-col gap-5">
-                    <section aria-label="Texts from" className="grid gap-1.5 sm:grid-cols-[11rem_minmax(0,1fr)] sm:gap-4">
+                flows={<FlowsTab workspaceSlug={workspace.slug} campaignId={campaign.id} base={base} items={flowItems}
+                    sources={sources.map(source => ({ id: source.id, tag: source.tag, tone: source.tag_tone, books: source.books, pays: source.pay_amount_cents !== null }))}
+                    numberField={<div className="grid gap-1.5 sm:grid-cols-[7rem_minmax(0,1fr)] sm:gap-3">
                         <p className="pt-2 text-sm text-neutral-500">Texts from</p>
                         <div className="min-w-0">
                             <TextingNumberField workspaceSlug={workspace.slug} kind="campaign" targetId={campaign.id} value={campaign.sms_number_id ?? null} label="Number this campaign texts from"
                                 options={numbers.map(number => ({ id: number.id, name: smsNumberName(number), canSend: number.canSend }))} />
-                            <p className="mt-1.5 text-xs leading-5 text-neutral-500">{sources.some(source => source.sms_number_id) ? `${sources.filter(source => source.sms_number_id).map(source => source.name).join(", ")} use${sources.filter(source => source.sms_number_id).length > 1 ? "" : "s"} its own number. ` : ""}A lead keeps the number that first texted them, so their replies stay in one conversation.</p>
+                            <p className="mt-1.5 text-xs leading-5 text-neutral-500">{sources.some(source => source.sms_number_id) ? `${sources.filter(source => source.sms_number_id).map(source => source.name).join(", ")} use${sources.filter(source => source.sms_number_id).length > 1 ? "" : "s"} its own number. ` : ""}A lead keeps the number that first texted them. <Link href={`/${workspace.slug}/settings/signalhouse`} className="text-neutral-300 hover:underline">Numbers</Link></p>
                         </div>
-                    </section>
-                    <p className="text-sm leading-6 text-neutral-400">Text flows come next: instant replies, payment and booking reminders, and no-show follow-ups for these leads. Until then nothing is texted automatically.</p>
-                </div>} />
+                    </div>} />} />
         </div>
     </main>
 }

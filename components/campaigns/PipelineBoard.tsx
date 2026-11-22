@@ -10,7 +10,8 @@ import { campaignStageMarks, type CampaignStage, type CampaignTagTone } from "@/
 import { campaignCommand } from "@/app/[workspaceSlug]/campaigns/actions"
 import { LeadChatButton } from "@/components/campaigns/LeadChatButton"
 
-export type PipelineCard = { id: string; name: string; company: string | null; href: string; tag: { tag: string; tone: CampaignTagTone } | null; line: string; test: boolean }
+/** `call`: a flow added a call task (docs/text-flows.md); `setter`: their setter's first name. */
+export type PipelineCard = { id: string; name: string; company: string | null; href: string; tag: { tag: string; tone: CampaignTagTone } | null; line: string; test: boolean; call?: boolean; setter?: string | null }
 
 /**
  * The pipeline: one column per stage. Dragging a card asks the server to move the lead; the database refuses moves
@@ -55,7 +56,8 @@ export function PipelineBoard({ workspaceSlug, columns }: { workspaceSlug: strin
         <div className="mt-1.5 flex min-w-0 items-center gap-1.5 text-xs text-neutral-500">
             {item.tag ? <RoundPill tone={item.tag.tone}>{item.tag.tag}</RoundPill> : null}
             {item.test ? <SquarePill tone="yellow">Test</SquarePill> : null}
-            <span className="min-w-0 truncate tabular-nums">{item.line}</span>
+            {item.call ? <SquarePill tone="yellow">Call</SquarePill> : null}
+            <span className="min-w-0 truncate tabular-nums">{item.line}{item.setter ? ` · ${item.setter}` : ""}</span>
         </div>
     </article>
     const total = columns.reduce((sum, column) => sum + column.cards.length, 0)

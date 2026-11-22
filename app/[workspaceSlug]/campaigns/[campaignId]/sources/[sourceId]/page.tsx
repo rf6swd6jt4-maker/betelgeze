@@ -10,14 +10,16 @@ import { SourceStatusBar } from "@/components/campaigns/SourceStatusBar"
 import { SourceTag, shortId } from "@/components/campaigns/CampaignParts"
 import { loadCampaign, loadCampaignSource, loadSourceStats, requireCampaigns } from "@/lib/campaigns/server"
 import { formatRelativeTime } from "@/lib/ui/relative-time"
+import { SetterField } from "@/components/campaigns/LeadMarks"
+import { loadSetters } from "@/lib/campaigns/flows-server"
 
 export const dynamic = "force-dynamic"
 
 export default async function CampaignSourcePage({ params }: { params: Promise<{ workspaceSlug: string; campaignId: string; sourceId: string }> }) {
     const { workspaceSlug, campaignId, sourceId } = await params
     const { workspace, user } = await requireCampaigns(workspaceSlug)
-    const [loaded, source, stats, requestHeaders, numbers] = await Promise.all([
-        loadCampaign(workspace.id, campaignId), loadCampaignSource(workspace.id, sourceId), loadSourceStats(workspace.id, sourceId), headers(), loadUsableSmsNumbers(workspace.id),
+    const [loaded, source, stats, requestHeaders, numbers, setters] = await Promise.all([
+        loadCampaign(workspace.id, campaignId), loadCampaignSource(workspace.id, sourceId), loadSourceStats(workspace.id, sourceId), headers(), loadUsableSmsNumbers(workspace.id), loadSetters(workspace.id),
     ])
     if (!loaded || !source || source.campaign_id !== loaded.campaign.id) notFound()
     const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "app.betelgeze.com"
@@ -42,6 +44,13 @@ export default async function CampaignSourcePage({ params }: { params: Promise<{
                             inheritLabel={`Campaign's number · ${smsNumberName(numbers.find(number => number.id === loaded.campaign.sms_number_id))}`}
                             options={numbers.map(number => ({ id: number.id, name: smsNumberName(number), canSend: number.canSend }))} />
                         <p className="mt-1.5 text-xs leading-5 text-neutral-500">{source.sms_number_id ? "Its own number, instead of the campaign's." : "Uses the campaign's number. Pick another to give this source its own, for example a local area code."} Replies come back to the same conversation.</p>
+                    </div>
+                </div>
+                <div className="grid grid-cols-1 items-start gap-1.5 py-2 sm:grid-cols-[11rem_minmax(0,1fr)] sm:gap-4">
+                    <div className="pt-2 text-sm text-neutral-500">Default setter</div>
+                    <div className="min-w-0 max-w-xl">
+                        <SetterField workspaceSlug={workspace.slug} target="source" id={source.id} value={source.setter_user_id} people={setters} />
+                        <p className="mt-1.5 text-xs leading-5 text-neutral-500">New leads from this source get this setter. Text flows sign with their first name, and call tasks are theirs.</p>
                     </div>
                 </div>
             </section>

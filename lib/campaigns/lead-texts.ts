@@ -5,6 +5,7 @@ import { decryptWorkspaceIntegration } from "@/lib/workspace-integrations"
 import { signalHouseObject, signalHouseRequest } from "@/lib/signalhouse/api"
 import { e164ToSignalHouse, signalHousePhoneToE164, smsNumberCanSend } from "@/lib/signalhouse/model"
 import { notifyLeadText } from "@/lib/push/chat-notifications"
+import { storeLeadConversationImage } from "@/lib/onboarding/uploads"
 import { campaignStageLabels, isCampaignStage } from "@/lib/campaigns/model"
 
 /**
@@ -65,48 +66,68 @@ async function leadNumber(workspaceId: string, lead: LeadForText) {
     return { ...number, canSend: smsNumberCanSend(number, registration?.status), apiKey: decryptWorkspaceIntegration(account.config_encrypted).api_key ?? "" }
 }
 
+export type LeadTextImage = { bytes: Uint8Array; fileName: string; mimeType: string }
+export type LeadTextFailure = "invalid" | "not_found" | "opted_out" | "no_number" | "cannot_send" | "provider"
+
 /**
- * Sends a staff member's text to a lead and stores it in their conversation. The message is stored first (as
- * "sending"), then handed to SignalHouse: accepted, it is marked queued, so nothing sent is ever missing from Comms;
- * refused, the copy is removed and the error returned, so a retry sends again. `clientRequestId` makes a repeated press
- * send once.
+ * Sends a text to a lead and stores it in their conversation: a staff member's from the Leads composer, or a flow's
+ * (docs/text-flows.md), sent as the lead's setter. The message is stored first (as "sending"), then handed to
+ * SignalHouse: accepted, it is marked queued, so nothing sent is ever missing from Comms; refused, the copy is removed and
+ * the error returned, so a retry sends again. `clientRequestId` makes a repeated request send once. A picture goes out
+ * as MMS and is kept on the message as an ordinary encrypted image.
  */
-export async function sendLeadText(input: { workspaceId: string; userId: string; leadId: string; body: string; clientRequestId: string }) {
+export async function sendLeadText(input: { workspaceId: string; userId: string; leadId: string; body: string; clientRequestId: string; image?: LeadTextImage | null }) {
+    const failed = (reason: LeadTextFailure, error: string, conversationId?: string) => ({ ok: false as const, reason, error, conversationId })
     const body = input.body.replace(/\r\n/g, "\n").trim()
-    if (!body) return { ok: false as const, error: "Write a message first." }
-    if (body.length > LEAD_TEXT_LIMIT) return { ok: false as const, error: `Texts are limited to ${LEAD_TEXT_LIMIT} characters.` }
-    if (!/^[0-9a-f-]{36}$/i.test(input.clientRequestId)) return { ok: false as const, error: "Please retry." }
+    if (!body && !input.image) return failed("invalid", "Write a message first.")
+    if (body.length > LEAD_TEXT_LIMIT) return failed("invalid", `Texts are limited to ${LEAD_TEXT_LIMIT} characters.`)
+    if (!/^[0-9a-f-]{36}$/i.test(input.clientRequestId)) return failed("invalid", "Please retry.")
     const { data: lead, error } = await supabaseAdmin.from("campaign_leads").select("id, first_name, last_name, company, phone_e164, sms_consent, sms_number_id, latest_source_id, latest_campaign_id").eq("id", input.leadId).eq("workspace_id", input.workspaceId).maybeSingle()
     fail(error, "load the lead")
-    if (!lead) return { ok: false as const, error: "Lead not found." }
-    if (lead.sms_consent !== "opted_in") return { ok: false as const, error: "They opted out of texts, so nothing can be sent." }
+    if (!lead) return failed("not_found", "Lead not found.")
+    if (lead.sms_consent !== "opted_in") return failed("opted_out", "They opted out of texts, so nothing can be sent.")
     const number = await leadNumber(input.workspaceId, lead as LeadForText)
-    if (!number) return { ok: false as const, error: "No texting number for this lead. Pick one on the campaign's Text flows tab." }
-    if (!number.canSend || !number.apiKey) return { ok: false as const, error: "Its number cannot send yet: its 10DLC registration is not active." }
+    if (!number) return failed("no_number", "No texting number for this lead. Pick one on the campaign's Text flows tab.")
+    if (!number.canSend || !number.apiKey) return failed("cannot_send", "Its number cannot send yet: its 10DLC registration is not active.")
     const conversationId = await ensureLeadConversation(input.workspaceId, lead.id, input.userId)
 
+    const { data: earlier } = await supabaseAdmin.from("workspace_native_messages").select("id").eq("workspace_id", input.workspaceId).eq("client_request_id", input.clientRequestId).maybeSingle()
+    if (earlier) return { ok: true as const, conversationId, messageId: earlier.id as string, duplicate: true }
+    const attachment = input.image ? await storeLeadConversationImage({ workspaceId: input.workspaceId, conversationId, createdBy: input.userId, bytes: input.image.bytes, fileName: input.image.fileName, mimeType: input.image.mimeType }) : null
     const { data: stored, error: insertError } = await supabaseAdmin.from("workspace_native_messages").insert({
         workspace_id: input.workspaceId, conversation_id: conversationId, sender_user_id: input.userId, client_request_id: input.clientRequestId,
-        body, sms_direction: "outbound", sms_status: "sending", sms_number_id: number.id,
+        body: body || null, attachment, sms_direction: "outbound", sms_status: "sending", sms_number_id: number.id,
     }).select("id, created_at").single()
     if (insertError?.code === "23505") {
-        const { data: earlier } = await supabaseAdmin.from("workspace_native_messages").select("id").eq("workspace_id", input.workspaceId).eq("client_request_id", input.clientRequestId).maybeSingle()
-        return { ok: true as const, conversationId, messageId: earlier?.id as string | undefined, duplicate: true }
+        const { data: raced } = await supabaseAdmin.from("workspace_native_messages").select("id").eq("workspace_id", input.workspaceId).eq("client_request_id", input.clientRequestId).maybeSingle()
+        return { ok: true as const, conversationId, messageId: raced?.id as string | undefined, duplicate: true }
     }
     fail(insertError, "save the text")
     if (!lead.sms_number_id) await supabaseAdmin.from("campaign_leads").update({ sms_number_id: number.id }).eq("id", lead.id).eq("workspace_id", input.workspaceId).is("sms_number_id", null)
 
-    let status = "queued", providerId: string | null = null, problem: string | null = null
+    let status = "queued", providerId: string | null = null, problem: string | null = null, optedOut = false
     try {
-        const result = signalHouseObject(await signalHouseRequest(number.apiKey, "/message/sms", {
-            method: "POST", idempotencyKey: input.clientRequestId,
-            body: { senderPhoneNumber: e164ToSignalHouse(number.phone_e164), recipientPhoneNumber: [e164ToSignalHouse(lead.phone_e164)], messageBody: body },
-        }))
+        let request: unknown
+        if (input.image) {
+            const form = new FormData()
+            form.set("senderPhoneNumber", e164ToSignalHouse(number.phone_e164))
+            form.set("recipientPhoneNumber", e164ToSignalHouse(lead.phone_e164))
+            form.set("messageBody", body)
+            form.append("images", new Blob([input.image.bytes as BlobPart], { type: input.image.mimeType }), input.image.fileName)
+            request = await signalHouseRequest(number.apiKey, "/message/mms", { method: "POST", idempotencyKey: input.clientRequestId, body: form })
+        } else {
+            request = await signalHouseRequest(number.apiKey, "/message/sms", {
+                method: "POST", idempotencyKey: input.clientRequestId,
+                body: { senderPhoneNumber: e164ToSignalHouse(number.phone_e164), recipientPhoneNumber: [e164ToSignalHouse(lead.phone_e164)], messageBody: body },
+            })
+        }
+        const result = signalHouseObject(request)
         const inserted = Array.isArray(result.insertedMessages) ? result.insertedMessages[0] as Record<string, unknown> | undefined : undefined
         providerId = inserted?._id ? String(inserted._id).slice(0, 100) : null
         if (Number(result.enqueuedCount ?? 1) === 0 || inserted?.status === "FAILED") {
             status = "failed"
-            problem = inserted?.errorCode === "OUT" ? "They opted out of texts." : "SignalHouse did not send it."
+            optedOut = inserted?.errorCode === "OUT"
+            problem = optedOut ? "They opted out of texts." : "SignalHouse did not send it."
         }
     } catch (sendError) {
         status = "failed"
@@ -115,7 +136,7 @@ export async function sendLeadText(input: { workspaceId: string; userId: string;
     if (status === "failed") {
         // Nothing reached the lead: remove the stored copy so the composer can retry the same request.
         await supabaseAdmin.from("workspace_native_messages").delete().eq("id", stored!.id).eq("sms_status", "sending")
-        return { ok: false as const, error: `Not sent. ${problem ?? ""}`.trim(), conversationId }
+        return failed(optedOut ? "opted_out" : "provider", `Not sent. ${problem ?? ""}`.trim(), conversationId)
     }
     await supabaseAdmin.from("workspace_native_messages").update({ sms_status: status, sms_provider_message_id: providerId }).eq("id", stored!.id)
     return { ok: true as const, conversationId, messageId: stored!.id as string }
@@ -123,8 +144,8 @@ export async function sendLeadText(input: { workspaceId: string; userId: string;
 
 /**
  * A lead's text from SignalHouse (MESSAGE_RECEIVED). Finds the lead by phone on that number (else the most recent lead
- * with that phone), stores the text in their conversation and alerts its participants. Returns false when no lead
- * matches; the event stays stored for later.
+ * with that phone), stores the text in their conversation and alerts its participants. Returns null when no lead
+ * matches (the event stays stored for later), else who replied, so their text flows can act on it.
  */
 export async function recordInboundLeadText(workspaceId: string, accountId: string, envelope: Record<string, unknown>) {
     const meta = envelope.metaData && typeof envelope.metaData === "object" ? envelope.metaData as Record<string, unknown> : {}
@@ -133,17 +154,17 @@ export async function recordInboundLeadText(workspaceId: string, accountId: stri
     const to = signalHousePhoneToE164(message.phoneNumber ?? message.recipientPhoneNumber)
     const providerId = String(message._id ?? envelope.identifier ?? "").slice(0, 100)
     const body = String(message.messageBody ?? "").slice(0, 8000)
-    if (!from || !to || !providerId || !body.trim()) return false
+    if (!from || !to || !providerId || !body.trim()) return null
     const { data: number } = await supabaseAdmin.from("campaign_sms_numbers").select("id").eq("account_id", accountId).eq("phone_e164", to).maybeSingle()
     const leads = await supabaseAdmin.from("campaign_leads").select("id, first_name, last_name, company, sms_number_id").eq("workspace_id", workspaceId).eq("phone_e164", from).order("last_submitted_at", { ascending: false }).limit(10)
     fail(leads.error, "find the lead")
     const lead = (number ? leads.data?.find(item => item.sms_number_id === number.id) : undefined) ?? leads.data?.[0]
-    if (!lead) return false
+    if (!lead) return null
     const conversationId = await ensureLeadConversation(workspaceId, lead.id)
     const { data: stored, error } = await supabaseAdmin.from("workspace_native_messages").insert({
         workspace_id: workspaceId, conversation_id: conversationId, body, sms_direction: "inbound", sms_status: "received", sms_provider_message_id: providerId, sms_number_id: number?.id ?? null,
     }).select("id, created_at").single()
-    if (error?.code === "23505") return true
+    if (error?.code === "23505") return { leadId: lead.id as string, body, fresh: false }
     fail(error, "save the text")
     const updates: Record<string, unknown> = {}
     if (!lead.sms_number_id && number) updates.sms_number_id = number.id
@@ -151,7 +172,7 @@ export async function recordInboundLeadText(workspaceId: string, accountId: stri
     if (Object.keys(updates).length) await supabaseAdmin.from("campaign_leads").update(updates).eq("id", lead.id).eq("workspace_id", workspaceId)
     const name = [lead.first_name, lead.last_name].filter(Boolean).join(" ")
     await notifyLeadText({ workspaceId, conversationId, messageId: stored!.id as string, leadName: lead.company ? `${name} – ${lead.company}` : name, previewBody: body })
-    return true
+    return { leadId: lead.id as string, body, fresh: true }
 }
 
 /** Delivery receipts for texts Betelgeze sent: MESSAGE_DELIVERED, MESSAGE_FAILED, SMS_FAILED. */

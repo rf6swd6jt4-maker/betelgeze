@@ -4,6 +4,7 @@ import { decryptWorkspaceIntegration } from "@/lib/workspace-integrations"
 import { verifySignalHouseSignature } from "@/lib/signalhouse/signature"
 import { syncSignalHouseAccount } from "@/lib/signalhouse/server"
 import { applyLeadTextStatus, recordInboundLeadText } from "@/lib/campaigns/lead-texts"
+import { applyFlowReply, kickFlows } from "@/lib/campaigns/flows-server"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -58,7 +59,12 @@ export async function POST(request: Request, context: { params: Promise<{ accoun
     if (!duplicate) after(async () => {
         let handled = true
         try {
-            if (event === "MESSAGE_RECEIVED") handled = await recordInboundLeadText(account.workspace_id, account.id, envelope)
+            if (event === "MESSAGE_RECEIVED") {
+                const reply = await recordInboundLeadText(account.workspace_id, account.id, envelope)
+                handled = Boolean(reply)
+                // Reply words and "stops when they reply" (docs/text-flows.md); a resent delivery is not a second reply.
+                if (reply?.fresh) { await applyFlowReply(account.workspace_id, reply.leadId, reply.body); await kickFlows(reply.leadId) }
+            }
             else if (["MESSAGE_DELIVERED", "MESSAGE_FAILED", "SMS_FAILED", "MMS_FAILED"].includes(event)) await applyLeadTextStatus(account.workspace_id, envelope)
             else if (event.startsWith("NUMBER_") || event.startsWith("CAMPAIGN_")) {
                 const stale = !account.last_synced_at || Date.now() - Date.parse(account.last_synced_at) > RESYNC_AFTER_MS

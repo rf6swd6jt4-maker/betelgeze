@@ -39,6 +39,19 @@ export function eventText(event: { kind: string; detail: Record<string, unknown>
         case "booking_cancelled": return `Booking for ${at(detail.starts_at)} cancelled`
         case "showed": return "Marked showed"
         case "no_show": return "Marked no-show"
+        // Text flows (docs/text-flows.md).
+        case "flow_started": return `Started ${String(detail.flow ?? "a text flow")}`
+        case "flow_text": return `Texted by ${String(detail.flow ?? "a text flow")}${detail.picture ? ", with a picture" : ""}`
+        case "flow_done": return detail.reason === "condition" ? `Left ${String(detail.flow ?? "a text flow")}: a condition wasn't met` : `Finished ${String(detail.flow ?? "a text flow")}`
+        case "flow_stopped": {
+            const why: Record<string, string> = { replied: "they replied", booked: "they booked", paid: "they paid", closed: "Sold or Lost", opted_out: "they opted out", removed: "taken out", reply_word: `they replied ${String(detail.word ?? "")}`.trim(), flow_off: "the flow was switched off", flow_deleted: "the flow was deleted", no_number: "no texting number", failed: "texts kept failing" }
+            return `Left ${String(detail.flow ?? "a text flow")}: ${why[String(detail.reason)] ?? "stopped"}`
+        }
+        case "flow_failed": return `${String(detail.flow ?? "A text flow")} could not text: ${String(detail.error ?? "unknown error")}`
+        case "call_due": return `Call task added${detail.flow ? ` by ${String(detail.flow)}` : ""}`
+        case "called": return "Marked called"
+        case "setter_set": return detail.setter_id ? `Setter set${detail.flow ? ` by ${String(detail.flow)}` : ""}` : "Setter removed"
+        case "confirmed": return `Appointment confirmed${detail.word ? ` (replied ${String(detail.word)})` : detail.flow ? ` by ${String(detail.flow)}` : ""}`
         case "stage_changed": {
             const to = isCampaignStage(detail.to) ? campaignStageLabels[detail.to] : String(detail.to ?? "")
             return `Moved to ${to}`

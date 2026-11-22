@@ -1,6 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
+import { after } from "next/server"
 import { supabaseAdmin } from "@/lib/supabase/admin"
 import { ADMIN_ACTIONS, loadCampaign, loadCampaignSource, requireCampaigns, runCampaignAdmin, type CampaignAdminAction } from "@/lib/campaigns/server"
 import { testLeadInput } from "@/lib/campaigns/test-lead"
@@ -17,6 +18,7 @@ export async function campaignCommand(workspaceSlug: string, action: CampaignAdm
         if (data?.status && data.status === input.status) result = { ok: true as const, data: { id: input.booking_id, status: data.status, repeated: true } }
     }
     if (result.ok) revalidatePath(`/${workspace.slug}/campaigns`, "layout")
+    if (result.ok && (action === "set_stage" || action === "booking_status")) after(async () => { const { kickFlows } = await import("@/lib/campaigns/flows-server"); await kickFlows() })
     return result
 }
 
@@ -74,4 +76,41 @@ export async function openLeadChat(workspaceSlug: string, leadId: string) {
     } catch {
         return { ok: false as const, error: "The conversation could not open. Please retry." }
     }
+}
+
+/**
+ * Lead marks used by text flows (docs/text-flows.md): the setter, the Call mark and a Confirmed appointment, and a
+ * source's default setter for its new leads. Each checks the record belongs to this workspace.
+ */
+export async function leadMarkCommand(workspaceSlug: string, input: { kind: "setter" | "called" | "confirmed" | "source_setter"; id: string; userId?: string | null }) {
+    const { workspace, user } = await requireCampaigns(workspaceSlug)
+    if (!/^[0-9a-f-]{36}$/i.test(input.id)) return { ok: false as const, error: "Not found." }
+    const now = new Date().toISOString()
+    const note = (leadId: string, kind: string, detail: Record<string, unknown>) => supabaseAdmin.from("campaign_lead_events").insert({ workspace_id: workspace.id, lead_id: leadId, kind, detail: { ...detail, by: user.id } })
+    if (input.kind === "setter" || input.kind === "source_setter") {
+        const setter = input.userId || null
+        if (setter) {
+            const { data: member } = await supabaseAdmin.from("workspace_memberships").select("user_id").eq("workspace_id", workspace.id).eq("user_id", setter).in("role", ["owner", "admin"]).maybeSingle()
+            if (!member) return { ok: false as const, error: "Setters are owners or admins of this workspace." }
+        }
+        if (input.kind === "source_setter") {
+            const { data, error } = await supabaseAdmin.from("campaign_sources").update({ setter_user_id: setter, updated_at: now }).eq("workspace_id", workspace.id).eq("id", input.id).select("id").maybeSingle()
+            if (error || !data) return { ok: false as const, error: "Could not save. Please retry." }
+        } else {
+            const { data, error } = await supabaseAdmin.from("campaign_leads").update({ assigned_to: setter, updated_at: now }).eq("workspace_id", workspace.id).eq("id", input.id).select("id").maybeSingle()
+            if (error || !data) return { ok: false as const, error: "Could not save. Please retry." }
+            await note(input.id, "setter_set", { setter_id: setter })
+        }
+    } else if (input.kind === "called") {
+        const { data, error } = await supabaseAdmin.from("campaign_leads").update({ call_due_at: null, call_reason: null, updated_at: now }).eq("workspace_id", workspace.id).eq("id", input.id).not("call_due_at", "is", null).select("id").maybeSingle()
+        if (error) return { ok: false as const, error: "Could not save. Please retry." }
+        if (data) await note(input.id, "called", {})
+    } else {
+        const { data, error } = await supabaseAdmin.from("campaign_bookings").update({ confirmed_at: now, updated_at: now }).eq("workspace_id", workspace.id).eq("id", input.id).eq("status", "booked").select("id, lead_id").maybeSingle()
+        if (error) return { ok: false as const, error: "Could not save. Please retry." }
+        if (!data) return { ok: false as const, error: "Only a booked appointment can be confirmed." }
+        await note(data.lead_id as string, "confirmed", { booking_id: data.id })
+    }
+    revalidatePath(`/${workspace.slug}/campaigns`, "layout")
+    return { ok: true as const }
 }

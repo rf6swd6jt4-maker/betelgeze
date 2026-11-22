@@ -199,6 +199,8 @@ jobs:
         run: node scripts/validate-communications-unread-sql.mjs
       - name: Validate lead conversations follow the same read, unread and alert rules
         run: node scripts/validate-comms-leads-sql.mjs
+      - name: Validate text flows start, stop and claim runs once per lead
+        run: node scripts/validate-text-flows-sql.mjs
       - name: Validate encrypted device counts, previews, search and rollback
         run: node scripts/device-unread-progressive/production-checks.mjs "$RUNNER_TEMP/device-unread-production-sql.json"
       - name: Compare optimized shared read RPC with the exact prior definition

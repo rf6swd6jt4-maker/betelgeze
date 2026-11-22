@@ -14,7 +14,7 @@ import { MAX_NATIVE_ATTACHMENT_SIZE, nativeAttachmentKind, nativeAttachmentMimeT
 import { convertCommunicationStickerImage } from "@/lib/communications/stickers"
 import { validateClientLogoSvg } from "@/lib/client-branding/svg"
 import { getRequiredEnv } from "@/lib/env"
-import { createCommunicationFileKey, createInboundCommunicationFileKey } from "@/lib/communications/encryption"
+import { createCommunicationFileKey, createInboundCommunicationFileKey, createLeadConversationFileKey } from "@/lib/communications/encryption"
 import { prepareStoredCommunicationImage } from "@/lib/communications/image-preview"
 import {
     getUploadKind,
@@ -906,4 +906,15 @@ export async function storeCommunicationSticker(
         size: converted.bytes.byteLength,
         url: createClientMessageMediaUrl(path) ?? `/api/client-messages/media/${encodeStoragePath(path)}`,
     }
+}
+
+/**
+ * A flow text's picture, copied into the lead's conversation as an ordinary encrypted image attachment
+ * (docs/text-flows.md). Returns the attachment to store on the message.
+ */
+export async function storeLeadConversationImage(input: { workspaceId: string; conversationId: string; createdBy: string | null; bytes: Uint8Array; fileName: string; mimeType: string }) {
+    const path = `${input.workspaceId}/communications/native/${input.conversationId}/${randomUUID()}.enc`
+    const customerKey = await createLeadConversationFileKey({ workspaceId: input.workspaceId, conversationId: input.conversationId, storagePath: path, createdBy: input.createdBy })
+    await getR2Client().send(new PutObjectCommand({ Bucket: getR2BucketName(), Key: path, Body: input.bytes, ContentType: input.mimeType, ContentLength: input.bytes.byteLength, ...customerEncryptionInput(customerKey) }), { abortSignal: AbortSignal.timeout(25_000) })
+    return { kind: "image" as const, fileName: input.fileName.slice(0, 180), mimeType: input.mimeType, size: input.bytes.byteLength, storagePath: path }
 }

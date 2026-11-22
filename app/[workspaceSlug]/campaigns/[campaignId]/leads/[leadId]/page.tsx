@@ -7,6 +7,8 @@ import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { SourceTag, TestLabel, eventText, leadName } from "@/components/campaigns/CampaignParts"
 import { BookingActions, BookingLinkActions, LeadStageField, MarkSoldButton } from "@/components/campaigns/LeadControls"
 import { LeadChatButton } from "@/components/campaigns/LeadChatButton"
+import { CallMark, ConfirmAppointment, SetterField } from "@/components/campaigns/LeadMarks"
+import { loadSetters } from "@/lib/campaigns/flows-server"
 import { formatAppointment, formatMoney, meetingPlaceLabels } from "@/lib/campaigns/model"
 import { loadCampaign, loadCampaignLead, requireCampaigns } from "@/lib/campaigns/server"
 import { clientInitials } from "@/lib/client-rail"
@@ -23,7 +25,7 @@ const propertyRow = "grid min-h-9 grid-cols-[6rem_minmax(0,1fr)] items-baseline 
 export default async function CampaignLeadPage({ params }: { params: Promise<{ workspaceSlug: string; campaignId: string; leadId: string }> }) {
     const { workspaceSlug, campaignId, leadId } = await params
     const { workspace, user } = await requireCampaigns(workspaceSlug)
-    const [loaded, record, requestHeaders] = await Promise.all([loadCampaign(workspace.id, campaignId), loadCampaignLead(workspace.id, leadId), headers()])
+    const [loaded, record, requestHeaders, setters] = await Promise.all([loadCampaign(workspace.id, campaignId), loadCampaignLead(workspace.id, leadId), headers(), loadSetters(workspace.id)])
     if (!loaded || !record || record.lead.latest_campaign_id !== loaded.campaign.id) notFound()
     const { lead, bookings, events, current } = record
     const sourceById = new Map(loaded.sources.map(source => [source.id, source]))
@@ -63,6 +65,7 @@ export default async function CampaignLeadPage({ params }: { params: Promise<{ w
                 </div>
             </header>
 
+            {lead.call_due_at ? <div className="border-b border-card-border py-3"><CallMark workspaceSlug={workspace.slug} leadId={lead.id} reason={lead.call_reason} /></div> : null}
             <div className="flex flex-col gap-8 pt-5 @4xl:grid @4xl:grid-cols-[minmax(0,1fr)_19rem] @4xl:items-start @4xl:gap-x-10">
                 <div className="flex min-w-0 flex-col gap-8">
                     <section aria-label="Appointment">
@@ -73,6 +76,7 @@ export default async function CampaignLeadPage({ params }: { params: Promise<{ w
                             <p className="mt-1 text-sm text-neutral-400">{current.status === "held"
                                 ? `Held until ${new Intl.DateTimeFormat("en-US", { timeZone: zone, hour: "numeric", minute: "2-digit" }).format(new Date(current.held_until!))} while they pay ${formatMoney(current.amount_cents)}. If they don't, the time is released.`
                                 : `${current.booked_by === "staff" ? "Booked by your team" : "Booked on the booking page"}${current.paid_at ? `, paid ${formatMoney(current.amount_cents)}` : ""}.`}</p>
+                            {current.status === "booked" ? <div className="mt-2"><ConfirmAppointment workspaceSlug={workspace.slug} bookingId={current.id} confirmed={Boolean(current.confirmed_at)} /></div> : null}
                             <BookingActions workspaceSlug={workspace.slug} bookingId={current.id} status={current.status} />
                         </div> : <div className="py-2">
                             <p className="text-sm text-neutral-400">{latestDone ? `${latestDone.status === "showed" ? "Showed" : "No-show"} for ${formatAppointment(latestDone.starts_at, zone)}.` : lead.stage === "paid_not_booked" ? "Paid, no time booked yet. Their booking link lets them pick one without paying again." : "No time booked yet."}
@@ -92,6 +96,7 @@ export default async function CampaignLeadPage({ params }: { params: Promise<{ w
                 <aside className="flex min-w-0 flex-col gap-8" aria-label="Details">
                     <section aria-label="Contact">
                         <SectionHeading>Contact</SectionHeading>
+                        <div className={propertyRow}><span className="text-neutral-500">Setter</span><SetterField workspaceSlug={workspace.slug} target="lead" id={lead.id} value={lead.assigned_to} people={setters} /></div>
                         <div className={propertyRow}><span className="text-neutral-500">Phone</span><span className="tabular-nums text-neutral-200">{formatPhone(lead.phone_e164)}</span></div>
                         <div className={propertyRow}><span className="text-neutral-500">Texts from</span>{textsFrom ? <Link href={`/${workspace.slug}/settings/signalhouse/numbers/${textsFrom.id}`} className="truncate text-neutral-200 hover:underline">{smsNumberName(textsFrom)}</Link> : <span className="text-neutral-500">No number picked</span>}</div>
                         <div className={propertyRow}><span className="text-neutral-500">Email</span><span className="truncate text-neutral-200">{lead.email ?? <span className="text-neutral-500">None given</span>}</span></div>

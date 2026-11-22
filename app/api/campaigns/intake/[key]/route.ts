@@ -1,3 +1,4 @@
+import { after } from "next/server"
 import { handleCampaignIntake, handleCampaignIntakePreflight, type CampaignIntakeDependencies } from "@/lib/campaigns/intake"
 
 export const runtime = "nodejs"
@@ -32,5 +33,8 @@ export async function POST(request: Request, context: { params: Promise<{ key: s
     const { key } = await context.params
     const deps = dependencies()
     if (deps.enabled && !deps.ipSecret) return Response.json({ error: "Lead intake is unavailable. Nothing was stored." }, { status: 503, headers: { "Cache-Control": "no-store" } })
-    return handleCampaignIntake(request, key, deps)
+    const response = await handleCampaignIntake(request, key, deps)
+    // An instant reply goes out right after the answer, not at the next minute (docs/text-flows.md).
+    if (response.ok) after(async () => { const { kickFlows } = await import("@/lib/campaigns/flows-server"); await kickFlows() })
+    return response
 }

@@ -22,13 +22,20 @@ Status: pilot. Campaigns is shown only to people listed in `CAMPAIGNS_PILOT_USER
 
 A lapsed hold gives its time back the next time anyone holds at that source. The pipeline and lead page ignore lapsed holds. Stripe keeps a Checkout page open for at least 30 minutes, so a payment can arrive after a 20-minute hold; step 5 covers it.
 
+## Screens
+
+- **Sidebar (Today layout):** a Campaigns section between the destinations and the clients lists each campaign by name with how many of its leads are not booked, and + opens New campaign. It reads `/api/workspaces/<slug>/campaigns/rail` (two bounded reads) after the shell is up, never before, and again when the window returns after five minutes or a campaign it does not list is opened. In the tabbed layout and the phone's More menu, Campaigns is one destination.
+- **Campaign page:** a header shaped like a client's (status, its sources' tags, how many are not booked, Go live or Pause), then Pipeline, Leads, Sources and Text flows. A campaign goes live only once one of its sources is Live. Pipeline and Leads filter by source tag.
+- **Source page:** status and what moves it on. In Testing: the steps before it goes live (a page address, then a first lead) and **Send a test lead**, which runs the real intake with a fixed 555 phone per source, so the lead is a Test lead and its booking page opens with a real submission. Live: Back to Testing or Switch off. Then its settings, saved field by field.
+- **Lead page:** stage and Mark sold in the header; the appointment and activity, and beside them contact, form answers, payment and source. With no time booked, **Book for them** opens the lead's own booking page (by their reference) and **Copy their booking link** copies it.
+
 ## Staff actions
 
 All through `campaign_admin` (owner/admin, checked in the database): create and edit sources, move a lead between stages, and mark a booking Showed, No-show or Cancelled. Only a payment makes Paid, not booked, and only a booking makes Booked. Moving a lead out of Booked, or cancelling, frees the time (a paid lead goes back to Paid, not booked).
 
 ## Not in this step
 
-Google Calendar and Zoom links per booking, rescheduling links, staff booking on a lead's behalf, text flows, and the Comms Leads tab. Booked times live in Betelgeze only.
+Google Calendar and Zoom links per booking, rescheduling links, text flows, the Comms Leads tab, and recording refused submissions per source. Booked times live in Betelgeze only.
 
 ## Checks
 

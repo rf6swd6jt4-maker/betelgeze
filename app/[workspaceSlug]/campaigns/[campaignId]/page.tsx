@@ -1,23 +1,23 @@
 import { notFound } from "next/navigation"
 import Link from "@/components/workspace/WorkspaceLink"
-import { PanelTabHeader } from "@/components/panel/PanelTabHeader"
-import { PanelTabs } from "@/components/panel/PanelTabs"
 import { FilterRail, FilterRailCount, FilterRailLink } from "@/components/panel/FilterRail"
 import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeading, TableRow } from "@/components/list/Table"
-import { Status } from "@/components/ui"
+import { RoundPill, Status } from "@/components/ui"
 import { WorkspaceTopBar } from "@/components/workspace/WorkspaceTopBar"
 import { CampaignStageLabel, SourceTag, TestLabel, leadName } from "@/components/campaigns/CampaignParts"
 import { PipelineBoard } from "@/components/campaigns/PipelineBoard"
 import { AddSourceButton } from "@/components/campaigns/AddSourceButton"
+import { CampaignPageHeader } from "@/components/campaigns/CampaignPageHeader"
+import { CampaignStatusButton } from "@/components/campaigns/CampaignStatusButton"
 import { CAMPAIGN_STAGES, campaignSourceStatusLabels, campaignStageLabels, formatAppointment, formatMoney } from "@/lib/campaigns/model"
-import { CAMPAIGN_LEAD_LIMIT, loadCampaign, loadCampaignLeads, requireCampaigns, type CampaignBookingRow, type CampaignLeadRow, type CampaignSourceRow } from "@/lib/campaigns/server"
+import { CAMPAIGN_LEAD_LIMIT, loadCampaign, loadCampaignLeads, loadNotBookedCount, requireCampaigns, type CampaignBookingRow, type CampaignLeadRow, type CampaignSourceRow } from "@/lib/campaigns/server"
 import { formatRelativeTime } from "@/lib/ui/relative-time"
 
 export const dynamic = "force-dynamic"
 
 const TABS = ["pipeline", "leads", "sources", "flows"] as const
 type Tab = (typeof TABS)[number]
-const descriptions: Record<Tab, string> = {
+const intro: Record<Tab, string> = {
     pipeline: "Every qualified form lands in Not booked with its source's tag. Booking moves it to Booked.",
     leads: "This campaign's leads, newest first. Open one for their answers, appointment and activity.",
     sources: "The landing pages that send leads here. Each has its tag, its booking page and any payment.",
@@ -36,7 +36,7 @@ export default async function CampaignPage({ params, searchParams }: { params: P
     const [{ workspaceSlug, campaignId }, query] = await Promise.all([params, searchParams])
     const { workspace, user } = await requireCampaigns(workspaceSlug)
     const tab: Tab = (TABS as readonly string[]).includes(String(query.tab)) ? query.tab as Tab : "pipeline"
-    const [loaded, leadData] = await Promise.all([loadCampaign(workspace.id, campaignId), tab === "pipeline" || tab === "leads" ? loadCampaignLeads(workspace.id, campaignId) : Promise.resolve(null)])
+    const [loaded, leadData, notBooked] = await Promise.all([loadCampaign(workspace.id, campaignId), tab === "pipeline" || tab === "leads" ? loadCampaignLeads(workspace.id, campaignId) : Promise.resolve(null), loadNotBookedCount(workspace.id, campaignId)])
     if (!loaded) notFound()
     const { campaign, sources } = loaded
     const base = `/${workspace.slug}/campaigns/${campaign.id}`
@@ -46,13 +46,13 @@ export default async function CampaignPage({ params, searchParams }: { params: P
     const shown = sourceFilter ? leads.filter(lead => lead.latest_source_id === sourceFilter) : leads
     const tabs = [
         { key: "pipeline", label: "Pipeline", href: base },
-        { key: "leads", label: "Leads", href: `${base}?tab=leads` },
-        { key: "sources", label: "Sources", href: `${base}?tab=sources` },
+        { key: "leads", label: "Leads", href: `${base}?tab=leads`, count: leadData ? leads.length : undefined },
+        { key: "sources", label: "Sources", href: `${base}?tab=sources`, count: sources.length },
         { key: "flows", label: "Text flows", href: `${base}?tab=flows` },
     ]
     const filterRail = <FilterRail ariaLabel="Filter by source">
         <FilterRailLink href={tab === "pipeline" ? base : `${base}?tab=${tab}`} selected={!sourceFilter}>All <FilterRailCount>{leads.length}</FilterRailCount></FilterRailLink>
-        {sources.map(source => <FilterRailLink key={source.id} href={`${base}?tab=${tab}&source=${source.id}`} selected={sourceFilter === source.id}>{source.tag} <FilterRailCount>{leads.filter(lead => lead.latest_source_id === source.id).length}</FilterRailCount></FilterRailLink>)}
+        {sources.map(source => <FilterRailLink key={source.id} href={`${base}?tab=${tab}&source=${source.id}`} selected={sourceFilter === source.id}><RoundPill tone={source.tag_tone}>{source.tag}</RoundPill> <FilterRailCount>{leads.filter(lead => lead.latest_source_id === source.id).length}</FilterRailCount></FilterRailLink>)}
     </FilterRail>
     const anyPayment = sources.some(source => source.pay_amount_cents !== null) || leads.some(lead => lead.stage === "paid_not_booked")
     const limited = leads.length >= CAMPAIGN_LEAD_LIMIT ? <p className="mt-3 text-xs text-neutral-500">Showing the latest {CAMPAIGN_LEAD_LIMIT} leads.</p> : null
@@ -60,9 +60,13 @@ export default async function CampaignPage({ params, searchParams }: { params: P
     return <main className="min-h-screen bg-neutral-950 px-4 pb-8 text-white sm:px-6">
         <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
         <div className="mx-auto max-w-7xl">
-            <PanelTabHeader title={campaign.name} description={descriptions[tab]}
-                actions={tab === "sources" ? <AddSourceButton workspaceSlug={workspace.slug} campaignId={campaign.id} /> : undefined}
-                tabs={<PanelTabs items={tabs} active={tab} ariaLabel={`${campaign.name} sections`} />} />
+            <CampaignPageHeader name={campaign.name} status={campaign.status} notBooked={notBooked} tabs={tabs} active={tab}
+                tags={sources.filter(source => source.status !== "off").map(source => ({ tag: source.tag, tone: source.tag_tone }))}
+                actions={<>
+                    <CampaignStatusButton workspaceSlug={workspace.slug} campaignId={campaign.id} status={campaign.status} />
+                    {tab === "sources" ? <AddSourceButton workspaceSlug={workspace.slug} campaignId={campaign.id} /> : null}
+                </>} />
+            <p className="mt-5 max-w-3xl text-sm text-neutral-400">{intro[tab]}</p>
 
             {tab === "pipeline" ? <>
                 {sources.length ? filterRail : null}

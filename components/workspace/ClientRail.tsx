@@ -51,7 +51,7 @@ export function RailDestinationRow({ item, count, onOpen }: { item: RailDestinat
  * there is no More here: Onboarding and Client Connections live on each client's page, and Onboarding Builder and
  * Admin are reached from Settings.
  */
-export function ClientRail({ workspaceSlug, userId, activePath, activeClientId, online, today, destinations, refreshKey, onOpenClient, onOpenDestination }: {
+export function ClientRail({ workspaceSlug, userId, activePath, activeClientId, online, today, destinations, campaigns, refreshKey, onOpenClient, onOpenDestination }: {
     workspaceSlug: string; userId: string
     /** Pathname of the destination in front of the person, without a trailing slash. */
     activePath: string
@@ -60,6 +60,8 @@ export function ClientRail({ workspaceSlug, userId, activePath, activeClientId, 
     online: boolean
     today: RailDestination
     destinations: RailDestination[]
+    /** The Campaigns section (pilot), shown between the destinations and the clients. */
+    campaigns?: ReactNode
     /** Changes when the shell knows the list changed (a relationship was created). */
     refreshKey: number
     onOpenClient: (href: string) => void
@@ -122,6 +124,7 @@ export function ClientRail({ workspaceSlug, userId, activePath, activeClientId, 
     return <div data-client-rail-content className="flex flex-col gap-0.5 md:min-h-0 md:flex-1">
         <RailDestinationRow item={today} onOpen={onOpenDestination} />
         {destinations.map(item => <RailDestinationRow key={item.key} item={item} count={item.key === "relationships" ? clientCount : undefined} onOpen={onOpenDestination} />)}
+        {campaigns}
 
         {state.status === "ready" && !state.allowed ? null : <>
             <p data-rail-section className="mt-3 flex min-h-7 items-center px-2 text-xs text-neutral-500"><span data-rail-label>Your clients</span></p>

@@ -57,3 +57,22 @@ export function BookingActions({ workspaceSlug, bookingId, status }: { workspace
         {error ? <p role="alert" className="mt-2 text-xs text-red-300">{error}</p> : null}
     </div>
 }
+
+/** Mark sold: the lead becomes a client at the Sold stage (the client record itself comes with a later step). */
+export function MarkSoldButton({ workspaceSlug, leadId, stage }: { workspaceSlug: string; leadId: string; stage: CampaignStage }) {
+    const { run, pending, error } = useCommand(workspaceSlug)
+    return <span className="flex items-center gap-2">
+        {error ? <span role="alert" className="text-xs text-red-300">{error}</span> : null}
+        <Button size="sm" variant={stage === "showed" ? "primary" : "secondary"} disabled={pending || stage === "sold"} title={stage === "sold" ? "Already sold" : undefined}
+            onClick={() => void run("set_stage", { lead_id: leadId, stage: "sold" })}>{stage === "sold" ? "Sold" : "Mark sold"}</Button>
+    </span>
+}
+
+/** The lead's own booking page link: open it to book a time with them on a call, or copy it to send. */
+export function BookingLinkActions({ href }: { href: string }) {
+    const [copied, setCopied] = useState(false)
+    return <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Button size="sm" variant="secondary" href={href} external>Book for them</Button>
+        <Button size="sm" variant="ghost" onClick={() => { void navigator.clipboard.writeText(href).then(() => { setCopied(true); window.setTimeout(() => setCopied(false), 1500) }, () => undefined) }}>{copied ? "Copied" : "Copy their booking link"}</Button>
+    </div>
+}

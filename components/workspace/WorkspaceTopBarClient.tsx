@@ -33,6 +33,7 @@ import { WorkspaceRecordCache } from "@/lib/workspace-record-cache"
 import { WorkspaceTabScrollStore } from "@/lib/workspace-tab-scroll"
 import type { WorkspaceLayout } from "@/lib/workspace-layout"
 import { ClientRail, RailDestinationRow, type RailDestination } from "./ClientRail"
+import { CampaignRail } from "./CampaignRail"
 import { clientPageRelationshipId } from "@/lib/client-page"
 import { PhoneBottomBar } from "./PhoneBottomBar"
 import { TodayLayoutProvider, useTodayWide, type TodayLayoutShell } from "./TodayLayout"
@@ -3454,7 +3455,8 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
                     </button>
                 </div>}
                 {layout === "today" ? <ClientRail workspaceSlug={workspace.slug} userId={currentUserId} activePath={activePathname.replace(/\/$/, "")} activeClientId={activeClientId} online={online}
-                    today={railToday} destinations={railDestinations} refreshKey={clientRailRevision}
+                    today={railToday} destinations={campaignsPilot ? railDestinations.filter(item => item.key !== "campaigns") : railDestinations} refreshKey={clientRailRevision}
+                    campaigns={campaignsPilot && sidebarItems.some(item => item.key === "campaigns") ? <CampaignRail workspaceSlug={workspace.slug} userId={currentUserId} activePath={activePathname.replace(/\/$/, "")} online={online} onOpen={(href) => { void openWorkspaceTab(href); closeSidebarAfterNavigation() }} /> : undefined}
                     onOpenClient={(href) => { void openWorkspaceTab(href); closeSidebarAfterNavigation() }} onOpenDestination={openRailDestination} /> : sidebarItems.map((item) => {
                     const offlineBlocked = !online && !item.href.includes("/communications")
                     const active = item.activeHrefs?.some((href) => activePathname === href || activePathname.startsWith(`${href}/`))

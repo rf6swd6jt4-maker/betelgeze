@@ -65,9 +65,25 @@ try {
     assert.equal((await q('select native_conversation_can_write($1) ok', [conv.id]))[0].ok, false)
     await assert.rejects(q("insert into workspace_native_messages(workspace_id,conversation_id,sender_user_id,body) values($1,$2,$3,'hi')", [ws, conv.id, owner]), /permission|policy|server/)
     await asService()
-    const [outbound] = await q("insert into workspace_native_messages(workspace_id,conversation_id,sender_user_id,body,sms_direction,sms_status) values($1,$2,$3,'Yes, it includes it.','outbound','queued') returning id", [ws, conv.id, owner])
+    const [outbound] = await q("insert into workspace_native_messages(workspace_id,conversation_id,sender_user_id,client_request_id,body,sms_direction,sms_status) values($1,$2,$3,$4,'Yes, it includes it.','outbound','queued') returning id", [ws, conv.id, owner, id(80)])
     assert.equal(Number((await q('select count(*) n from chat_push_deliveries where message_id=$1', [outbound.id]))[0].n), 0)
     pass('texts are stored by the server only; a text sent to the lead alerts nobody, like an outbound client message')
+
+    // Participants read the texts themselves through every reader the app uses: the single-message detail (send
+    // confirmation and live arrival), the bounded window (opening the chat) and the full list. Others read none.
+    await asUser(owner)
+    const detail = (await q('select communication_native_message_detail($1,$2) v', [ws, inbound.id]))[0].v
+    assert.equal(detail?.body, 'Is the 4,500 including ad spend?'); assert.equal(detail?.sender_user_id, null)
+    const sent = (await q('select communication_native_message_detail($1,$2) v', [ws, outbound.id]))[0].v
+    assert.equal(sent?.body, 'Yes, it includes it.'); assert.equal(sent?.client_request_id, id(80), 'the composer confirms a send by its request id')
+    assert.deepEqual((await q('select body from communication_native_messages_bounded($1,$2,60) order by created_at', [ws, conv.id])).map(row => row.body), ['Is the 4,500 including ad spend?', 'Yes, it includes it.'])
+    assert.equal((await q('select count(*) n from communication_native_messages($1,$2,100)', [ws, conv.id]))[0].n, 2)
+    await asUser(staff)
+    assert.equal((await q('select communication_native_message_detail($1,$2) v', [ws, inbound.id]))[0].v, null)
+    assert.equal((await q('select count(*) n from communication_native_messages_bounded($1,$2,60)', [ws, conv.id]))[0].n, 0)
+    assert.equal((await q('select count(*) n from communication_native_messages($1,$2,100)', [ws, conv.id]))[0].n, 0)
+    await asService()
+    pass('participants decode the lead\'s texts and their own sent texts (with the request id) through every reader; others decode none')
 
     // The same newest-visible read path clears it; the other participant still has it unread.
     await asUser(owner)

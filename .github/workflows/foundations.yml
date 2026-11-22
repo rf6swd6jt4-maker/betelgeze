@@ -66,6 +66,7 @@ jobs:
           BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-client-advertising-sql.mjs
           BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-current-client-connections-sql.mjs
           BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-staff-google-ads-sql.mjs
+          BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-campaign-intake-sql.mjs
       - name: Shared service queue authorization and lifecycle
         run: BE_PGLITE_ROOT="$RUNNER_TEMP/be-pglite" node scripts/validate-shared-service-queue.mjs
       - name: Assignment offboarding guards on the full migration schema

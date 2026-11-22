@@ -18,6 +18,16 @@ export type AssetEntry = {
     downloadHref: string | null
 }
 type AssetPage = { entries: AssetEntry[]; nextCursor: string | null }
+// Older pages already added stay with the account and workspace while the Library is away (opening an asset and coming
+// back), for less time than their private preview links last. A few workspaces at most.
+const OLDER_RETENTION_MS = 30 * 60_000
+const retainedOlder = new Map<string, { page: AssetPage; at: number }>()
+function readRetainedOlder(key: string) {
+    const entry = retainedOlder.get(key)
+    if (entry && Date.now() - entry.at < OLDER_RETENTION_MS) return entry.page
+    retainedOlder.delete(key)
+    return null
+}
 type AssetMenu = { entry: AssetEntry; anchor: HTMLElement; point: { x: number; y: number } }
 
 function AssetContextMenu({ menu, selected, busy, onSelect, onDownload, onDismiss }: {
@@ -64,7 +74,13 @@ export function AssetLibrary({ workspaceSlug, userId, previewEntries, nextCursor
     const active = useWorkspaceNavigation()?.active !== false
     const [previousActive, setPreviousActive] = useState(active)
     // Older assets are read one page at a time, only when asked for. A refreshed first page keeps them in place.
-    const [older, setOlder] = useState<AssetPage | null>(null)
+    const olderKey = `${userId}:${workspaceSlug}`
+    const [older, setOlder] = useState<AssetPage | null>(() => readRetainedOlder(olderKey))
+    useEffect(() => {
+        if (!older) return
+        retainedOlder.delete(olderKey); retainedOlder.set(olderKey, { page: older, at: Date.now() })
+        while (retainedOlder.size > 4) retainedOlder.delete(retainedOlder.keys().next().value!)
+    }, [older, olderKey])
     const [loadingOlder, setLoadingOlder] = useState(false)
     const [olderError, setOlderError] = useState<string | null>(null)
     const olderRequest = useRef<AbortController | null>(null)

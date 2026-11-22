@@ -183,6 +183,32 @@ try {
     }
     pass('browser roles cannot read the tables or call the functions')
 
+    // SignalHouse numbers (docs/signalhouse.md): accounts per group, numbers per account, assignment, deduped webhooks.
+    const [acct] = await q("insert into signalhouse_accounts(workspace_id,group_id,name,config_encrypted,key_hint) values($1,'G1234567','Scaylup','x','abcd') returning id", [ws])
+    await assert.rejects(q("insert into signalhouse_accounts(workspace_id,group_id,config_encrypted) values($1,'G1234567','x')", [ws]), /duplicate key/)
+    await assert.rejects(q("insert into signalhouse_accounts(workspace_id,group_id,config_encrypted) values($1,'12345678','x')", [ws]), /check constraint/)
+    pass('one live connection per SignalHouse group, and a group ID must look like G1234567')
+    const [num] = await q("insert into campaign_sms_numbers(workspace_id,account_id,phone_e164,status,registration_external_id) values($1,$2,'+15125550199','READY','C1234567') returning id", [ws, acct.id])
+    await assert.rejects(q("insert into campaign_sms_numbers(workspace_id,account_id,phone_e164) values($1,$2,'+15125550199')", [ws, acct.id]), /duplicate key/)
+    await assert.rejects(q("insert into campaign_sms_numbers(workspace_id,account_id,phone_e164) values($1,$2,'5125550199')", [ws, acct.id]), /check constraint/)
+    pass('a number is stored once per account, in +1 E.164 form')
+    await q('update campaigns set sms_number_id=$1 where id=$2', [num.id, created.id])
+    await q('update campaign_sources set sms_number_id=$1 where campaign_id=$2', [num.id, created.id])
+    await q('update campaign_leads set sms_number_id=$1 where latest_campaign_id=$2', [num.id, created.id])
+    assert.equal(Number((await q('select count(*) n from campaign_leads where latest_campaign_id=$1 and sms_number_id=$2', [created.id, num.id]))[0].n) > 0, true)
+    await assert.rejects(q('update campaigns set sms_number_id=$1 where id=$2', [id(999), created.id]), /foreign key/)
+    pass('campaigns, sources and leads point at a stored number, and nothing else')
+    await q("insert into signalhouse_webhook_events(account_id,delivery_id,event,identifier,payload) values($1,'d-1','MESSAGE_RECEIVED','m1','{}'::jsonb)", [acct.id])
+    await assert.rejects(q("insert into signalhouse_webhook_events(account_id,delivery_id,event,payload) values($1,'d-1','MESSAGE_RECEIVED','{}'::jsonb)", [acct.id]), /duplicate key/)
+    await assert.rejects(q("insert into signalhouse_webhook_events(account_id,delivery_id,event,payload) values($1,'d-2','bad event','{}'::jsonb)", [acct.id]), /check constraint/)
+    pass('a webhook delivery is stored once by its delivery id')
+    for (const role of ['anon', 'authenticated']) {
+        await db.exec(`set role ${role}`)
+        for (const table of ['signalhouse_accounts', 'signalhouse_registrations', 'campaign_sms_numbers', 'signalhouse_webhook_events']) await assert.rejects(db.query(`select * from ${table}`), /permission denied/)
+        await db.exec('reset role')
+    }
+    pass('browser roles cannot read the SignalHouse tables')
+
     console.log(`Campaign intake SQL: ${checks} checks passed.`)
 } finally {
     await db.close()

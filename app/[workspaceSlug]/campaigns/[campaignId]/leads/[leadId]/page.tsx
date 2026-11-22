@@ -10,6 +10,8 @@ import { formatAppointment, formatMoney, meetingPlaceLabels } from "@/lib/campai
 import { loadCampaign, loadCampaignLead, requireCampaigns } from "@/lib/campaigns/server"
 import { clientInitials } from "@/lib/client-rail"
 import { formatRelativeTime } from "@/lib/ui/relative-time"
+import { loadSmsNumber } from "@/lib/signalhouse/server"
+import { smsNumberName } from "@/lib/signalhouse/model"
 
 export const dynamic = "force-dynamic"
 
@@ -34,6 +36,8 @@ export default async function CampaignLeadPage({ params }: { params: Promise<{ w
     const appOrigin = `${host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https"}://${host}`
     const bookingLink = source?.books && source.booking_slug && source.status !== "off" ? `${appOrigin}/book/${source.booking_slug}?ref=${lead.reference}` : null
     const canBook = !current && !["sold", "lost"].includes(lead.stage)
+    // The number they text with: the one that first texted them, else their source's, else the campaign's.
+    const textsFrom = await loadSmsNumber(workspace.id, lead.sms_number_id ?? source?.sms_number_id ?? loaded.campaign.sms_number_id)
 
     return <main className="min-h-screen bg-neutral-950 px-4 pb-10 text-white sm:px-6">
         <WorkspaceTopBar userId={user.id} workspace={workspace} currentProduct="client-work" />
@@ -87,6 +91,7 @@ export default async function CampaignLeadPage({ params }: { params: Promise<{ w
                     <section aria-label="Contact">
                         <SectionHeading>Contact</SectionHeading>
                         <div className={propertyRow}><span className="text-neutral-500">Phone</span><span className="tabular-nums text-neutral-200">{formatPhone(lead.phone_e164)}</span></div>
+                        <div className={propertyRow}><span className="text-neutral-500">Texts from</span>{textsFrom ? <Link href={`/${workspace.slug}/settings/signalhouse/numbers/${textsFrom.id}`} className="truncate text-neutral-200 hover:underline">{smsNumberName(textsFrom)}</Link> : <span className="text-neutral-500">No number picked</span>}</div>
                         <div className={propertyRow}><span className="text-neutral-500">Email</span><span className="truncate text-neutral-200">{lead.email ?? <span className="text-neutral-500">None given</span>}</span></div>
                         <div className={propertyRow}><span className="text-neutral-500">Business</span><span className="truncate text-neutral-200">{lead.company ?? <span className="text-neutral-500">None given</span>}</span></div>
                         <div className={propertyRow}><span className="text-neutral-500">Texts</span><Status label={lead.sms_consent === "opted_in" ? "Opted in on the form" : "Opted out"} tone={lead.sms_consent === "opted_in" ? "green" : "grey"} /></div>

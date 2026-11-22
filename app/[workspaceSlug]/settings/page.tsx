@@ -7,7 +7,7 @@ import { WorkspaceConnections } from "@/components/admin/WorkspaceConnections"
 import { WorkspaceOnboardingDomain } from "@/components/admin/WorkspaceOnboardingDomain"
 import { WorkspaceTeamSettings } from "@/components/settings/WorkspaceTeamSettings"
 import { SettingsSectionNav, type SettingsSectionNavItem } from "@/components/workspace/SettingsSectionNav"
-import { Button } from "@/components/ui"
+import { Button, Status } from "@/components/ui"
 import { workspaceLayoutFor } from "@/lib/workspace-layout"
 import { AgencyBrandingEditor } from "@/components/settings/AgencyBrandingEditor"
 import { AgencyPublicBrandingFields } from "@/components/settings/AgencyPublicBrandingFields"
@@ -24,6 +24,9 @@ import { normalizeWorkspaceRole, requireWorkspace, workspaceRoleLabel } from "@/
 import { BASE_INTEGRATION_PROVIDERS, listWorkspaceConnections } from "@/lib/workspace-integrations"
 import { loadWorkspacePublicBranding } from "@/lib/client-branding/public-branding"
 import { loadWorkspaceClientBrandAssets } from "@/lib/client-branding/assets"
+import { campaignsPilotEnabled } from "@/lib/campaigns/pilot"
+import { loadSignalHouse } from "@/lib/signalhouse/server"
+import WorkspaceLink from "@/components/workspace/WorkspaceLink"
 import { saveAgencyPublicBranding, uploadAgencyFavicon, uploadAgencyLogo } from "./branding-actions"
 import { inviteWorkspaceUser, removeWorkspaceUser, resetWorkspaceUserMfa } from "../users/actions"
 import {
@@ -164,10 +167,22 @@ async function AgencyBrandingSettingsSection({ workspace, userId, onboardingSett
     </UnifiedSection>
 }
 
-async function ConnectionsSettingsSection({ workspace, isOwner }: { workspace: WorkspaceRecord; isOwner: boolean }) {
+/** Campaigns pilot: SignalHouse texts campaign leads. It has its own page (docs/signalhouse.md). */
+async function SignalHouseConnectionCard({ workspace }: { workspace: WorkspaceRecord }) {
+    const loaded = await loadSignalHouse(workspace.id).catch(() => null)
+    const account = loaded?.accounts[0] ?? null
+    const numbers = loaded ? loaded.numbers.filter(number => number.added_at && !number.removed_at).length : 0
+    return <WorkspaceLink href={`/${workspace.slug}/settings/signalhouse`} className="mb-5 flex flex-col gap-1.5 rounded-xl border border-card-border p-4 transition-colors hover:bg-[var(--color-surface-hover)] sm:flex-row sm:items-center sm:gap-4">
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5"><span className="text-sm font-medium text-white">SignalHouse</span><span className="text-xs text-neutral-500">{!loaded ? "Could not load. Open to retry." : account ? `${account.name || account.group_id} · ${numbers} ${numbers === 1 ? "number" : "numbers"} · texts your campaigns' leads` : "Texts your campaigns' leads from A2P-registered numbers."}</span></span>
+        {account ? <Status label={account.status === "connected" ? "Connected" : "Needs attention"} tone={account.status === "connected" ? "green" : "yellow"} /> : <Status label="Not connected" tone="grey" />}
+    </WorkspaceLink>
+}
+
+async function ConnectionsSettingsSection({ workspace, isOwner, campaigns }: { workspace: WorkspaceRecord; isOwner: boolean; campaigns: boolean }) {
     const integrationResult = await listWorkspaceConnections(workspace.id)
     const connections = [...BASE_INTEGRATION_PROVIDERS.map((provider) => integrationResult.find((item) => item.provider === provider) ?? { provider, enabled: false, mode: "disabled", config_hint: {} }), ...integrationResult.filter((item) => item.provider === "windsor" || item.provider === "google_ads")] as Parameters<typeof WorkspaceConnections>[0]["connections"]
     return <UnifiedSection id="connections" title="Connections" description="Manage active provider credentials and client communication delivery channels.">
+        {campaigns ? <SignalHouseConnectionCard workspace={workspace} /> : null}
         <WorkspaceConnections workspaceSlug={workspace.slug} connections={connections} action={saveWorkspaceConnection.bind(null, workspace.slug)} verifyAction={verifyWorkspaceConnection.bind(null, workspace.slug)} manualAction={stageManualWorkspaceConnection.bind(null, workspace.slug)} completeWhatsAppAction={completeWhatsAppEmbeddedSignup.bind(null, workspace.slug)} selectMetaAdsBusinessAction={selectMetaAdsBusinessPortfolio.bind(null, workspace.slug)} verifyPendingAction={verifyPendingWorkspaceConnection.bind(null, workspace.slug)} discardPendingAction={discardPendingWorkspaceConnection.bind(null, workspace.slug)} rollbackAction={rollbackWorkspaceConnection.bind(null, workspace.slug)} disconnectAction={disconnectWorkspaceConnection.bind(null, workspace.slug)} canManage={isOwner} canManageHighLevel metaAppId={process.env.NEXT_PUBLIC_META_APP_ID ?? null} metaEmbeddedSignupConfigId={process.env.NEXT_PUBLIC_META_EMBEDDED_SIGNUP_CONFIG_ID ?? null} showHeader={false} />
     </UnifiedSection>
 }
@@ -228,7 +243,7 @@ export default async function SettingsPage({ params, searchParams }: PageProps) 
                     <Suspense fallback={<SettingsSectionFallback id="onboarding" title="Onboarding" description="Compose mandatory modules, manage client help, open Builder, and control the domain used for onboarding sessions." height="min-h-72" />}><OnboardingSettingsSection workspace={workspace} role={role} onboardingSettingsPromise={onboardingSettingsPromise} /></Suspense>
                     <ClientPortalSettingsSection workspace={workspace} role={role} />
                     <Suspense fallback={<SettingsSectionFallback id="agency-branding" title="Agency Branding" description="Manage the public identity, policies, metadata, favicon, and colours used across agency-branded pages." height="min-h-72" />}><AgencyBrandingSettingsSection workspace={workspace} userId={user.id} onboardingSettingsPromise={onboardingSettingsPromise} /></Suspense>
-                    <Suspense fallback={<SettingsSectionFallback id="connections" title="Connections" description="Manage active provider credentials and client communication delivery channels." height="min-h-64" />}><ConnectionsSettingsSection workspace={workspace} isOwner={isOwner} /></Suspense>
+                    <Suspense fallback={<SettingsSectionFallback id="connections" title="Connections" description="Manage active provider credentials and client communication delivery channels." height="min-h-64" />}><ConnectionsSettingsSection workspace={workspace} isOwner={isOwner} campaigns={campaignsPilotEnabled(user.id)} /></Suspense>
                     <Suspense fallback={<SettingsSectionFallback id="users" title="Users" description="Invite teammates and control workspace access." height="min-h-56" />}><UsersSettingsSection workspace={workspace} isOwner={isOwner} currentUserId={user.id} onboardingSettingsPromise={onboardingSettingsPromise} /></Suspense>
                     <Suspense fallback={<SettingsSectionFallback id="teams" title="Teams" description="Selling, management, and service delivery responsibilities." height="min-h-56" />}><TeamsSettingsSection workspace={workspace} isOwner={isOwner} /></Suspense>
                     <p className="pt-2 text-center text-xs text-neutral-600">Betelgeze © 2026</p>

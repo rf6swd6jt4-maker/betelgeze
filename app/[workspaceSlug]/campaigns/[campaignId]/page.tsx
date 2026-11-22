@@ -10,6 +10,9 @@ import { CampaignStatusButton } from "@/components/campaigns/CampaignStatusButto
 import { campaignSourceStatusLabels, formatAppointment, formatMoney, formatShortAppointment } from "@/lib/campaigns/model"
 import { CAMPAIGN_LEAD_LIMIT, loadCampaign, loadCampaignLeads, loadNotBookedCount, requireCampaigns, type CampaignBookingRow, type CampaignLeadRow, type CampaignSourceRow } from "@/lib/campaigns/server"
 import { formatRelativeTime } from "@/lib/ui/relative-time"
+import { TextingNumberField } from "@/components/campaigns/TextingNumberField"
+import { loadUsableSmsNumbers } from "@/lib/signalhouse/server"
+import { smsNumberName } from "@/lib/signalhouse/model"
 
 export const dynamic = "force-dynamic"
 
@@ -28,7 +31,7 @@ export default async function CampaignPage({ params, searchParams }: { params: P
     // The tabs and the source filter switch in place, without another read. Leads are read for the tabs that show
     // them: a page opened on Sources or Text flows reads them when Pipeline or Leads is first opened.
     const withLeads = query.tab !== "sources" && query.tab !== "flows"
-    const [loaded, leadData, notBooked] = await Promise.all([loadCampaign(workspace.id, campaignId), withLeads ? loadCampaignLeads(workspace.id, campaignId) : Promise.resolve(null), loadNotBookedCount(workspace.id, campaignId)])
+    const [loaded, leadData, notBooked, numbers] = await Promise.all([loadCampaign(workspace.id, campaignId), withLeads ? loadCampaignLeads(workspace.id, campaignId) : Promise.resolve(null), loadNotBookedCount(workspace.id, campaignId), loadUsableSmsNumbers(workspace.id)])
     if (!loaded) notFound()
     const { campaign, sources } = loaded
     const base = `/${workspace.slug}/campaigns/${campaign.id}`
@@ -72,7 +75,17 @@ export default async function CampaignPage({ params, searchParams }: { params: P
                 actions={<CampaignStatusButton workspaceSlug={workspace.slug} campaignId={campaign.id} status={campaign.status} />}
                 sourceActions={<AddSourceButton workspaceSlug={workspace.slug} campaignId={campaign.id} />}
                 sourcesTable={sourcesTable}
-                flows={<p className="mt-5 max-w-2xl text-sm leading-6 text-neutral-400">Text flows arrive with the SignalHouse connection: instant replies, payment and booking reminders, and no-show follow-ups for these leads. Until then nothing is texted automatically.</p>} />
+                flows={<div className="mt-5 flex max-w-3xl flex-col gap-5">
+                    <section aria-label="Texts from" className="grid gap-1.5 sm:grid-cols-[11rem_minmax(0,1fr)] sm:gap-4">
+                        <p className="pt-2 text-sm text-neutral-500">Texts from</p>
+                        <div className="min-w-0">
+                            <TextingNumberField workspaceSlug={workspace.slug} kind="campaign" targetId={campaign.id} value={campaign.sms_number_id ?? null} label="Number this campaign texts from"
+                                options={numbers.map(number => ({ id: number.id, name: smsNumberName(number), canSend: number.canSend }))} />
+                            <p className="mt-1.5 text-xs leading-5 text-neutral-500">{sources.some(source => source.sms_number_id) ? `${sources.filter(source => source.sms_number_id).map(source => source.name).join(", ")} use${sources.filter(source => source.sms_number_id).length > 1 ? "" : "s"} its own number. ` : ""}A lead keeps the number that first texted them, so their replies stay in one conversation.</p>
+                        </div>
+                    </section>
+                    <p className="text-sm leading-6 text-neutral-400">Text flows come next: instant replies, payment and booking reminders, and no-show follow-ups for these leads. Until then nothing is texted automatically.</p>
+                </div>} />
         </div>
     </main>
 }

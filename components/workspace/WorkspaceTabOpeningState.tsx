@@ -11,7 +11,7 @@ function panelLoadingForUrl(value: string, workspaceSlug: string): { variant: Pa
     if (panel === "sops" && nested) return { variant: "detail", title: "SOP" }
     // SignalHouse (Settings, Connections) and its numbers are detail pages, shaped like a campaign source.
     if (panel === "settings" && nested === "signalhouse") return { variant: "campaign-source" }
-    if (panel === "campaigns") return { variant: nested === "new" ? "campaign-new" : segments[2] === "sources" && segments[3] ? "campaign-source" : segments[2] === "leads" && segments[3] ? "campaign-lead" : "campaigns" }
+    if (panel === "campaigns") return { variant: nested === "new" ? "campaign-new" : (segments[2] === "sources" || segments[2] === "flows") && segments[3] ? "campaign-source" : segments[2] === "leads" && segments[3] ? "campaign-lead" : "campaigns" }
     if (workspaceRouteIsRecordDetail(value, workspaceSlug, "http://localhost")) {
         const titles: Record<string, string> = {
             relationships: "relationship", assets: "asset", notes: "note",

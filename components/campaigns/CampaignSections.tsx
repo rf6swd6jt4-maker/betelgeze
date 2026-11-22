@@ -5,7 +5,7 @@ import Link from "@/components/workspace/WorkspaceLink"
 import { useRouter, useSearchParams, useWorkspaceNavigation } from "@/components/workspace/WorkspaceNavigation"
 import { FilterRail, FilterRailCount, FilterRailLink } from "@/components/panel/FilterRail"
 import { Table, TableBody, TableCell, TableEmpty, TableHead, TableHeading, TableRow } from "@/components/list/Table"
-import { Button, RoundPill } from "@/components/ui"
+import { Button, RoundPill, SquarePill } from "@/components/ui"
 import { CampaignPageHeader } from "@/components/campaigns/CampaignPageHeader"
 import { PipelineBoard, type PipelineCard } from "@/components/campaigns/PipelineBoard"
 import { CampaignStageLabel, TestLabel } from "@/components/campaigns/CampaignParts"
@@ -53,7 +53,9 @@ export function CampaignSections({ workspaceSlug, base, header, actions, sourceA
     const requestedSource = searchParams.get("source")
     const source = requestedSource && sources.some(entry => entry.id === requestedSource) ? requestedSource : null
     const all = leads ?? []
-    const shown = source ? all.filter(lead => lead.sourceId === source) : all
+    // Calls due (docs/text-flows.md): leads a flow asked their setter to call.
+    const calls = searchParams.get("calls") === "1"
+    const shown = (source ? all.filter(lead => lead.sourceId === source) : all).filter(lead => !calls || lead.call)
     const readLeads = useCallback(() => startRead(() => router.refresh()), [router])
     // Pipeline or Leads opened on a page that skipped its leads (or returned to by Back after a refresh elsewhere):
     // read them once the new address has committed, so the server reads that section, and before paint, so the
@@ -89,6 +91,12 @@ export function CampaignSections({ workspaceSlug, base, header, actions, sourceA
         {sources.map(entry => <FilterRailLink key={entry.id} href={campaignSectionHref(base, tab, entry.id)} selected={source === entry.id} instant={{ param: "source", value: entry.id }}>
             <RoundPill tone={entry.tone}>{entry.tag}</RoundPill> <FilterRailCount>{all.filter(lead => lead.sourceId === entry.id).length}</FilterRailCount>
         </FilterRailLink>)}
+        {all.some(lead => lead.call) || calls ? <>
+            <span aria-hidden="true" className="mx-1 h-4 w-px self-center bg-[var(--color-card-border)]" />
+            <FilterRailLink href={`${campaignSectionHref(base, tab, source)}${campaignSectionHref(base, tab, source).includes("?") ? "&" : "?"}calls=1`} selected={calls} instant={{ param: "calls", value: calls ? null : "1" }}>
+                Calls due <FilterRailCount>{all.filter(lead => lead.call && (!source || lead.sourceId === source)).length}</FilterRailCount>
+            </FilterRailLink>
+        </> : null}
     </FilterRail> : null
     // Paid, not booked only happens when a payment arrives after the held time was taken, so its column shows only when used.
     const anyPayment = all.some(lead => lead.stage === "paid_not_booked")
@@ -123,7 +131,7 @@ export function CampaignSections({ workspaceSlug, base, header, actions, sourceA
                         return <TableRow key={lead.id}>
                             <TableCell primary className="w-full max-w-0 max-sm:h-14 sm:w-[34%]">
                                 <span className="flex min-w-0 flex-col sm:flex-row sm:items-center sm:gap-2.5">
-                                    <span className="flex min-w-0 items-center gap-2"><Link data-table-open href={lead.href} prefetch={false} className="min-w-0 truncate text-sm hover:underline sm:text-[13px]">{lead.name}</Link>{lead.test ? <TestLabel /> : null}</span>
+                                    <span className="flex min-w-0 items-center gap-2"><Link data-table-open href={lead.href} prefetch={false} className="min-w-0 truncate text-sm hover:underline sm:text-[13px]">{lead.name}</Link>{lead.test ? <TestLabel /> : null}{lead.call ? <SquarePill tone="yellow">Call</SquarePill> : null}</span>
                                     {lead.company ? <span className="min-w-0 truncate font-normal text-neutral-500 max-sm:hidden">{lead.company}</span> : null}
                                     {/* Phone: the second line carries the source and the business. */}
                                     <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs font-normal text-neutral-500 sm:hidden">{tag}<span className="min-w-0 truncate">{lead.company ?? ""}</span></span>

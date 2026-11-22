@@ -12,22 +12,23 @@ export type CampaignSourceRow = {
     status: CampaignSourceStatus; intake_key: string; books: boolean; booking_slug: string | null; meeting_title: string; meeting_minutes: number
     meeting_place: MeetingPlace; meeting_link: string | null; time_zone: string; booking_days: number[]; day_start_minute: number; day_end_minute: number
     notice_hours: number; horizon_days: number; pay_amount_cents: number | null; hold_minutes: number; refund_rule: string | null; created_at: string; updated_at: string
-    sms_number_id: string | null
+    sms_number_id: string | null; setter_user_id: string | null
 }
 export type CampaignLeadRow = {
     id: string; reference: string; first_name: string; last_name: string | null; company: string | null; phone_e164: string; email: string | null; stage: CampaignStage
     latest_source_id: string | null; sms_number_id: string | null; is_test: boolean; answers: { id?: string; question?: string; answer?: string }[]; first_submitted_at: string
     last_submitted_at: string; submission_count: number; sms_consent: string; first_attribution: Record<string, unknown>; latest_campaign_id: string
+    assigned_to: string | null; call_due_at: string | null; call_reason: string | null
 }
 export type CampaignBookingRow = {
     id: string; lead_id: string; source_id: string; starts_at: string; ends_at: string; status: string; held_until: string | null
-    amount_cents: number | null; paid_at: string | null; booked_by: string; created_at: string
+    amount_cents: number | null; paid_at: string | null; booked_by: string; created_at: string; confirmed_at: string | null
 }
 export type CampaignEventRow = { id: string; kind: string; detail: Record<string, unknown>; created_at: string }
 
-const SOURCE_FIELDS = "id, campaign_id, name, tag, tag_tone, page_url, allowed_origins, status, intake_key, books, booking_slug, meeting_title, meeting_minutes, meeting_place, meeting_link, time_zone, booking_days, day_start_minute, day_end_minute, notice_hours, horizon_days, pay_amount_cents, hold_minutes, refund_rule, created_at, updated_at, sms_number_id"
-const LEAD_FIELDS = "id, reference, first_name, last_name, company, phone_e164, email, stage, latest_source_id, is_test, answers, first_submitted_at, last_submitted_at, submission_count, sms_consent, first_attribution, latest_campaign_id, sms_number_id"
-const BOOKING_FIELDS = "id, lead_id, source_id, starts_at, ends_at, status, held_until, amount_cents, paid_at, booked_by, created_at"
+const SOURCE_FIELDS = "id, campaign_id, name, tag, tag_tone, page_url, allowed_origins, status, intake_key, books, booking_slug, meeting_title, meeting_minutes, meeting_place, meeting_link, time_zone, booking_days, day_start_minute, day_end_minute, notice_hours, horizon_days, pay_amount_cents, hold_minutes, refund_rule, created_at, updated_at, sms_number_id, setter_user_id"
+const LEAD_FIELDS = "id, reference, first_name, last_name, company, phone_e164, email, stage, latest_source_id, is_test, answers, first_submitted_at, last_submitted_at, submission_count, sms_consent, first_attribution, latest_campaign_id, sms_number_id, assigned_to, call_due_at, call_reason"
+const BOOKING_FIELDS = "id, lead_id, source_id, starts_at, ends_at, status, held_until, amount_cents, paid_at, booked_by, created_at, confirmed_at"
 /** The pipeline shows the most recent leads; older ones stay reachable as the campaign grows (later: paging). */
 export const CAMPAIGN_LEAD_LIMIT = 500
 

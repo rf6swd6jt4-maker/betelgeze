@@ -1,6 +1,6 @@
 # SignalHouse texting for Campaigns
 
-Status: pilot, behind `CAMPAIGNS_PILOT_USERS` like the rest of Campaigns (owners and admins only). This step connects SignalHouse, brings in its numbers and decides which number each campaign, source and lead texts from. **Nothing is texted automatically yet**: Text flows are a later step. Texting a lead by hand, and their replies, live in Comms → Leads ([Leads in Comms](comms-leads.md)), authorized under `app-alerts.md` on 22 November 2026.
+Status: pilot, behind `CAMPAIGNS_PILOT_USERS` like the rest of Campaigns (owners and admins only). This step connects SignalHouse, brings in its numbers and decides which number each campaign, source and lead texts from. Texting a lead by hand, and their replies, live in Comms → Leads ([Leads in Comms](comms-leads.md)), authorized under `app-alerts.md` on 22 November 2026. Automatic texts come from [Text flows](text-flows.md): nothing is sent until a flow is switched on. A text with a picture goes out as MMS (`POST /message/mms`, form data, the picture uploaded as `images`, under 500 KB).
 
 ## What SignalHouse provides
 
@@ -42,4 +42,4 @@ Rollback: revert the application. The migration only adds tables and nullable co
 
 ## Not in this step
 
-Text flows (automated sending, quiet hours, waits), unknown-sender conversations, MMS, reconciling missed webhooks from `GET /notification`, connecting a second account from the page, and buying or registering numbers (done in SignalHouse).
+Unknown-sender conversations, inbound MMS (an inbound picture shows as its text only), reconciling missed webhooks from `GET /notification`, connecting a second account from the page, and buying or registering numbers (done in SignalHouse).

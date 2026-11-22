@@ -1,8 +1,9 @@
 import "server-only"
 
 /**
- * A thin SignalHouse API client (https://app2.signalhouse.io/docs). Bearer API key, JSON in and out, a 15-second limit,
- * and an Idempotency-Key on writes so a retried request replays the first answer instead of acting twice.
+ * A thin SignalHouse API client (https://app2.signalhouse.io/docs). Bearer API key, JSON in and out (or form data, for
+ * MMS: `POST /message/mms` with the picture uploaded as `images`), a 15-second limit (30 for form data), and an
+ * Idempotency-Key on writes so a retried request replays the first answer instead of acting twice.
  */
 export const SIGNALHOUSE_API_BASE_URL = (process.env.SIGNALHOUSE_API_BASE_URL?.trim() || "https://v2.signalhouse.io").replace(/\/$/, "")
 
@@ -12,17 +13,19 @@ export class SignalHouseError extends Error {
 
 export async function signalHouseRequest<T = unknown>(apiKey: string, path: string, init: { method?: "GET" | "POST" | "PUT" | "DELETE"; body?: unknown; idempotencyKey?: string } = {}): Promise<T> {
     let response: Response
+    const form = typeof FormData !== "undefined" && init.body instanceof FormData
     try {
         response = await fetch(`${SIGNALHOUSE_API_BASE_URL}${path}`, {
             method: init.method ?? "GET",
             headers: {
                 Authorization: `Bearer ${apiKey}`,
-                "Content-Type": "application/json",
+                // Form data sets its own multipart boundary.
+                ...(form ? {} : { "Content-Type": "application/json" }),
                 ...(init.idempotencyKey ? { "Idempotency-Key": init.idempotencyKey } : {}),
             },
-            body: init.body === undefined ? undefined : JSON.stringify(init.body),
+            body: init.body === undefined ? undefined : form ? init.body as FormData : JSON.stringify(init.body),
             cache: "no-store",
-            signal: AbortSignal.timeout(15_000),
+            signal: AbortSignal.timeout(form ? 30_000 : 15_000),
         })
     } catch {
         throw new SignalHouseError("SignalHouse did not answer. Please retry.", 0)

@@ -405,7 +405,8 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
         signal.throwIfAborted()
         const read = updates.beginRead()
         const conversationId = selectId === undefined ? selectedRef.current : selectId
-        const search = `?${new URLSearchParams({ readProtocol, ...(conversationId ? { conversation: conversationId } : {}) })}`
+        // The Leads tab refreshes its own list; without the scope the server answers with Team's (docs/comms-leads.md).
+        const search = `?${new URLSearchParams({ readProtocol, ...(conversationId ? { conversation: conversationId } : {}), ...(leadsVariant ? { scope: "leads" } : {}) })}`
         const response = await fetch(`/api/workspaces/${bootstrap.workspaceSlug}/communications/native/conversations${search}`, { cache: "no-store", signal })
         const next = await response.json().catch(() => null) as NativeCommunicationsBootstrap | null
         signal.throwIfAborted()
@@ -438,7 +439,7 @@ export function TeamCommunicationsWorkspace({ active, bootstrap, onConnectionSta
             return requested && next.conversations.some((conversation) => conversation.id === requested) ? requested : null
         })
         void flushPendingRead().catch(() => undefined)
-    }, [bootstrap.currentUser.id, bootstrap.workspaceId, bootstrap.workspaceSlug, flushPendingRead, updates, readProtocol, deviceId, deviceMode, progressivePreviews, invalidatePreviews, confirmPreviews, refreshPreviewSearch])
+    }, [bootstrap.currentUser.id, bootstrap.workspaceId, bootstrap.workspaceSlug, flushPendingRead, updates, readProtocol, deviceId, deviceMode, progressivePreviews, invalidatePreviews, confirmPreviews, refreshPreviewSearch, leadsVariant])
 
     useEffect(() => {
         if (!bootstrap.requestedDmUserId) return

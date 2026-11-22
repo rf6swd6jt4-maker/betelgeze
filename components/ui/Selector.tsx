@@ -37,7 +37,7 @@ export const SelectorTrigger = forwardRef<HTMLButtonElement, {
     </button>
 })
 
-export function SelectorDrawer({ anchor, ariaLabel, title, description, search, onSearch, searchPlaceholder = "Search…", children, empty, footer, onDismiss, className = "", workItemPopup = false, autoFocusOptions = true, multiselectable = false }: {
+export function SelectorDrawer({ anchor, ariaLabel, title, description, search, onSearch, searchPlaceholder = "Search…", children, empty, footer, onDismiss, className = "", workItemPopup = false, autoFocusOptions = true, multiselectable = false, allowBelow = false }: {
     anchor: HTMLElement | null
     ariaLabel: string
     title?: string
@@ -53,6 +53,8 @@ export function SelectorDrawer({ anchor, ariaLabel, title, description, search, 
     workItemPopup?: boolean
     autoFocusOptions?: boolean
     multiselectable?: boolean
+    /** Open beneath the whole trigger when there is more room below than above: for a selector near the top of the screen (a page header), so it is not squeezed into the space above it. */
+    allowBelow?: boolean
 }) {
     const optionsRef = useRef<HTMLDivElement>(null)
     const focusOption = useCallback((position: "selected" | "first" | "last") => {
@@ -78,7 +80,7 @@ export function SelectorDrawer({ anchor, ariaLabel, title, description, search, 
         choices[(current < 0 ? offset > 0 ? 0 : choices.length - 1 : (current + offset + choices.length) % choices.length)]?.focus()
     }
 
-    return <AnchoredPopup anchor={anchor} onDismiss={onDismiss} workItemPopup={workItemPopup} className={`w-[min(18rem,calc(100vw-1rem))] overflow-hidden rounded-xl border border-card-border bg-[var(--color-surface-popup)] shadow-popup ${className}`}>
+    return <AnchoredPopup anchor={anchor} onDismiss={onDismiss} workItemPopup={workItemPopup} allowBelow={allowBelow} clearTrigger={allowBelow} className={`w-[min(18rem,calc(100vw-1rem))] overflow-hidden rounded-xl border border-card-border bg-[var(--color-surface-popup)] shadow-popup ${className}`}>
         {title || description ? <header className="border-b border-card-border px-3 py-2.5">
             {title ? <p className="text-xs font-medium text-neutral-200">{title}</p> : null}
             {description ? <p className={`${title ? "mt-0.5" : ""} text-xs leading-4 text-neutral-500`}>{description}</p> : null}
@@ -113,7 +115,7 @@ export function SelectorOption({ selected = false, active = false, showCheck = t
     </div>
 }
 
-export function Selector({ value, options, onChange, onCommit, ariaLabel, placeholder = "Choose…", name, required = false, disabled = false, appearance = "field", surface = "dark", className = "", popupClassName = "", title, description, searchThreshold = 7, searchPlaceholder = "Search…", workItemPopup = false, triggerContent }: {
+export function Selector({ value, options, onChange, onCommit, ariaLabel, placeholder = "Choose…", name, required = false, disabled = false, appearance = "field", surface = "dark", className = "", popupClassName = "", title, description, searchThreshold = 7, searchPlaceholder = "Search…", workItemPopup = false, triggerContent, allowBelow = false }: {
     value: string
     options: SelectorOptionDefinition[]
     onChange: (value: string) => void
@@ -133,6 +135,8 @@ export function Selector({ value, options, onChange, onCommit, ariaLabel, placeh
     searchPlaceholder?: string
     workItemPopup?: boolean
     triggerContent?: ReactNode
+    /** See SelectorDrawer: open below when a selector near the top edge has no room above. */
+    allowBelow?: boolean
 }) {
     const [anchor, setAnchor] = useState<HTMLElement | null>(null)
     const open = Boolean(anchor)
@@ -157,7 +161,7 @@ export function Selector({ value, options, onChange, onCommit, ariaLabel, placeh
         <SelectorTrigger open={open} appearance={appearance} surface={surface} disabled={disabled} aria-label={ariaLabel} aria-required={required || undefined} onClick={(event) => { setQuery(""); setAnchor((current) => current ? null : event.currentTarget) }} className={className}>
             {triggerContent ?? selected?.content ?? selected?.label ?? <span className="text-neutral-600">{placeholder}</span>}
         </SelectorTrigger>
-        {open ? <SelectorDrawer anchor={anchor} ariaLabel={ariaLabel} title={title} description={description} search={query} onSearch={searchable ? setQuery : undefined} searchPlaceholder={searchPlaceholder} onDismiss={() => { setAnchor(null); setQuery("") }} className={popupClassName} workItemPopup={workItemPopup}>
+        {open ? <SelectorDrawer anchor={anchor} ariaLabel={ariaLabel} title={title} description={description} search={query} onSearch={searchable ? setQuery : undefined} searchPlaceholder={searchPlaceholder} onDismiss={() => { setAnchor(null); setQuery("") }} className={popupClassName} workItemPopup={workItemPopup} allowBelow={allowBelow}>
             {visible.map((option) => <SelectorOption key={option.value || "__empty"} selected={option.value === value} disabled={option.disabled} description={option.description} onClick={() => choose(option.value)}>{option.content ?? option.label}</SelectorOption>)}
             {!visible.length ? <p className="px-2.5 py-3 text-xs text-neutral-500">No matching choices.</p> : null}
         </SelectorDrawer> : null}

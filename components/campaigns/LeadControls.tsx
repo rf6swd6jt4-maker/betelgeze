@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useTransition } from "react"
 import { useRouter } from "@/components/workspace/WorkspaceNavigation"
 import { Button, Selector } from "@/components/ui"
 import { StageLabel } from "@/components/ui/RelationshipStage"
@@ -10,21 +10,23 @@ import { campaignCommand } from "@/app/[workspaceSlug]/campaigns/actions"
 
 function useCommand(workspaceSlug: string) {
     const router = useRouter()
-    const [pending, setPending] = useState(false)
+    const [sending, setSending] = useState(false)
+    // Stay busy until the refreshed page arrives, so a control that the change removes cannot be pressed again meanwhile.
+    const [refreshing, startRefresh] = useTransition()
     const [error, setError] = useState<string | null>(null)
     async function run(action: "set_stage" | "booking_status", input: Record<string, unknown>) {
-        setPending(true); setError(null)
+        setSending(true); setError(null)
         try {
             const result = await runWorkspaceMutation(() => campaignCommand(workspaceSlug, action, input))
             if (!result.ok) setError(result.error)
-            else router.refresh()
+            else startRefresh(() => router.refresh())
         } catch {
             setError("Could not save. Please retry.")
         } finally {
-            setPending(false)
+            setSending(false)
         }
     }
-    return { run, pending, error }
+    return { run, pending: sending || refreshing, error }
 }
 
 /** The lead's stage as an editable field. Only a payment or a booking can make Paid, not booked and Booked. */
@@ -33,7 +35,7 @@ export function LeadStageField({ workspaceSlug, leadId, stage }: { workspaceSlug
     return <div className="min-w-0">
         <Selector ariaLabel="Stage" value={stage} disabled={pending} onChange={next => { if (next !== stage) void run("set_stage", { lead_id: leadId, stage: next }) }}
             triggerContent={<StageLabel label={campaignStageLabels[stage]} tone={campaignStageMarks[stage]} />}
-            options={CAMPAIGN_STAGES.map(value => ({ value, label: campaignStageLabels[value] }))} />
+            options={CAMPAIGN_STAGES.map(value => ({ value, label: campaignStageLabels[value] }))} allowBelow />
         {error ? <p role="alert" className="mt-1 text-xs text-red-300">{error}</p> : null}
     </div>
 }
@@ -49,7 +51,7 @@ export function BookingActions({ workspaceSlug, bookingId, status }: { workspace
                 <Button size="sm" variant="secondary" disabled={pending} onClick={() => void run("booking_status", { booking_id: bookingId, status: "no_show" })}>No-show</Button>
                 {confirmCancel ? <>
                     <span className="text-sm text-neutral-400">Cancel this booking? The time opens for others.</span>
-                    <Button size="sm" variant="destructive" disabled={pending} onClick={() => void run("booking_status", { booking_id: bookingId, status: "cancelled" })}>Cancel booking</Button>
+                    <Button size="sm" variant="destructive" disabled={pending} onClick={() => void run("booking_status", { booking_id: bookingId, status: "cancelled" })}>{pending ? "Cancelling…" : "Cancel booking"}</Button>
                     <Button size="sm" variant="ghost" disabled={pending} onClick={() => setConfirmCancel(false)}>Keep it</Button>
                 </> : <Button size="sm" variant="ghost" disabled={pending} onClick={() => setConfirmCancel(true)}>Cancel booking</Button>}
             </> : null}

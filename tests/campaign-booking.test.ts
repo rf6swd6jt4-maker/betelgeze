@@ -135,3 +135,12 @@ test("booking pages may be framed only by the app and the funnel, and embed in t
     const route = readFileSync("app/api/campaigns/book/[slug]/route.ts", "utf8")
     assert.match(route, /body\.embed === true \? await loadBookingEmbedReturn\(page\.source_id\)/)
 })
+
+test("lead controls stay busy until the page refreshes, and a repeated booking change counts as done", () => {
+    const controls = readFileSync("components/campaigns/LeadControls.tsx", "utf8")
+    assert.match(controls, /startRefresh\(\(\) => router\.refresh\(\)\)/)
+    assert.match(controls, /pending: sending \|\| refreshing/)
+    const actions = readFileSync("app/[workspaceSlug]/campaigns/actions.ts", "utf8")
+    assert.match(actions, /action === "booking_status"/)
+    assert.match(actions, /data\.status === input\.status\) result = \{ ok: true as const/)
+})

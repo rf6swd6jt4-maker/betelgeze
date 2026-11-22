@@ -5,6 +5,7 @@ import { bookingDays, zonedTime, type BookingRules } from "../lib/campaigns/slot
 import { campaignsPilotEnabled } from "../lib/campaigns/pilot.ts"
 import { bookingSlugFrom, formatAppointment, formatMoney, originOf } from "../lib/campaigns/model.ts"
 import { WORKSPACE_TAB_FRAME_PARAM, workspaceTabRedirectUrl } from "../lib/workspace-tabs.ts"
+import { BOOKING_FRAME_ANCESTORS, bookingEmbedReturnUrl, isBookingFrameOrigin } from "../lib/campaigns/embed.ts"
 
 const rules: BookingRules = { time_zone: "America/Chicago", booking_days: [1, 2, 3, 4, 5], day_start_minute: 540, day_end_minute: 1020, meeting_minutes: 60, notice_hours: 12, horizon_days: 7 }
 
@@ -104,4 +105,33 @@ test("a campaign's tabs and source filter switch in place, reading leads only fo
     // The source filter uses the shared instant filter.
     assert.match(sections, /instant=\{\{ param: "source", value: null \}\}/)
     assert.match(sections, /instant=\{\{ param: "source", value: entry\.id \}\}/)
+})
+
+test("an embedded booking returns from Stripe to the funnel's book.html, only on sites allowed to frame it", () => {
+    assert.equal(bookingEmbedReturnUrl("https://scaylup.com/teardown/"), "https://scaylup.com/teardown/book.html")
+    assert.equal(bookingEmbedReturnUrl("https://scaylup.com/teardown"), "https://scaylup.com/teardown/book.html")
+    assert.equal(bookingEmbedReturnUrl("https://scaylup.com/teardown/index.html"), "https://scaylup.com/teardown/book.html")
+    assert.equal(bookingEmbedReturnUrl("https://evil.example/teardown/"), null)
+    assert.equal(bookingEmbedReturnUrl("http://scaylup.com/teardown/"), null)
+    assert.equal(bookingEmbedReturnUrl(null), null)
+    assert.equal(isBookingFrameOrigin("https://scaylup.com"), true)
+    assert.equal(isBookingFrameOrigin("https://scaylup.com.evil.example"), false)
+    assert.equal(BOOKING_FRAME_ANCESTORS, "frame-ancestors 'self' https://scaylup.com")
+})
+
+test("booking pages may be framed only by the app and the funnel, and embed in the funnel's look", () => {
+    const config = readFileSync("next.config.ts", "utf8")
+    assert.match(config, /source: "\/book\/:path\*",\s*headers: \[\{ key: "Content-Security-Policy", value: BOOKING_FRAME_ANCESTORS \}\]/)
+    const startup = readFileSync("lib/app-startup.ts", "utf8")
+    assert.match(startup, /get\("embed"\) === "1"/)
+    assert.match(startup, /:root\[data-app-startup="embed"\] body \{ background: transparent !important; \}/)
+    const page = readFileSync("app/book/[slug]/page.tsx", "utf8")
+    assert.match(page, /const embed = first\(query\.embed\) === "1"/)
+    assert.match(page, /target=\{embed \? "_top" : undefined\}/)
+    assert.match(page, /embed \? <BookingEmbedHeight>/)
+    const picker = readFileSync("components/campaigns/BookingPicker.tsx", "utf8")
+    assert.match(picker, /window\.top\.location\.assign\(result\.checkout_url\)/)
+    assert.match(picker, /window\.parent\.postMessage\(\{ type: BOOKING_HEIGHT_MESSAGE, height \}, target\)/)
+    const route = readFileSync("app/api/campaigns/book/[slug]/route.ts", "utf8")
+    assert.match(route, /body\.embed === true \? await loadBookingEmbedReturn\(page\.source_id\)/)
 })

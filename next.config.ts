@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { BOOKING_FRAME_ANCESTORS } from "./lib/campaigns/embed";
 
 const nextConfig: NextConfig = {
   serverExternalPackages: ["pdfjs-dist", "@napi-rs/canvas"],
@@ -24,6 +25,11 @@ const nextConfig: NextConfig = {
             value: "default-src 'self'; script-src 'self'",
           },
         ],
+      },
+      {
+        // Booking pages may be framed by the app and the funnel sites only (docs/campaign-booking.md, "Embedding").
+        source: "/book/:path*",
+        headers: [{ key: "Content-Security-Policy", value: BOOKING_FRAME_ANCESTORS }],
       },
       {
         source: "/manifest.webmanifest",

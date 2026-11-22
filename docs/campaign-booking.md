@@ -22,6 +22,17 @@ Status: pilot. Campaigns is shown only to people listed in `CAMPAIGNS_PILOT_USER
 
 A lapsed hold gives its time back the next time anyone holds at that source. The pipeline and lead page ignore lapsed holds. Stripe keeps a Checkout page open for at least 30 minutes, so a payment can arrive after a 20-minute hold; step 5 covers it.
 
+## Embedding
+
+A funnel can show the booking page inside its own page: an iframe whose `src` is the usual address and parameters (`/book/<slug>?submission=<id>` or `?ref=<reference>`) plus `embed=1`.
+
+- **Who may frame it:** `/book/*` sends `Content-Security-Policy: frame-ancestors 'self' https://scaylup.com`. The list is `BOOKING_FRAME_ORIGINS` in `lib/campaigns/embed.ts`, shared by the header, the height message and the Stripe return.
+- **Look:** there is no logo, title or page background; `html` and `body` are transparent from the first paint (the `embed` startup state in `lib/app-startup.ts`). The page uses the funnel's tokens (ink `#f3f3f6`, muted `#9b9bab`, lavender `#b4a8ff`, the holo button), Manrope, and Instrument Serif for the appointment time. The funnel draws the card around the frame.
+- **Stripe:** Checkout cannot run inside a frame, so an embedded hold opens it in the top window. If the browser refuses (for example a sandboxed frame), the held time appears with a Pay link that opens Checkout in the top window when tapped.
+- **Return:** an embedded hold asks Stripe to return to `book.html` beside the source's landing page (`https://scaylup.com/teardown/` → `https://scaylup.com/teardown/book.html`), with `submission` or `ref`, plus `paid=1` after paying. The landing page must be on an allowed origin; otherwise the visitor returns to the booking page itself. The funnel page must copy those parameters into the frame's `src` (with `embed=1`) so the frame shows the confirmation.
+- **Height:** whenever its height changes, the page posts `{ type: "betelgeze:booking-height", height }` (CSS pixels) to its parent, only to an allowed origin. The funnel sets the frame's height from it and should check `event.origin === "https://app.betelgeze.com"`.
+- **The frame element:** no `sandbox` attribute; or, if one is needed, `allow-scripts allow-same-origin allow-forms allow-top-navigation-by-user-activation`.
+
 ## Screens
 
 - **Sidebar (Today layout):** a Campaigns section between the destinations and the clients lists each campaign by name with how many of its leads are not booked, and + opens New campaign. It reads `/api/workspaces/<slug>/campaigns/rail` (two bounded reads) after the shell is up, never before, and again when the window returns after five minutes or a campaign it does not list is opened. In the tabbed layout and the phone's More menu, Campaigns is one destination.

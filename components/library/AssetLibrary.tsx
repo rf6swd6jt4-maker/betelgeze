@@ -55,7 +55,7 @@ function AssetContextMenu({ menu, selected, busy, onSelect, onDownload, onDismis
         items[index]?.focus()
     }
     const itemClass = "flex min-h-11 w-full items-center px-3 py-2 text-left text-sm text-neutral-200 hover:bg-[var(--color-surface-hover)] focus-visible:bg-neutral-900 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-40"
-    return <AnchoredPopup anchor={menu.anchor} anchorPoint={menu.point} onDismiss={onDismiss} className="w-44 rounded-lg border border-card-border shadow-popup">
+    return <AnchoredPopup anchor={menu.anchor} anchorPoint={menu.point} onDismiss={onDismiss} className="w-44 rounded-lg border border-card-border bg-surface-popup shadow-popup">
         <div ref={menuRef} role="menu" aria-label={`Actions for ${menu.entry.asset.title}`} onKeyDown={onKeyDown}>
             <button type="button" role="menuitem" className={itemClass} disabled={!menu.entry.downloadHref} onClick={onSelect}>{selected ? "Deselect" : "Select"}</button>
             {menu.entry.downloadHref && !busy ? <a role="menuitem" className={itemClass} href={menu.entry.downloadHref} download target="_blank" rel="noreferrer" onClick={onDownload}>Download</a> : <button type="button" role="menuitem" className={itemClass} disabled title={busy ? "A ZIP save is in progress" : "No downloadable file"}>Download</button>}

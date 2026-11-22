@@ -30,12 +30,12 @@ export default async function StaffPage({ params }: { params: Promise<{ workspac
         <div className="mx-auto max-w-7xl">
             <PanelTabHeader title="Staff" description="Who holds which clients, services and open tasks. Open someone to move their work." />
             {rows === null ? <p role="status" className="mt-5 text-sm text-neutral-400">The Staff panel needs a database update that has not been applied yet.</p> : <>
-                <div className="mt-5"><QuickStats items={[
+                <QuickStats items={[
                     { label: "People", value: rows.length },
                     { label: "Clients managed", value: rows.reduce((sum, row) => sum + row.clients, 0) },
                     { label: "Open tasks", value: rows.reduce((sum, row) => sum + row.tasks, 0) },
-                ]} /></div>
-                <div className="mt-5"><List ariaLabel="Staff">{rows.map(row => <ListItem key={row.userId}>
+                ]} />
+                <List ariaLabel="Staff">{rows.map(row => <ListItem key={row.userId}>
                     <ListPrimaryRow>
                         <ListTitle href={`/${workspace.slug}/staff/${row.userId}`}>{row.name}</ListTitle>
                         <SquarePill tone="neutral">{workspaceRoleLabel(row.role)}</SquarePill>
@@ -44,7 +44,7 @@ export default async function StaffPage({ params }: { params: Promise<{ workspac
                         <span className="flex min-w-0 items-center gap-2"><span className="shrink-0"><Assignee name={row.name} avatarSrc={row.avatarSrc} compact /></span><span className="truncate text-neutral-400">{holdings(row)}</span></span>
                         <ListTrailing>{row.joinedAt ? <span className="hidden text-neutral-500 sm:inline">Joined {formatRelativeTime(row.joinedAt)} ago</span> : null}</ListTrailing>
                     </ListSecondaryRow>
-                </ListItem>)}</List></div>
+                </ListItem>)}</List>
             </>}
         </div>
     </main>

@@ -97,7 +97,7 @@ test("Today is the queue page, with the team's sections beside it for owners and
     const page = source("components/workspace/NativeQueuePanel.tsx")
     assert.match(page, /const today = useTodayLayout\(\)\n    if \(!today\) return <div className="mx-auto max-w-7xl px-4 pb-7 text-white sm:px-6"><PersonalWorkQueue data=\{data\} \/><\/div>/, "the tabbed layout keeps the Work Queue page exactly")
     assert.match(page, /<PersonalWorkQueue data=\{data\} title="Today" \/>/, "the same full queue, so nothing it shows is lost")
-    assert.match(page, /\{data\.canSeeAttention \? <div className="min-w-0 @4xl:pt-6"><TodaySide /, "staff get the queue alone")
+    assert.match(page, /\{data\.canSeeAttention \? <div className="min-w-0 @4xl:-mt-1"><TodaySide /, "staff get the queue alone")
     assert.ok(page.indexOf("<PersonalWorkQueue data={data} title") < page.indexOf("<TodaySide "), "the person's own queue comes first")
     assert.match(source("components/work-queue/PersonalWorkQueue.tsx"), /<PanelTabHeader title=\{title\} /)
     const shell = source("components/workspace/WorkspaceTopBarClient.tsx")
@@ -229,7 +229,7 @@ test("the Team queue is owner/admin only, read on demand, and merged fairly", as
     const side = source("components/workspace/TodaySide.tsx")
     assert.match(side, /const \[teamOpen, setTeamOpen\] = useState\(false\)/, "the Team queue always starts closed, so it is never read at shell start")
     assert.match(side, /if \(!teamOpen\) return/)
-    assert.match(source("components/workspace/NativeQueuePanel.tsx"), /\{data\.canSeeAttention \? <div className="min-w-0 @4xl:pt-6"><TodaySide /, "staff are not offered the Team queue")
+    assert.match(source("components/workspace/NativeQueuePanel.tsx"), /\{data\.canSeeAttention \? <div className="min-w-0 @4xl:-mt-1"><TodaySide /, "staff are not offered the Team queue")
 
     // @ts-expect-error Node's built-in TypeScript test runner requires the source extension.
     const { parseTeamQueue, teamQueueRows } = await import("../lib/team-queue.ts")

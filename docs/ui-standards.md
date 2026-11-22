@@ -934,6 +934,8 @@ execution area is the only intentional expanded record; opening a dispute never
 inserts content into the list. Use `CenteredDialog` with native focus containment,
 Escape/backdrop dismissal and focus restoration. The dispute popup uses the shorter internally scrolling variant, has a fixed-footer Submit dispute control, required details for Other, and an explicit internal-team routing explanation. Pending and failed submissions retain the draft; acknowledgement advances the queue. Ready items display one qualitative urgency band; execution state replaces it while in progress or blocked.
 
+**Refresh queue** is a `ghost` `sm` `Button` in the header's action slot, never a loose link between the rail and the list. An empty view is one quiet line under a hairline in place of the list, not a row inside it. With no open work at all the statistics and the rail are omitted: the page is its heading, a green `Status` reading `No open work`, and one sentence. On the Today page the side column's first heading sits on the title's line.
+
 ## Communications unread navigation
 
 A chat counts as read only in the selected workspace tab, in a visible focused

@@ -52,7 +52,7 @@ function StaffLoading() {
 
 function QueueLoading() {
     return <PanelLoadingFrame title="Work Queue">
-        <PanelTabHeader title="Work Queue" description="Your ready work, ordered by value, timing and what it enables." />
+        <PanelTabHeader title="Work Queue" description="Your assigned and shared service work, ordered by readiness and priority." actions={<LoadingPulse className="h-11 w-28 sm:h-7" />} />
         <PanelLoadingStats labels={["Ready", "Waiting", "Open work"]} />
         <PanelLoadingFilters widths={[92, 152]} />
         <PanelLoadingList rows={5} />
@@ -188,7 +188,7 @@ function CommunicationsLoading({ team = false }: { team?: boolean }) {
 function SettingsLoading() {
     return <main data-workspace-loading-root aria-label="Loading Settings" aria-busy="true" className="min-h-screen max-w-full overflow-x-clip bg-neutral-950 px-4 pb-8 text-white sm:px-6">
         <div className="mx-auto max-w-7xl pt-5">
-            <div className="relative mb-16 h-48 rounded-xl border border-card-border motion-safe:animate-pulse sm:h-64 sm:rounded-2xl"><div className="absolute bottom-0 left-4 h-[112px] w-[112px] translate-y-1/2 rounded-full border-4 border-neutral-950 bg-neutral-900 sm:left-7 sm:h-[108px] sm:w-[108px]" /></div>
+            <div className="relative mb-12 h-48 rounded-xl border border-card-border motion-safe:animate-pulse sm:h-64 sm:rounded-2xl"><div className="absolute bottom-0 left-4 h-[72px] w-[72px] translate-y-1/2 rounded-full border-4 border-neutral-950 bg-neutral-900 sm:left-7" /></div>
             <h1 className="text-xl font-semibold tracking-tight">Settings</h1>
             <div className="mt-8 grid gap-8 lg:grid-cols-[16rem_minmax(0,1fr)]">
                 <nav aria-label="Loading settings sections" className="hidden space-y-3 lg:block">{Array.from({ length: 8 }, (_, index) => <Pulse key={index} className="h-10 w-full rounded-lg bg-neutral-900" />)}</nav>

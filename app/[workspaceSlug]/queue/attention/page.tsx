@@ -29,13 +29,13 @@ export default async function NeedsAttentionPage({ params }: { params: Promise<{
                 description={`Team-wide items nobody may be acting on, oldest first. Up to five of each kind.${total ? ` ${total} open now.` : ""}`}
                 tabs={<QueuePanelTabs workspaceSlug={workspace.slug} active="attention" />} />
             {groups === null ? <p role="status" className="mt-5 text-sm text-neutral-400">Needs attention needs a database update that has not been applied yet.</p> : <>
-                <div className="mt-5"><QuickStats ariaLabel="Needs attention statistics" items={[
+                <QuickStats ariaLabel="Needs attention statistics" items={[
                     { label: "Open items", value: total },
                     { label: "Waiting on a reply", value: count("waiting_on_reply") },
                     { label: "Overdue", value: count("overdue_task") },
-                ]} /></div>
+                ]} />
                 {groups.length === 0 ? <p className="mt-5 text-sm text-neutral-400">Nothing needs attention right now.</p>
-                    : <div className="mt-5"><List ariaLabel="Needs attention">{groups.flatMap(group => group.items.map(item => {
+                    : <List ariaLabel="Needs attention">{groups.flatMap(group => group.items.map(item => {
                         const href = attentionHref(workspace.slug, group.kind, item)
                         const meta = ATTENTION_LABELS[group.kind]
                         return <ListItem key={`${group.kind}:${item.recordId}`}>
@@ -48,7 +48,7 @@ export default async function NeedsAttentionPage({ params }: { params: Promise<{
                                 <ListTrailing>{item.since ? <span className="text-neutral-500">{formatRelativeTime(item.since)}</span> : null}</ListTrailing>
                             </ListSecondaryRow>
                         </ListItem>
-                    }))}</List></div>}
+                    }))}</List>}
             </>}
         </div>
     </main>

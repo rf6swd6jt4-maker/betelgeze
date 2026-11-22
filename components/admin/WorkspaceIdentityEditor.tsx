@@ -1,4 +1,5 @@
 "use client"
+/* eslint-disable @next/next/no-img-element -- Signed private uploads, drawn as the shared banner draws them. */
 
 import { ChangeEvent, CSSProperties, PointerEvent, useRef, useState, useTransition } from "react"
 import { runWorkspaceMutation } from "@/lib/workspace-mutations"

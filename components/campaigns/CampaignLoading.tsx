@@ -27,15 +27,22 @@ export function CampaignPageLoading() {
     return <main data-workspace-loading-root aria-label="Opening campaign" aria-busy="true" className={frame}>
         <div className="mx-auto max-w-7xl">
             <HeaderLoading label="Campaign" tabs />
-            <div aria-hidden="true" className="mt-5 flex gap-2">{[44, 82, 82, 108].map(width => <LoadingPulse key={width} className="h-7" style={{ width }} />)}</div>
-            <div aria-hidden="true" className="-mx-2 mt-5 grid auto-cols-[minmax(13rem,1fr)] grid-flow-col gap-4 overflow-hidden px-2">
-                {[3, 2, 2, 1, 1, 0, 0].map((cards, column) => <div key={column} className="flex min-h-48 flex-col p-1">
-                    <LoadingPulse className="mx-1 mb-3 h-4 w-24" />
-                    {Array.from({ length: cards }, (_, card) => <div key={card} className="border-t border-card-border px-2 py-2.5 first-of-type:border-t-0"><LoadingPulse className="h-4 w-32" /><LoadingPulse className="mt-2 h-3 w-24" /></div>)}
-                </div>)}
-            </div>
+            <CampaignLeadsPlaceholder />
         </div>
     </main>
+}
+
+/** The source filters and the pipeline's columns: the campaign's opening state, and its leads while they are read. */
+export function CampaignLeadsPlaceholder() {
+    return <>
+        <div aria-hidden="true" className="mt-5 flex gap-2">{[44, 82, 82, 108].map(width => <LoadingPulse key={width} className="h-7" style={{ width }} />)}</div>
+        <div aria-hidden="true" className="-mx-2 mt-5 grid auto-cols-[minmax(13rem,1fr)] grid-flow-col gap-4 overflow-hidden px-2">
+            {[3, 2, 2, 1, 1, 0, 0].map((cards, column) => <div key={column} className="flex min-h-48 flex-col p-1">
+                <LoadingPulse className="mx-1 mb-3 h-4 w-24" />
+                {Array.from({ length: cards }, (_, card) => <div key={card} className="border-t border-card-border px-2 py-2.5 first-of-type:border-t-0"><LoadingPulse className="h-4 w-32" /><LoadingPulse className="mt-2 h-3 w-24" /></div>)}
+            </div>)}
+        </div>
+    </>
 }
 
 /** A source: the record header, the status bar, then settings rows. */

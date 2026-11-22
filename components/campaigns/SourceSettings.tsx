@@ -63,12 +63,10 @@ export function SourceSettings({ workspaceSlug, source, appOrigin }: { workspace
     const bookingUrl = value.booking_slug ? `${appOrigin}/book/${value.booking_slug}` : null
     const intakeUrl = `${appOrigin}/api/campaigns/intake/${value.intake_key}`
 
-    return <div className="mt-5">
-        <p role="status" aria-live="polite" className={`min-h-5 text-xs ${state.kind === "error" ? "text-red-300" : "text-neutral-500"}`}>
+    return <div className="mt-8">
+        <SectionHeading action={<span role="status" aria-live="polite" className={`text-xs ${state.kind === "error" ? "text-red-300" : "text-neutral-500"}`}>
             {state.kind === "saving" ? "Saving…" : state.kind === "saved" ? "Saved" : state.kind === "error" ? state.message : ""}
-        </p>
-
-        <SectionHeading className="mt-6">Name and tag</SectionHeading>
+        </span>}>Name and tag</SectionHeading>
         <Row label="Name"><input className={inputClass} aria-label="Name" maxLength={120} {...text("name")} /></Row>
         <Row label="Tag" hint="The tag marks this source's leads in the pipeline and the leads list.">
             <div className="flex flex-wrap items-center gap-2">
@@ -114,10 +112,10 @@ export function SourceSettings({ workspaceSlug, source, appOrigin }: { workspace
         {value.books ? <>
             <SectionHeading className="mt-8">Booking page</SectionHeading>
             {bookingUrl ? <Row label="Address" hint="The form sends visitors here with ?submission= and the submission ID, so they never type their details twice. To try it as a lead, send a test lead above."><Copy value={bookingUrl} /></Row> : null}
-            <Row label="Address name"><input className={`${inputClass} max-w-xs font-mono`} aria-label="Booking address name" maxLength={60} {...text("booking_slug")} /></Row>
+            <Row label="Address name"><input className={`${inputClass} font-mono sm:max-w-xs`} aria-label="Booking address name" maxLength={60} {...text("booking_slug")} /></Row>
             <Row label="Meeting"><input className={inputClass} aria-label="Meeting name" maxLength={80} {...text("meeting_title")} /></Row>
             <Row label="Length">
-                <Selector appearance="input" ariaLabel="Length" value={String(value.meeting_minutes)} onChange={next => save({ meeting_minutes: Number(next) })} options={[15, 30, 45, 60].map(minutes => ({ value: String(minutes), label: `${minutes} minutes` }))} />
+                <div className="w-48"><Selector appearance="input" ariaLabel="Length" value={String(value.meeting_minutes)} onChange={next => save({ meeting_minutes: Number(next) })} options={[15, 30, 45, 60].map(minutes => ({ value: String(minutes), label: `${minutes} minutes` }))} /></div>
             </Row>
             <Row label="Where">
                 <Selector appearance="input" ariaLabel="Where" value={value.meeting_place} onChange={next => save({ meeting_place: next as MeetingPlace })} options={(Object.keys(meetingPlaceLabels) as MeetingPlace[]).map(key => ({ value: key, label: meetingPlaceLabels[key] }))} />
@@ -127,11 +125,11 @@ export function SourceSettings({ workspaceSlug, source, appOrigin }: { workspace
                 <Selector appearance="input" ariaLabel="Time zone" value={value.time_zone} onChange={next => save({ time_zone: next })} options={CAMPAIGN_TIME_ZONES.map(zone => ({ value: zone, label: `${timeZoneLabels[zone]} time` }))} />
             </Row>
             <Row label="Days">
-                <div role="group" aria-label="Booking days" className="flex flex-wrap gap-1.5">
+                <div role="group" aria-label="Booking days" className="grid grid-cols-7 gap-1 sm:flex sm:flex-wrap sm:gap-1.5">
                     {WEEKDAY_LABELS.map((label, day) => {
                         const on = value.booking_days.includes(day)
                         return <button key={label} type="button" aria-pressed={on} onClick={() => { const next = on ? value.booking_days.filter(entry => entry !== day) : [...value.booking_days, day].sort(); if (next.length) save({ booking_days: next }) }}
-                            className={`h-9 min-w-12 rounded-md px-2.5 text-sm ${on ? "bg-[var(--color-surface-selected)] text-white" : "text-neutral-500 hover:bg-[var(--color-surface-hover)] hover:text-white"}`}>{label}</button>
+                            className={`h-9 min-w-0 rounded-md text-sm sm:min-w-12 sm:px-2.5 ${on ? "bg-[var(--color-surface-selected)] text-white" : "text-neutral-500 hover:bg-[var(--color-surface-hover)] hover:text-white"}`}>{label}</button>
                     })}
                 </div>
             </Row>
@@ -167,7 +165,7 @@ export function SourceSettings({ workspaceSlug, source, appOrigin }: { workspace
         </> : null}
 
         <SectionHeading className="mt-8">Connect the form</SectionHeading>
-        <Row label="Send leads to" hint="Post each qualified submission here as version 1 JSON (docs/campaign-intake.md). The address is not a secret; only the allowed sites can use it."><Copy value={intakeUrl} /></Row>
+        <Row label="Send leads to" hint="Send each qualified form submission here. The address is not a secret: only the sites listed under Landing page can use it."><Copy value={intakeUrl} /></Row>
         {bookingUrl ? <Row label="Then open" hint="After the form is sent, open the booking page with the submission ID."><Copy value={`${bookingUrl}?submission={submission_id}`} /></Row> : null}
         {value.pay_amount_cents !== null ? <Row label="Price shown"><span className="pt-2 text-sm text-neutral-300">{formatMoney(value.pay_amount_cents)}</span></Row> : null}
     </div>
@@ -175,8 +173,8 @@ export function SourceSettings({ workspaceSlug, source, appOrigin }: { workspace
 
 function AmountInput({ cents, onSave }: { cents: number; onSave: (cents: number) => void }) {
     const [draft, setDraft] = useState((cents / 100).toFixed(cents % 100 ? 2 : 0))
-    return <span className="flex items-center gap-1.5"><span className="text-sm text-neutral-500">$</span>
-        <input className={`${inputClass} w-32 tabular-nums`} inputMode="decimal" aria-label="Amount in dollars" value={draft} onChange={event => setDraft(event.target.value)}
+    return <span className="flex w-48 items-center gap-1.5"><span className="text-sm text-neutral-500">$</span>
+        <input className={`${inputClass} tabular-nums`} inputMode="decimal" aria-label="Amount in dollars" value={draft} onChange={event => setDraft(event.target.value)}
             onBlur={() => { const next = Math.round(Number(draft.replace(/[^0-9.]/g, "")) * 100); if (Number.isFinite(next) && next >= 50 && next !== cents) onSave(next) }} />
     </span>
 }

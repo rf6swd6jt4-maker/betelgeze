@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import type { MouseEvent, ReactNode } from "react"
 import Link from "@/components/workspace/WorkspaceLink"
 import { panelTabClass, panelTabStripClass } from "@/components/panel/PanelTabStrip"
 import { RoundPill, Status } from "@/components/ui"
@@ -10,11 +10,13 @@ const statusLabel = { live: "Live", paused: "Paused", draft: "Draft" } as const
 
 /**
  * The head of a campaign's page, shaped like a client's page header: its mark and name, one quiet line (status, its
- * sources' tags, how many leads are not booked), its action, and the section tabs.
+ * sources' tags, how many leads are not booked), its action, and the section tabs. With `onSelect` the tabs switch in
+ * place (their hrefs stay real addresses for opening in a new tab or sharing).
  */
-export function CampaignPageHeader({ name, status, tags, notBooked, tabs, active, actions }: {
+export function CampaignPageHeader({ name, status, tags, notBooked, tabs, active, actions, onSelect }: {
     name: string; status: string; tags: { tag: string; tone: CampaignTagTone }[]; notBooked: number
     tabs: { key: string; label: string; href: string; count?: number }[]; active: string; actions?: ReactNode
+    onSelect?: (key: string, event: MouseEvent<HTMLAnchorElement>) => void
 }) {
     const key = status as keyof typeof statusTone
     return <header data-campaign-page-header data-workspace-record-title={name} className="pt-5">
@@ -34,7 +36,8 @@ export function CampaignPageHeader({ name, status, tags, notBooked, tabs, active
             {actions ? <div className="flex shrink-0 flex-wrap items-center gap-2">{actions}</div> : null}
         </div>
         <nav aria-label={`${name} sections`} className={`${panelTabStripClass} max-sm:-mx-4 max-sm:gap-3.5 max-sm:px-4`}>
-            {tabs.map(tab => <Link key={tab.key} href={tab.href} prefetch={false} aria-current={tab.key === active ? "page" : undefined} className={panelTabClass(tab.key === active)}>
+            {tabs.map(tab => <Link key={tab.key} href={tab.href} prefetch={false} aria-current={tab.key === active ? "page" : undefined} className={panelTabClass(tab.key === active)}
+                data-workspace-instant-filter={onSelect ? "" : undefined} onClick={onSelect ? event => onSelect(tab.key, event) : undefined}>
                 {tab.label}{tab.count !== undefined ? <span className="ml-1.5 tabular-nums text-neutral-500">{tab.count}</span> : null}
             </Link>)}
         </nav>

@@ -3,6 +3,7 @@ import { supabaseAdmin } from "@/lib/supabase/admin"
 import { getWorkspaceProviderConfig } from "@/lib/workspace-integrations"
 import { createStripeBookingCheckout } from "@/lib/stripe/api"
 import { formatAppointment } from "@/lib/campaigns/model"
+import { bookingEmbedReturnUrl } from "@/lib/campaigns/embed"
 import { clientBrandLogoUrl, loadWorkspaceClientBrandAssets } from "@/lib/client-branding/assets"
 import type { BookingRules } from "@/lib/campaigns/slots"
 
@@ -37,6 +38,12 @@ export async function loadBookingPage(slug: string, submission: string | null, r
     return (data ?? null) as BookingPage | null
 }
 
+/** Where Stripe returns a visitor who booked inside a funnel's frame: the funnel page, or null for this page. */
+export async function loadBookingEmbedReturn(sourceId: string) {
+    const { data } = await supabaseAdmin.from("campaign_sources").select("page_url").eq("id", sourceId).maybeSingle()
+    return bookingEmbedReturnUrl(data?.page_url ?? null)
+}
+
 /** The agency logo for a booking page, served by the same public route as the SMS opt-in page. Null when none is set. */
 export async function loadBookingLogo(sourceId: string) {
     const { data } = await supabaseAdmin.from("campaign_sources").select("workspace_id").eq("id", sourceId).maybeSingle()
@@ -67,7 +74,7 @@ type HoldResult = {
  * Holds the chosen time. Without payment it is booked at once. With payment a Checkout page is made on the
  * workspace's connected Stripe account; if that fails the hold is released so the time is offered again.
  */
-export async function holdBookingTime(slug: string, input: { submission: string | null; reference: string | null; startsAt: string; timeZone: string }, origin: string) {
+export async function holdBookingTime(slug: string, input: { submission: string | null; reference: string | null; startsAt: string; timeZone: string; returnTo?: string | null }, origin: string) {
     const { data, error } = await supabaseAdmin.rpc("campaign_booking_hold", { p_slug: slug, p_input: { submission: input.submission, reference: input.reference, starts_at: input.startsAt } })
     if (error) return { status: 500, body: { error: "Could not hold that time. Please retry." } }
     const result = data as HoldResult & { failure?: string }
@@ -77,7 +84,8 @@ export async function holdBookingTime(slug: string, input: { submission: string 
     }
     if (result.status === "booked") return { status: 200, body: { status: "booked", starts_at: result.starts_at } }
 
-    const back = new URL(`/book/${slug}`, origin)
+    // Embedded in a funnel, Stripe returns to the funnel page, which frames this page again with the same IDs.
+    const back = new URL(input.returnTo ?? `/book/${slug}`, origin)
     if (input.submission) back.searchParams.set("submission", input.submission)
     if (input.reference) back.searchParams.set("ref", input.reference)
     const done = new URL(back)

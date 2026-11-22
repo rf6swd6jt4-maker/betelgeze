@@ -1,4 +1,4 @@
-import { bookingParams, holdBookingTime, loadBookingPage } from "@/lib/campaigns/booking"
+import { bookingParams, holdBookingTime, loadBookingEmbedReturn, loadBookingPage } from "@/lib/campaigns/booking"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -25,6 +25,7 @@ export async function POST(request: Request, context: { params: Promise<{ slug: 
     if (!startsAt || (!submission && !reference)) return json(400, { error: "Pick a time from the list." })
     const page = await loadBookingPage(slug, submission, reference).catch(() => null)
     if (!page) return json(404, { error: "This booking page is not taking bookings." })
-    const result = await holdBookingTime(slug, { submission, reference, startsAt, timeZone: page.time_zone }, origin)
+    const returnTo = body.embed === true ? await loadBookingEmbedReturn(page.source_id).catch(() => null) : null
+    const result = await holdBookingTime(slug, { submission, reference, startsAt, timeZone: page.time_zone, returnTo }, origin)
     return json(result.status, result.body)
 }

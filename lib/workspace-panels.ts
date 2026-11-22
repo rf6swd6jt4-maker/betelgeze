@@ -15,6 +15,10 @@ export type WorkspacePanelDefinition = {
     standalone?: boolean
 }
 
+// Campaigns (Scaylup's own ad leads; docs/campaign-booking.md) are a pilot. Kept out of WORKSPACE_PANELS so search,
+// default landing and the tabbed rail do not offer it; the shell adds it to the sidebar for listed people only.
+export const CAMPAIGNS_PANEL = { key: "campaigns", label: "Campaigns", route: "campaigns", capability: "settings.manage", minimumRole: "admin", description: "Leads, pipeline, sources and booking pages for Scaylup's own ad campaigns", keywords: ["campaigns", "leads", "pipeline", "booking", "ads"] } as const satisfies WorkspacePanelDefinition
+
 // Retain the historical identity and authorization while removing discovery.
 const LEADGEN_PANEL = { key: "leadgen", label: "Lead Gen", route: "leadgen", capability: "leadgen.manage", minimumRole: "admin", description: "Lead generation dashboard", keywords: ["leads", "lead generation"] } as const satisfies WorkspacePanelDefinition
 
@@ -34,7 +38,7 @@ export const WORKSPACE_PANELS = [
 // This legacy destination is deliberately absent from navigation and search.
 const LEGACY_FULFILMENT_PANEL = { key: "fulfilment", label: "Fulfilment", route: "work", capability: "fulfilment.manage", allMembers: true, description: "Fulfilment relationship work items", keywords: ["tasks", "project management", "queue", "fulfilment"] } as const satisfies WorkspacePanelDefinition
 const LEGACY_APPOINTMENT_PANEL = { key: "appointment-setting", label: "Appointment Setting", route: "appointment-setting", capability: "appointment_setting.manage", requiresService: true, description: "Legacy appointment table", keywords: [] } as const satisfies WorkspacePanelDefinition
-export type WorkspacePanel = (typeof WORKSPACE_PANELS)[number] | typeof LEGACY_FULFILMENT_PANEL | typeof LEGACY_APPOINTMENT_PANEL | typeof LEADGEN_PANEL
+export type WorkspacePanel = (typeof WORKSPACE_PANELS)[number] | typeof LEGACY_FULFILMENT_PANEL | typeof LEGACY_APPOINTMENT_PANEL | typeof LEADGEN_PANEL | typeof CAMPAIGNS_PANEL
 export type WorkspacePanelKey = WorkspacePanel["key"]
 
 export function canAccessPrivateWorkspacePanels(role: WorkspaceRole) {
@@ -55,7 +59,7 @@ export function canAccessWorkspacePanel(
 }
 
 export function workspacePanelByKey(key: WorkspacePanelKey) {
-    return key === "leadgen" ? LEADGEN_PANEL : key === "fulfilment" ? LEGACY_FULFILMENT_PANEL : key === "appointment-setting" ? LEGACY_APPOINTMENT_PANEL : WORKSPACE_PANELS.find((panel) => panel.key === key)!
+    return key === "leadgen" ? LEADGEN_PANEL : key === "campaigns" ? CAMPAIGNS_PANEL : key === "fulfilment" ? LEGACY_FULFILMENT_PANEL : key === "appointment-setting" ? LEGACY_APPOINTMENT_PANEL : WORKSPACE_PANELS.find((panel) => panel.key === key)!
 }
 
 export function workspacePanelForUrl(value: string, workspaceSlug: string) {
@@ -64,6 +68,7 @@ export function workspacePanelForUrl(value: string, workspaceSlug: string) {
     if (!pathname.startsWith(prefix)) return null
     const route = pathname.slice(prefix.length).split("/")[0]
     if (route === LEADGEN_PANEL.route) return LEADGEN_PANEL
+    if (route === CAMPAIGNS_PANEL.route) return CAMPAIGNS_PANEL
     if (route === LEGACY_FULFILMENT_PANEL.route) return LEGACY_FULFILMENT_PANEL
     if (route === LEGACY_APPOINTMENT_PANEL.route) return LEGACY_APPOINTMENT_PANEL
     return WORKSPACE_PANELS.find((panel) => panel.route === route || ("activeRoutes" in panel && (panel.activeRoutes as readonly string[]).includes(route))) ?? null

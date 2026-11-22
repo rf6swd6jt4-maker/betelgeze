@@ -218,6 +218,8 @@ export async function proxy(request: NextRequest) {
             "/login", "/sign-up", "/forgot-password", "/update-password",
             "/mfa", "/logout", "/privacy", "/users", "/invites", "/auth", "/workspaces", "/install",
             "/check-email", "/email-confirmed", "/session", "/onboarding", "/client-portal",
+            // Campaign booking pages are public: leads open them from a funnel (docs/campaign-booking.md).
+            "/book",
         ]
         const isPublicDashboardPath = publicDashboardPaths.some(
             (publicPath) => path === publicPath || path.startsWith(`${publicPath}/`)

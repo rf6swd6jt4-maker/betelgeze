@@ -1,8 +1,8 @@
 # Campaign lead intake
 
-Betelgeze accepts leads from Scaylup's own landing-page funnels through one public address per campaign. This is the first lead source for the Campaigns section. It is for Scaylup's own client acquisition only: a lead is a prospect for Scaylup and becomes a client later, when sold.
+Betelgeze accepts leads from Scaylup's own landing-page funnels through one public address per **source**. A campaign has one or more sources, each one landing page with its own key, tag and booking settings (docs/campaign-booking.md). This is the first lead source for the Campaigns section. It is for Scaylup's own client acquisition only: a lead is a prospect for Scaylup and becomes a client later, when sold.
 
-Status: implementation candidate. Intake is off until `CAMPAIGN_INTAKE_ENABLED=true` is set in the deployment. While off, the address answers `503` and stores nothing.
+Status: live in production since 22 November 2026 (`CAMPAIGN_INTAKE_ENABLED=true`). With the switch off the address answers `503` and stores nothing.
 
 ## Address
 
@@ -10,9 +10,9 @@ Status: implementation candidate. Intake is off until `CAMPAIGN_INTAKE_ENABLED=t
 POST https://app.betelgeze.com/api/campaigns/intake/<intake key>
 ```
 
-Each campaign has its own intake key: 32 random URL-safe characters, created with the campaign. The key appears in public page source, so it identifies the campaign but is not a secret. Protection comes from the origin list, validation, rate limits and the bot field below.
+Each source has its own intake key: 32 random URL-safe characters, created with the source. Campaigns created before sources existed became one source each and kept their key, so addresses already handed out keep working. The key appears in public page source, so it identifies the source but is not a secret. Protection comes from the origin list, validation, rate limits and the bot field below.
 
-Send the body as `application/json`. Browsers send a CORS preflight first; Betelgeze answers it for the campaign's allowed origins only. A form posted from any other origin is refused with `403`.
+Send the body as `application/json`. Browsers send a CORS preflight first; Betelgeze answers it for the source's allowed origins only. A form posted from any other origin is refused with `403`.
 
 ## Body, version 1
 
@@ -102,53 +102,46 @@ Funnels must not wait on Betelgeze to move the visitor on: send, then continue t
 
 ## Stages
 
-`new` → `texted` → `replied` → `paid` → `booked` → `showed` or `no_show` → `sold` or `lost`. Stages only move forward, except staff moving a lead by hand.
+`not_booked` → `paid_not_booked` (only when payment came in after the held time was taken) → `booked` → `showed` or `no_show` → `sold` or `lost`. Texted and Replied are activity shown on the card, not stages.
 
 | Stage | Shown as | Set by |
 | --- | --- | --- |
-| `new` | Qualified, not booked | Intake. Disqualified visitors never send a lead. |
-| `paid` | Paid, not booked | Stripe `checkout.session.completed` whose `client_reference_id` equals the lead's `submission_id` (teardown only, later step). |
-| `booked` | Booked | The Betelgeze booking page (later step). |
+| `not_booked` | Not booked | Intake. Disqualified visitors never send a lead. |
+| `paid_not_booked` | Paid, not booked | A Stripe payment for a held time that someone else took after the hold lapsed. The lead books again without paying. |
+| `booked` | Booked | The booking page (directly, or once Stripe confirms payment), or staff. |
+| `showed`, `no_show`, `sold`, `lost` | | Staff. |
+
+Leads from a source in Testing are marked Test until a live source sends the same phone.
 
 ## Hand-off to the booking page
 
-The funnel's `book.html` redirects to the campaign's Betelgeze booking page and adds:
+After a successful send, the funnel opens the source's booking page, `https://app.betelgeze.com/book/<booking address>`, and adds:
 
 - `submission=<submission_id>` always. The funnel stores it before sending the lead, so it is there even when the intake answer was slow.
-- `ref=<reference>` when the intake answer arrived.
-- `checkout_session=<cs_…>` on the teardown. The booking page confirms the session with Stripe before it accepts a booking; the parameter alone proves nothing.
+- `ref=<reference>` when the intake answer arrived (optional).
 
-With none of these, the booking page asks for contact details and matches the lead by phone number.
+The booking page finds the lead from either. It takes the payment itself (docs/campaign-booking.md), so the funnel no longer links to a Stripe Payment Link. Without either parameter, the page asks the visitor to open it from the form.
 
 The visitor's IP address is never stored. The route keeps an HMAC of it, used only for the rate limit.
 
 ## Storage
 
-All tables are service-only: row level security is on and no browser role has any grant. Staff screens will read them through workspace-checked functions in a later change.
+All tables are service-only: row level security is on and no browser role has any grant. The Campaigns screens read them on the server after checking owner/admin access and the pilot list.
 
 | Table | Holds |
 | --- | --- |
-| `campaigns` | Name, status (`draft`, `live`, `paused`, `archived`), intake key, allowed origins. |
-| `campaign_leads` | One row per phone per workspace: contact details, stage, first campaign and attribution, latest answers and consent, SMS consent state, submission count. |
+| `campaigns` | Name and status (`draft`, `live`, `paused`, `archived`). Its old intake key and origins are kept but no longer used. |
+| `campaign_sources` | One landing page: name, tag, page address, allowed origins, status (`testing`, `live`, `off`), intake key, booking and payment settings. |
+| `campaign_bookings` | Held and booked times, and their Stripe payments (docs/campaign-booking.md). |
+| `campaign_leads` | One row per phone per workspace: contact details, stage, first and latest campaign and source, Test flag, first attribution, latest answers and consent, SMS consent state, submission count. |
 | `campaign_lead_submissions` | One immutable receipt per accepted submission. |
 | `campaign_lead_events` | The lead timeline. |
 
-A paused campaign still accepts leads, so nobody who fills in a form that is still online is lost. Only archiving a campaign stops its intake.
+A paused campaign still accepts leads, so nobody who fills in a form that is still online is lost. Switching a source Off, or archiving its campaign, stops its intake.
 
 ## Setting up a campaign
 
-Until the Campaigns screens exist, campaigns are created with the service-only `campaign_admin` function (action `create`), which checks that the actor is an owner or admin of the workspace and returns the intake key:
-
-```sql
-select public.campaign_admin('create', jsonb_build_object(
-  'workspace_id', '<workspace uuid>',
-  'actor_id', '<owner user uuid>',
-  'name', 'Funnel teardown',
-  'allowed_origins', jsonb_build_array('https://scaylup.com')
-));
-```
-
-Origins are exact `https://host` values without a path. Add every host the funnel is served from, including any preview host used for testing.
+Owners and admins on the pilot list (`CAMPAIGNS_PILOT_USERS`) set campaigns up in Campaigns: Sources → Add source, then the source's page (name and tag, landing page, what happens after the form, booking page, payment, and the address to send leads to). The service-only `campaign_admin` function behind those screens checks owner/admin access on every command.
 
 ## Release checklist
 

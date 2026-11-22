@@ -6,6 +6,7 @@ import { WorkspaceNativeBanner } from "./WorkspaceNativeBanner"
 import { randomUUID } from "node:crypto"
 import { workspacePerformanceEnabled } from "@/lib/workspace-native"
 import { workspaceLayoutFor } from "@/lib/workspace-layout"
+import { campaignsPilotEnabled } from "@/lib/campaigns/pilot"
 import { WorkspaceTopBarClient } from "@/components/workspace/WorkspaceTopBarClient"
 import { WorkspaceTabBridge } from "@/components/workspace/WorkspaceTabBridge"
 import { createAssetFromModal, createNoteFromModal, createRelationshipFromModal, createWorkItemFromModal } from "@/app/[workspaceSlug]/relationships/actions"
@@ -78,6 +79,7 @@ export async function WorkspaceTopBar({ readProtocol, userId, workspace, workspa
         avatarSrc={avatarSrc}
         workspaceRole={workspaceRole}
         workspaceCapabilities={access.capabilities}
+        campaignsPilot={campaignsPilotEnabled(userId)}
         leaveAction={leaveWorkspace.bind(null, username)}
         createRelationshipAction={createRelationshipFromModal.bind(null, workspace.slug)}
         createWorkItemAction={createWorkItemFromModal.bind(null, workspace.slug)}

@@ -62,7 +62,7 @@ import { publishWorkspaceTabActivity } from "@/lib/workspace-tab-activity"
 import { WORKSPACE_TAB_VISIBILITY_EVENT } from "@/components/workspace/useWorkspaceTabActive"
 import { createSupabaseBrowserClient } from "@/lib/supabase/browser"
 import { ONBOARDING_BUILDER_WINDOW_SOURCE, openOnboardingBuilderWindow, type OnboardingBuilderWindowSignal } from "@/lib/onboarding-builder-window"
-import { canAccessPrivateWorkspacePanels, canAccessWorkspacePanel, canAccessWorkspaceUrl, WORKSPACE_PANELS, workspacePanelByKey, workspacePanelForUrl, workspacePanelHref, type WorkspacePanelKey } from "@/lib/workspace-panels"
+import { CAMPAIGNS_PANEL, canAccessPrivateWorkspacePanels, canAccessWorkspacePanel, canAccessWorkspaceUrl, WORKSPACE_PANELS, workspacePanelByKey, workspacePanelForUrl, workspacePanelHref, type WorkspacePanelKey } from "@/lib/workspace-panels"
 import type { WorkspaceCapability } from "@/lib/workspace-capabilities"
 import type { WorkspaceRole } from "@/lib/workspaces"
 import { WORKSPACE_MEMBER_PROFILE_EVENT, WORKSPACE_MEMBER_PROFILE_MESSAGE_SOURCE } from "@/lib/workspace-member-profile"
@@ -192,6 +192,8 @@ type Props = {
     avatarSrc?: string | null
     workspaceRole: WorkspaceRole
     workspaceCapabilities: WorkspaceCapability[]
+    /** Campaigns pilot (CAMPAIGNS_PILOT_USERS): adds Campaigns to the sidebar after Clients. */
+    campaignsPilot?: boolean
     leaveAction: (formData: FormData) => void
     createRelationshipAction: (formData: FormData) => Promise<WorkspaceCreateActionState>
     createWorkItemAction: (formData: FormData) => Promise<WorkspaceCreateActionState>
@@ -315,6 +317,10 @@ function StaffIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><circle cx="9" cy="8" r="3" /><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6" /><path d="M16 4.5a3 3 0 0 1 0 6" /><path d="M21 20c0-2.6-1.6-4.8-4-5.6" /></svg>
 }
 
+function CampaignsIcon() {
+    return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="M4 10v4l11 4V6L4 10Z" /><path d="M15 8.5a4 4 0 0 1 0 7" /><path d="m7 15 1.2 4.5H11L10 16" /></svg>
+}
+
 function AdminIcon() {
     return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current stroke-2 md:h-4 md:w-4"><path d="M12 3 5 6v5c0 4.7 2.8 8 7 10 4.2-2 7-5.3 7-10V6l-7-3Z" /><path d="M9 12h6" /><path d="M12 9v6" /></svg>
 }
@@ -334,6 +340,7 @@ function workspacePanelIcon(key: WorkspacePanelKey) {
     if (key === "leadgen") return <LeadIcon />
     if (key === "admin") return <AdminIcon />
     if (key === "staff") return <StaffIcon />
+    if (key === "campaigns") return <CampaignsIcon />
     return <SettingsIcon />
 }
 
@@ -379,7 +386,7 @@ export function WorkspaceTopBarClient(props: Props) {
     return <WorkspaceTabsShell {...props} />
 }
 
-function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspace, initialWorkspaceUrl, initialTab: bootstrapTab, nativePanelsEnabled = false, layout = "tabs", nativeBanner, launchServerTiming, currentUserId, username, avatarSrc, workspaceRole, workspaceCapabilities, leaveAction, createRelationshipAction, createWorkItemAction, createAssetAction, createNoteAction, createOkrAction }: Props) {
+function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspace, initialWorkspaceUrl, initialTab: bootstrapTab, nativePanelsEnabled = false, layout = "tabs", nativeBanner, launchServerTiming, currentUserId, username, avatarSrc, workspaceRole, workspaceCapabilities, campaignsPilot = false, leaveAction, createRelationshipAction, createWorkItemAction, createAssetAction, createNoteAction, createOkrAction }: Props) {
     // Revalidation may supply a new launch ID. The mounted shell already owns
     // its tabs: changing this ID detaches frame refs and erases their readiness.
     const [initialTab] = useState(() => bootstrapTab)
@@ -2712,7 +2719,9 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
     }
 
     const navButtonClass = "inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-neutral-400 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:text-neutral-400"
-    const sidebarItems = WORKSPACE_PANELS.filter((panel) => canAccessWorkspacePanel(panel, workspaceRole, workspaceCapabilities)).map((panel) => ({
+    const sidebarPanels: (typeof WORKSPACE_PANELS[number] | typeof CAMPAIGNS_PANEL)[] = WORKSPACE_PANELS.filter((panel) => canAccessWorkspacePanel(panel, workspaceRole, workspaceCapabilities))
+    if (campaignsPilot && canAccessWorkspacePanel(CAMPAIGNS_PANEL, workspaceRole, workspaceCapabilities)) sidebarPanels.splice(Math.max(0, sidebarPanels.findIndex((panel) => panel.key === "relationships") + 1), 0, CAMPAIGNS_PANEL)
+    const sidebarItems = sidebarPanels.map((panel) => ({
         ...panel,
         href: workspacePanelHref(workspace.slug, panel),
         activeHrefs: ("activeRoutes" in panel ? panel.activeRoutes : [panel.route]).map((route) => `/${workspace.slug}/${route}`),
@@ -2828,7 +2837,7 @@ function WorkspaceTabsShell({ communicationsReadProtocol = "account-v1", workspa
     // are tabs on each client's page; Onboarding Builder and Admin are reached from Settings. Communications appears
     // only where the docked Comms panel is not offered. Someone who cannot open Clients keeps the two lists they can.
     const canOpenClients = sidebarItems.some((item) => item.key === "relationships")
-    const railKeys = canOpenClients ? ["relationships", "communications", "library", "staff", "settings"]
+    const railKeys = canOpenClients ? ["relationships", "campaigns", "communications", "library", "staff", "settings"]
         : ["onboarding", "client-connections", "communications", "library", "staff", "settings"]
     const settingsAreaHrefs = [`/${workspace.slug}/admin`]
     const railDestinations: RailDestination[] = layout === "today" ? sidebarItems
